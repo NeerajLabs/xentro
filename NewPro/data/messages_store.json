@@ -1,0 +1,607 @@
+[
+  {
+    "id": "msg_seed_1",
+    "senderId": "XU-902411",
+    "senderName": "Xentro Technologies",
+    "text": "Hi Neeraj, we are gearing up for our seed round at Xentro Technologies and would love your mentorship on our technical architecture and pitch deck.",
+    "timestamp": "10:00 AM",
+    "readBy": [
+      "XU-902411",
+      "XU-765776",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_seed_2",
+    "senderId": "XU-765776",
+    "senderName": "Neeraj Nani",
+    "text": "Hi Xentro Team! Very impressive progress. I've reviewed your platform vision—let's definitely connect for an advisory session.",
+    "timestamp": "10:05 AM",
+    "readBy": [
+      "XU-902411",
+      "XU-765776",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791153807383_zqyj",
+    "senderId": "XU-765776",
+    "senderName": "Neeraj Nani",
+    "text": "hi",
+    "timestamp": "04:13",
+    "readBy": [
+      "XU-765776",
+      "XU-902411",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791153810842_em36",
+    "senderId": "XU-902411",
+    "senderName": "Xentro Technologies",
+    "text": "hi",
+    "timestamp": "04:13 AM",
+    "readBy": [
+      "XU-902411",
+      "XU-765776",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_verify_test",
+    "senderId": "XU-902411",
+    "senderName": "Xentro Technologies",
+    "text": "Automated test verification message",
+    "timestamp": "04:46 AM",
+    "readBy": [
+      "XU-902411",
+      "XU-765776",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_verify_test_2",
+    "senderId": "XU-902411",
+    "senderName": "Xentro Technologies",
+    "text": "Automated test verification message",
+    "timestamp": "04:47 AM",
+    "readBy": [
+      "XU-902411",
+      "XU-765776",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791158600392_4sdp",
+    "senderId": "XU-765776",
+    "senderName": "Neeraj Nani",
+    "text": "hi",
+    "timestamp": "05:33",
+    "readBy": [
+      "XU-765776",
+      "XU-902411",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791158612207_w2sl",
+    "senderId": "XU-765776",
+    "senderName": "Neeraj Nani",
+    "text": "hi",
+    "timestamp": "05:33",
+    "readBy": [
+      "XU-765776",
+      "XU-902411",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_auto_1791158613716_y4u2",
+    "senderId": "XU-902411",
+    "senderName": "Xentro Technologies",
+    "text": "[Auto-Reply] Thanks for connecting on Xentro! Let's schedule time to discuss.",
+    "timestamp": "05:33",
+    "readBy": [
+      "XU-902411",
+      "XU-765776",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791197647021_ley0",
+    "senderId": "XU-902411",
+    "senderName": "Xentro Technologies",
+    "text": "hi",
+    "timestamp": "16:24",
+    "readBy": [
+      "XU-902411",
+      "XU-765776",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791197673692_400r",
+    "senderId": "XU-902411",
+    "senderName": "Xentro Technologies",
+    "text": "🤝 Connection established! You and Neeraj Nani are now connected on Xentro. Start sharing insights, opportunities, and collaboration details.",
+    "timestamp": "16:24",
+    "readBy": [
+      "XU-902411",
+      "XU-765776",
+      "XU-794234",
+      "usr_awo24fqhn",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791231543202_8dqb",
+    "conversationId": "conv_ent_st_y3kfub8hu",
+    "senderId": "usr_yvhxm9l3g",
+    "senderName": "Vikrant Singhania",
+    "text": "hi",
+    "timestamp": "01:49 AM",
+    "readBy": [
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_auto_1791231544407_eag2",
+    "conversationId": "conv_ent_st_y3kfub8hu",
+    "senderId": "ent_st_y3kfub8hu",
+    "senderName": "Aether AI Dynamics",
+    "text": "Thanks for connecting on Xentro! Glad to collaborate with your team.",
+    "timestamp": "01:49 AM",
+    "readBy": [
+      "ent_st_y3kfub8hu",
+      "usr_yvhxm9l3g",
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791235890333_837j",
+    "conversationId": "conv_usr_1791235869648_xu-334613",
+    "senderId": "XU-334613",
+    "senderName": "Kranthi Varma",
+    "text": "Hello Dr. Ananya! Excited to connect on Xentro.",
+    "timestamp": "03:01 AM",
+    "readBy": [
+      "XU-334613",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791299377579_mzfm",
+    "conversationId": "conv_ent_st_luuhn323z_usr_5e2ffizzl",
+    "senderId": "usr_5e2ffizzl",
+    "senderName": "ertyuiop[]",
+    "text": "hi'",
+    "timestamp": "20:39",
+    "readBy": [
+      "usr_5e2ffizzl",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_test_123",
+    "conversationId": "conv_XU-401341_XU-834524",
+    "senderId": "XU-834524",
+    "senderName": "Neerajj",
+    "text": "TEST MESSAGE 123",
+    "timestamp": "12:00 PM",
+    "readBy": [
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_reply_456",
+    "conversationId": "conv_XU-401341_XU-834524",
+    "senderId": "XU-401341",
+    "senderName": "John Developer",
+    "text": "REPLY MESSAGE 456",
+    "timestamp": "12:05 PM",
+    "readBy": [
+      "XU-401341",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791310294133_gdhm",
+    "conversationId": "conv_XU-783757_XU-834524",
+    "senderId": "XU-783757",
+    "senderName": "mukesh",
+    "text": "hi",
+    "content": "hi",
+    "timestamp": "23:41",
+    "readBy": [
+      "XU-783757",
+      "XU-834524",
+      "XU-193806",
+      "XU-926197"
+    ]
+  },
+  {
+    "id": "msg_1791310323817_8i4n",
+    "conversationId": "conv_XU-783757_XU-834524",
+    "senderId": "XU-834524",
+    "senderName": "Neerajj",
+    "text": "hello",
+    "content": "hello",
+    "timestamp": "23:42",
+    "readBy": [
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791315219227_31ff",
+    "conversationId": "conv_XU-659615_XU-834524",
+    "senderId": "XU-834524",
+    "senderName": "Neerajj",
+    "text": "hi",
+    "content": "hi",
+    "timestamp": "01:03",
+    "readBy": [
+      "XU-834524",
+      "XU-193806",
+      "XU-926197",
+      "XU-783757"
+    ]
+  },
+  {
+    "id": "msg_1791351488847_ydkl",
+    "conversationId": "conv_xu-193806_xu-783757",
+    "senderId": "XU-783757",
+    "senderName": "mukesh",
+    "text": "hi",
+    "content": "hi",
+    "timestamp": "11:08",
+    "readBy": [
+      "XU-783757",
+      "XU-193806",
+      "XU-834524",
+      "XU-926197"
+    ]
+  },
+  {
+    "id": "msg_1791351497011_150y",
+    "conversationId": "conv_xu-193806_xu-783757",
+    "senderId": "XU-783757",
+    "senderName": "mukesh",
+    "text": "hi",
+    "content": "hi",
+    "timestamp": "11:08",
+    "readBy": [
+      "XU-783757",
+      "XU-193806",
+      "XU-834524",
+      "XU-926197"
+    ]
+  },
+  {
+    "id": "msg_1791351501895_r3vy",
+    "conversationId": "conv_xu-193806_xu-783757",
+    "senderId": "XU-783757",
+    "senderName": "mukesh",
+    "text": "hi",
+    "content": "hi",
+    "timestamp": "11:08",
+    "readBy": [
+      "XU-783757",
+      "XU-193806",
+      "XU-834524",
+      "XU-926197"
+    ]
+  },
+  {
+    "id": "msg_1791351511751_3xvy",
+    "conversationId": "conv_xu-193806_xu-783757",
+    "senderId": "XU-783757",
+    "senderName": "mukesh",
+    "text": "hello raya toxic maya",
+    "content": "hello raya toxic maya",
+    "timestamp": "11:08",
+    "readBy": [
+      "XU-783757",
+      "XU-193806",
+      "XU-834524",
+      "XU-926197"
+    ]
+  },
+  {
+    "id": "msg_1791354218510_alice_test",
+    "clientMessageId": "msg_1791354218510_alice_test",
+    "conversationId": "conv_xu-834524_xu-926197",
+    "senderId": "XU-834524",
+    "senderName": "Neerajj",
+    "content": "Hello Kranthi! E2E Singular Message 1",
+    "text": "Hello Kranthi! E2E Singular Message 1",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-834524",
+      "XU-926197",
+      "XU-783757",
+      "XU-193806"
+    ],
+    "createdAt": "2026-10-07T06:23:40.870704+00:00"
+  },
+  {
+    "id": "msg_1791354223297_dave_test",
+    "clientMessageId": "msg_1791354223297_dave_test",
+    "conversationId": "conv_xu-834524_xu-926197",
+    "senderId": "XU-926197",
+    "senderName": "Kranthi Kumar",
+    "content": "Hey Neerajj! Replying singular message 2 without dupes.",
+    "text": "Hey Neerajj! Replying singular message 2 without dupes.",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-926197",
+      "XU-834524",
+      "XU-783757",
+      "XU-193806"
+    ],
+    "createdAt": "2026-10-07T06:23:45.679682+00:00"
+  },
+  {
+    "id": "test_dedup_verify_1791354590",
+    "clientMessageId": "test_dedup_verify_1791354590",
+    "conversationId": "conv_xu-834524_xu-926197",
+    "senderId": "XU-834524",
+    "senderName": "Neerajj",
+    "content": "Automated test suite message deduplication check",
+    "text": "Automated test suite message deduplication check",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-834524",
+      "XU-926197",
+      "XU-783757",
+      "XU-193806"
+    ],
+    "createdAt": "2026-10-07T06:29:52.520602+00:00"
+  },
+  {
+    "id": "msg_1791355239485_9sof",
+    "clientMessageId": "msg_1791355239485_9sof",
+    "conversationId": "conv_xu-783757_xu-926197",
+    "senderId": "XU-783757",
+    "senderName": "mukesh",
+    "content": "hi",
+    "text": "hi",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-783757",
+      "XU-926197",
+      "XU-193806"
+    ],
+    "createdAt": "2026-10-07T06:40:39.551983+00:00"
+  },
+  {
+    "id": "msg_1791355275442_aby5",
+    "clientMessageId": "msg_1791355275442_aby5",
+    "conversationId": "conv_xu-783757_xu-926197",
+    "senderId": "XU-926197",
+    "senderName": "Kranthi Kumar",
+    "content": "namaste",
+    "text": "namaste",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-926197",
+      "XU-783757",
+      "XU-193806"
+    ],
+    "createdAt": "2026-10-07T06:41:15.509338+00:00"
+  },
+  {
+    "id": "msg_1791357495975",
+    "conversationId": "conv_test_alice_bob",
+    "senderId": "test_usr_alice",
+    "senderName": "Member",
+    "text": "Hello Bob! This message is stored in MongoDB Atlas across sessions.",
+    "timestamp": "2026-10-07T07:18:16.029Z",
+    "status": "delivered",
+    "senderAvatar": "/xentro-logo.png",
+    "senderRole": "Member",
+    "readBy": [
+      "XU-193806",
+      "XU-926197"
+    ]
+  },
+  {
+    "id": "msg_1791359683216",
+    "clientMessageId": "msg_1791359683216",
+    "conversationId": "conv_XU-157157_XU-926197",
+    "senderId": "XU-926197",
+    "senderName": "Kranthi Kumar",
+    "content": "E2E Live Verification Message: Hello Dr. Bob, timestamp 1791359683209",
+    "text": "E2E Live Verification Message: Hello Dr. Bob, timestamp 1791359683209",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-926197",
+      "XU-193806"
+    ],
+    "createdAt": "2026-10-07T07:54:43.685402+00:00"
+  },
+  {
+    "id": "msg_1791359685133",
+    "clientMessageId": "msg_1791359685133",
+    "conversationId": "conv_XU-157157_XU-926197",
+    "senderId": "XU-157157",
+    "senderName": "Dr. Bob Mentor",
+    "content": "E2E Reply: Dr. Bob received your message at 1791359685124",
+    "text": "E2E Reply: Dr. Bob received your message at 1791359685124",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-157157",
+      "XU-193806",
+      "XU-926197"
+    ],
+    "createdAt": "2026-10-07T07:54:45.596492+00:00"
+  },
+  {
+    "id": "msg_1791367700414",
+    "clientMessageId": "msg_1791367700414",
+    "conversationId": "conv_XU-157157_XU-926197",
+    "senderId": "XU-926197",
+    "senderName": "Kranthi Kumar",
+    "content": "E2E Live Verification Message: Hello Dr. Bob, timestamp 1791367700402",
+    "text": "E2E Live Verification Message: Hello Dr. Bob, timestamp 1791367700402",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-926197"
+    ],
+    "createdAt": "2026-10-07T10:08:20.509347+00:00"
+  },
+  {
+    "id": "msg_1791367700694",
+    "clientMessageId": "msg_1791367700694",
+    "conversationId": "conv_XU-157157_XU-926197",
+    "senderId": "XU-157157",
+    "senderName": "Dr. Bob Mentor",
+    "content": "E2E Reply: Dr. Bob received your message at 1791367700683",
+    "text": "E2E Reply: Dr. Bob received your message at 1791367700683",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-157157",
+      "XU-926197"
+    ],
+    "createdAt": "2026-10-07T10:08:20.749259+00:00"
+  },
+  {
+    "id": "msg_1791373105628_q89j",
+    "clientMessageId": "msg_1791373105628_q89j",
+    "conversationId": "conv_xu-193806_xu-783757",
+    "senderId": "XU-193806",
+    "senderName": "Xentro",
+    "content": "hi",
+    "text": "hi",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-193806",
+      "XU-783757"
+    ],
+    "createdAt": "2026-10-07T11:38:25.860273+00:00"
+  },
+  {
+    "id": "msg_1791373114368_y3vo",
+    "clientMessageId": "msg_1791373114368_y3vo",
+    "conversationId": "conv_xu-193806_xu-783757",
+    "senderId": "XU-193806",
+    "senderName": "Xentro",
+    "content": "how are u ?",
+    "text": "how are u ?",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-193806",
+      "XU-783757"
+    ],
+    "createdAt": "2026-10-07T11:38:34.437948+00:00"
+  }
+]

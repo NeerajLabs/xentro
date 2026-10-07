@@ -1,0 +1,199 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&family=Sora:wght@400;600;700&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* XENTRO Brand Tokens - Light Theme */
+  --xentro-primary: #D9FF3F;
+  --xentro-primary-hover: #C7F020;
+  --xentro-primary-active: #9EBE12;
+  --xentro-text-primary: #101212;
+  --xentro-text-secondary: #565B59;
+  --xentro-background: #F7F8F6;
+  --xentro-surface: #FFFFFF;
+  --xentro-border: #E5E7EB;
+
+  --primary: #D9FF3F;
+  --primary-rgb: 217, 255, 63;
+  --bg: #F7F8F6;
+  --card: #FFFFFF;
+  --text-main: #101212;
+  --text-muted: #565B59;
+  --border: #E5E7EB;
+}
+
+.dark {
+  /* XENTRO Brand Tokens - Dark Theme */
+  --xentro-primary: #D9FF3F;
+  --xentro-primary-hover: #E1FF61;
+  --xentro-primary-active: #C8ED29;
+  --xentro-dark-background: #0D0F0F;
+  --xentro-dark-surface: #181B1A;
+  --xentro-dark-text-secondary: #B6B8B7;
+
+  --primary: #D9FF3F;
+  --primary-rgb: 217, 255, 63;
+  --bg: #0D0F0F;
+  --card: #181B1A;
+  --text-main: #FFFFFF;
+  --text-muted: #B6B8B7;
+  --border: #262A29;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text-main);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1, h2, h3, .font-heading {
+  font-family: 'Manrope', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.font-sora {
+  font-family: 'Sora', system-ui, -apple-system, sans-serif;
+}
+
+.font-manrope {
+  font-family: 'Manrope', system-ui, -apple-system, sans-serif;
+}
+
+.font-inter {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Custom modern sleek scrollbars */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D1D5DB;
+  border-radius: 9999px;
+  transition: background 0.2s ease;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #2A2F2E;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #9CA3AF;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #3B4240;
+}
+
+/* Hardware accelerated transitions */
+.gpu-accel {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* Smooth custom transitions */
+.transition-smooth {
+  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Micro-animations */
+@keyframes fadeInSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-fade-slide {
+  animation: fadeInSlideUp 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes popScale {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+
+.animate-pop {
+  animation: popScale 200ms cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+/* Subtle focus ring for accessibility */
+*:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+/* Recommendation Profile Card - Hover Scale & Colored Border (Zero Glow) */
+.recommendation-profile-card {
+  position: relative;
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+              border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform, box-shadow, border-color;
+}
+
+.recommendation-profile-card:hover {
+  transform: translateY(-2px) scale(1.012);
+  border-color: #D9FF3F !important;
+  box-shadow: 0 4px 14px -2px rgba(16, 18, 18, 0.06) !important;
+  z-index: 10;
+}
+
+.dark .recommendation-profile-card:hover {
+  transform: translateY(-2px) scale(1.012);
+  border-color: #D9FF3F !important;
+  box-shadow: 0 6px 18px -2px rgba(0, 0, 0, 0.4) !important;
+  z-index: 10;
+}
+
+/* Progress Bar & Indeterminate Animations */
+@keyframes progressBar {
+  0% {
+    width: 0%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(30%);
+  }
+  100% {
+    transform: translateX(110%);
+  }
+}
+
+.animate-progress {
+  animation: progressBar 1.8s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-indeterminate {
+  animation: indeterminate 1.5s ease-in-out infinite;
+}
+

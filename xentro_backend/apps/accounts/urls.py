@@ -1,0 +1,37 @@
+from django.urls import path
+from .views import (
+    SignUpView,
+    SignInView,
+    SendSignInOtpView,
+    VerifySignInOtpView,
+    SendOtpView,
+    VerifyOtpView,
+    CurrentUserView,
+    UpdateAccountTypeView,
+    ToggleFollowView,
+    UserFollowersView,
+    SubmitEspRequestView,
+    UserRecommendationsView,
+    UserProfileDetailView,
+    UpdateUserProfileView,
+)
+
+urlpatterns = [
+    path("auth/signup/", SignUpView.as_view(), name="signup"),
+    path("auth/signin/", SignInView.as_view(), name="signin"),
+    path("auth/signin/otp/send/", SendSignInOtpView.as_view(), name="signin_otp_send"),
+    path("auth/signin/otp/verify/", VerifySignInOtpView.as_view(), name="signin_otp_verify"),
+    path("auth/otp/send/", SendOtpView.as_view(), name="otp_send"),
+    path("auth/otp/verify/", VerifyOtpView.as_view(), name="otp_verify"),
+    path("auth/me/", CurrentUserView.as_view(), name="current_user"),
+    path("auth/profile/", UpdateUserProfileView.as_view(), name="update_user_profile"),
+    path("users/profile/", UpdateUserProfileView.as_view(), name="users_profile"),
+    path("auth/account-type/", UpdateAccountTypeView.as_view(), name="update_account_type"),
+    path("users/account-type/", UpdateAccountTypeView.as_view(), name="users_account_type"),
+    path("auth/esp-request/", SubmitEspRequestView.as_view(), name="esp_request"),
+    path("users/<str:user_id>/follow/", ToggleFollowView.as_view(), name="toggle_follow"),
+    path("users/<str:user_id>/followers/", UserFollowersView.as_view(), name="user_followers"),
+    path("users/recommendations/", UserRecommendationsView.as_view(), name="user_recommendations"),
+    path("users/<str:user_id>/profile/", UserProfileDetailView.as_view(), name="user_profile_detail"),
+    path("users/<str:user_id>/", UserProfileDetailView.as_view(), name="user_detail"),
+]
