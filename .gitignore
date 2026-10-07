@@ -34,6 +34,8 @@ ENV/
 env/
 .data/
 xentro_backend/.data/
+staticfiles/
+xentro_backend/staticfiles/
 
 # Archives & Temp files
 *.zip
