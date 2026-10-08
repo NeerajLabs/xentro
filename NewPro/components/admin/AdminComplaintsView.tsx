@@ -41,6 +41,13 @@ export interface AdminComplaint {
   status: 'COMPLAINT_RECEIVED' | 'UNDER_INVESTIGATION' | 'RESOLVED' | 'DISMISSED' | 'PENDING' | 'IN_REVIEW';
   adminNotes?: string;
   resolutionComment?: string;
+  adminReplies?: Array<{
+    id: string;
+    author: string;
+    authorName: string;
+    message: string;
+    createdAt: string;
+  }>;
   submittedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -67,6 +74,7 @@ export const AdminComplaintsView: React.FC = () => {
   const [editingStatus, setEditingStatus] = useState<'COMPLAINT_RECEIVED' | 'UNDER_INVESTIGATION' | 'RESOLVED' | 'DISMISSED'>('COMPLAINT_RECEIVED');
   const [adminNotes, setAdminNotes] = useState('');
   const [resolutionComment, setResolutionComment] = useState('');
+  const [adminReplyText, setAdminReplyText] = useState('');
   const [savingStatus, setSavingStatus] = useState(false);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
@@ -134,6 +142,7 @@ export const AdminComplaintsView: React.FC = () => {
     setEditingStatus(getCanonicalStatus(c.status));
     setAdminNotes(c.adminNotes || '');
     setResolutionComment(c.resolutionComment || '');
+    setAdminReplyText('');
   };
 
   const handleSaveStatus = async () => {
@@ -154,20 +163,31 @@ export const AdminComplaintsView: React.FC = () => {
           status: editingStatus,
           adminNotes: adminNotes.trim(),
           resolutionComment: resolutionComment.trim(),
+          adminReply: adminReplyText.trim(),
         })
       });
 
       const data = await resp.json();
       if (resp.ok && data?.success) {
-        showToast(`Complaint #${selectedComplaint.id} updated to ${getAdminStatusLabel(editingStatus)}.`);
+        const replySent = Boolean(adminReplyText.trim());
+        showToast(
+          replySent
+            ? `Complaint #${selectedComplaint.id} updated and reply delivered to user.`
+            : `Complaint #${selectedComplaint.id} updated to ${getAdminStatusLabel(editingStatus)}.`
+        );
         logAdminAudit(
           'COMPLAINT_STATUS_UPDATED',
           'SUPPORT_TICKET',
           selectedComplaint.id,
-          `Status changed from ${selectedComplaint.status} to ${editingStatus} by ${adminEmployeeId}.`
+          `Status changed from ${selectedComplaint.status} to ${editingStatus} by ${adminEmployeeId}.${replySent ? ' Admin reply sent.' : ''}`
         );
         setSelectedComplaint(null);
+        setAdminReplyText('');
         loadComplaints();
+        // Trigger notification update event in case active user is watching
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new Event('xentro-notifications-updated'));
+        }
       } else {
         showToast(data?.message || 'Failed to update complaint status.');
       }
@@ -572,10 +592,55 @@ export const AdminComplaintsView: React.FC = () => {
                   </p>
                 )}
 
+                {/* Existing Admin Replies History */}
+                {selectedComplaint.adminReplies && selectedComplaint.adminReplies.length > 0 && (
+                  <div className="space-y-2">
+                    <label className="block text-xs font-semibold text-[#101212] dark:text-white flex items-center gap-1.5">
+                      <MessageSquare className="w-3.5 h-3.5 text-emerald-800 dark:text-[#D9FF3F]" />
+                      <span>Official Admin Replies ({selectedComplaint.adminReplies.length})</span>
+                    </label>
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {selectedComplaint.adminReplies.map((r, idx) => (
+                        <div
+                          key={r.id || idx}
+                          className="p-3 rounded-xl bg-emerald-500/5 dark:bg-[#202422] border border-emerald-500/20 text-xs space-y-1"
+                        >
+                          <div className="flex items-center justify-between text-[10px] text-[#565B59] dark:text-[#A0A4A2]">
+                            <span className="font-semibold text-emerald-800 dark:text-[#D9FF3F]">{r.authorName || r.author || 'Admin Team'}</span>
+                            <span>{new Date(r.createdAt).toLocaleString()}</span>
+                          </div>
+                          <p className="text-[#101212] dark:text-white leading-relaxed">{r.message}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Send Official Reply */}
+                <div className="p-3 rounded-xl bg-gray-50 dark:bg-[#1D2120] border border-[#E5E7EB] dark:border-[#262A29] space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
+                      <Send className="w-3.5 h-3.5 text-emerald-800 dark:text-[#D9FF3F]" />
+                      <span>Send Official Reply to User</span>
+                    </label>
+                    <span className="text-[10px] text-emerald-800 dark:text-emerald-400 font-medium">Delivered to user & triggers notification</span>
+                  </div>
+                  <textarea
+                    rows={2}
+                    placeholder="Type official reply to the user... (e.g., We have verified your startup listing and resolved the issue.)"
+                    value={adminReplyText}
+                    onChange={(e) => setAdminReplyText(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white dark:bg-[#262A29] border border-[#E5E7EB] dark:border-[#323635] text-xs text-[#101212] dark:text-white placeholder-[#8E9290] focus:outline-hidden focus:border-[#D9FF3F] resize-none"
+                  />
+                  <p className="text-[10px] text-[#565B59] dark:text-[#A0A4A2]">
+                    This response will be visible in the user&apos;s ticket thread and will send an in-app notification to account <strong>#{selectedComplaint.accountId || selectedComplaint.userId}</strong>.
+                  </p>
+                </div>
+
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-xs font-semibold text-[#101212] dark:text-white">
-                      Resolution Comment (Visible to User)
+                      Resolution Summary (Visible to User upon completion)
                     </label>
                     <span className="text-[10px] text-emerald-800 dark:text-emerald-400 font-medium">User will see this comment</span>
                   </div>

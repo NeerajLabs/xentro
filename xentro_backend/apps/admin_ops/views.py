@@ -1022,11 +1022,13 @@ class AdminComplaintDetailView(APIView):
             return api_error("Complaint ticket not found.", status_code=404)
 
         admin_id = getattr(request.user, "admin_employee_id", "ADMIN")
+        admin_name = getattr(request.user, "name", None) or (admin_id if admin_id != "ADMIN" else "Xentro Support Team")
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         new_status = request.data.get("status")
         admin_notes = request.data.get("adminNotes")
         resolution_comment = request.data.get("resolutionComment")
+        admin_reply = request.data.get("adminReply") or request.data.get("replyMessage")
         priority = request.data.get("priority")
 
         updates = {
@@ -1034,6 +1036,7 @@ class AdminComplaintDetailView(APIView):
             "updatedBy": admin_id
         }
 
+        canonical = None
         if new_status:
             clean_status = str(new_status).strip().upper()
             status_map = {
@@ -1055,8 +1058,67 @@ class AdminComplaintDetailView(APIView):
             updates["adminNotes"] = str(admin_notes).strip()
         if resolution_comment is not None:
             updates["resolutionComment"] = str(resolution_comment).strip()
+        elif admin_reply and str(admin_reply).strip() and not ticket.get("resolutionComment"):
+            updates["resolutionComment"] = str(admin_reply).strip()
+
         if priority:
             updates["priority"] = str(priority).strip().upper()
+
+        reply_obj = None
+        if admin_reply and str(admin_reply).strip():
+            reply_obj = {
+                "id": f"rep_{int(datetime.datetime.now().timestamp())}_{os.urandom(3).hex()}",
+                "author": admin_id,
+                "authorName": admin_name,
+                "message": str(admin_reply).strip(),
+                "createdAt": now_iso
+            }
+
+        # Apply updates to database
+        update_op = {"$set": updates}
+        if reply_obj:
+            update_op["$push"] = {"adminReplies": reply_obj}
+
+        tickets_col.update_one({"id": ticket_id}, update_op)
+
+        # Notify the ticket submitter in MongoDB notifications collection
+        target_user_id = ticket.get("accountId") or ticket.get("userId")
+        if target_user_id:
+            try:
+                notif_col = get_collection("notifications")
+                notif_desc = ""
+                if reply_obj:
+                    notif_desc = f"Admin replied: {reply_obj['message'][:120]}"
+                elif resolution_comment and str(resolution_comment).strip():
+                    notif_desc = f"Resolution: {str(resolution_comment).strip()[:120]}"
+                elif canonical:
+                    user_status_label = "Resolved" if canonical in ["RESOLVED", "DISMISSED"] else ("Under investigation" if canonical == "UNDER_INVESTIGATION" else "Complaint sent")
+                    notif_desc = f"Ticket status changed to: {user_status_label}"
+
+                if notif_desc:
+                    notif_id = f"notif_cmp_{ticket_id}_{int(datetime.datetime.now().timestamp())}"
+                    notif_doc = {
+                        "id": notif_id,
+                        "userId": target_user_id,
+                        "category": "system",
+                        "title": f"Support Ticket #{ticket_id} Update",
+                        "description": notif_desc,
+                        "time": "Just now",
+                        "unread": True,
+                        "read": False,
+                        "isRead": False,
+                        "avatar": "/xentro-logo.png",
+                        "actorName": admin_name,
+                        "actorRole": "Support Specialist",
+                        "actionType": "general",
+                        "targetTab": "support",
+                        "ticketId": ticket_id,
+                        "createdAt": now_iso
+                    }
+                    notif_col.insert_one(notif_doc)
+            except Exception as n_err:
+                # Notification insertion should not fail the ticket update
+                print(f"[Warning] Failed to insert support notification: {n_err}")
 
         log_audit_event(
             admin_id=admin_id,
@@ -1064,14 +1126,13 @@ class AdminComplaintDetailView(APIView):
             object_type="SUPPORT_TICKET",
             object_id=ticket_id,
             previous_state={"status": ticket.get("status"), "adminNotes": ticket.get("adminNotes")},
-            reason=f"Status changed to {updates.get('status', ticket.get('status'))} by {admin_id}"
+            reason=f"Status changed to {updates.get('status', ticket.get('status'))} by {admin_id}" + (f" with reply: '{reply_obj['message'][:40]}'" if reply_obj else "")
         )
 
-        tickets_col.update_one({"id": ticket_id}, {"$set": updates})
         updated = tickets_col.find_one({"id": ticket_id})
         updated.pop("_id", None)
 
-        return api_success({"complaint": updated}, "Complaint status updated successfully.")
+        return api_success({"complaint": updated}, "Complaint status updated and user notified successfully.")
 
     def put(self, request, ticket_id):
         return self.patch(request, ticket_id)

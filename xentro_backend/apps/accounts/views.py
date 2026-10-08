@@ -1701,6 +1701,7 @@ def format_user_ticket(t: dict) -> dict:
         ticket["userFacingStatus"] = "Complaint sent"
         ticket["stage"] = 1
 
+    ticket["adminReplies"] = ticket.get("adminReplies", [])
     return ticket
 
 

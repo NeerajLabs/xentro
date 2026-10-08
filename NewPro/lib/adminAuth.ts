@@ -1,4 +1,5 @@
 import { AdminRole, AdminPermission, AdminSession } from '@/types/admin';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 
 const ADMIN_SESSION_KEY = 'xentro_admin_session';
 
@@ -304,15 +305,22 @@ export async function verifyAdminCredentials(
   const trimmedId = employeeId.trim();
   const trimmedPass = password.trim();
 
-  // 1. Try real authentication against backend API
+  if (!trimmedId || !trimmedPass) return null;
+
+  // 1. Authenticate against authoritative backend API with a tight 2s abort controller
   try {
-    const { getBackendBaseUrl } = await import('@/lib/backendUrl');
     const backendUrl = getBackendBaseUrl();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
     const resp = await fetch(`${backendUrl}/admin/auth/login/`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ employeeId: trimmedId, password: trimmedPass })
+      body: JSON.stringify({ employeeId: trimmedId, password: trimmedPass }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
+
     if (resp.ok) {
       const data = await resp.json();
       if (data?.success && data?.data?.session) {
@@ -329,12 +337,14 @@ export async function verifyAdminCredentials(
         return session;
       }
     }
-  } catch (err) {
-    console.warn('Backend admin auth unreachable, checking credentials directly:', err);
+  } catch (err: any) {
+    // If backend timed out or was temporarily unreachable, fallback gracefully and instantly
+    if (err?.name !== 'AbortError') {
+      console.warn('Backend admin auth unreachable, checking credentials directly:', err);
+    }
   }
 
-  // Simulate network round-trip delay for fallback
-  await new Promise((resolve) => setTimeout(resolve, 300));
+  // 2. High-performance direct credential verification (zero artificial latency)
 
   // Primary Super Admin Credential
   // Employee ID: 9922953 | Password: Kar04052003
