@@ -131,7 +131,16 @@ class SignUpView(APIView):
 
         users_col = get_collection("users")
         if users_col.find_one({"email": email}):
-            return api_error("An account with this email already exists.")
+            return api_error("An account with this email already exists. Please sign in instead.", status_code=409)
+
+        # Require and verify 6-digit email OTP
+        otp = data.get("otp") or data.get("code") or data.get("otpCode", "")
+        if not otp:
+            return api_error("A 6-digit verification code is required to complete signup.", status_code=400)
+
+        otp_verification = verify_email_otp(email, str(otp).strip())
+        if not otp_verification.get("success"):
+            return api_error(otp_verification.get("message", "Invalid or expired verification code."), status_code=400)
 
         # Hash password
         salt = bcrypt.gensalt(12)
@@ -232,7 +241,7 @@ class SignUpView(APIView):
             "phoneNumber": phone_number,
             "fullName": full_name,
             "passwordHash": password_hash,
-            "emailVerified": False,
+            "emailVerified": True,
             "phoneVerified": False,
             "identityStatus": "NOT_SUBMITTED",
             "accountStatus": account_status,
@@ -257,19 +266,31 @@ class SignUpView(APIView):
         }
         users_col.insert_one(user_doc)
 
-        # Dispatch 6-digit Email OTP via Zoho
-        otp_res = send_email_otp(email)
-
         user_clean = enrich_user_account_data(user_doc)
+        access_token = create_access_token({
+            "sub": user_doc["id"],
+            "email": user_doc["email"],
+            "name": user_doc.get("fullName", ""),
+            "account_type": user_clean.get("accountType", "Explorer"),
+            "active_roles": user_clean.get("activeRoles", ["Explorer"]),
+            "is_staff": user_doc.get("is_staff", False)
+        })
+        refresh_token = create_refresh_token(user_doc["id"])
+
         response_data = {
             "user": user_clean,
             "accountStatus": account_status,
             "accountType": account_type,
             "requiresApproval": is_esp,
-            "otpStatus": otp_res
+            "tokens": {
+                "accessToken": access_token,
+                "refreshToken": refresh_token
+            }
         }
-        msg = "Registration request submitted for institution review." if is_esp else f"Account created successfully. Verification OTP dispatched to {email}."
-        return api_success(response_data, msg)
+        msg = "Registration request submitted for institution review." if is_esp else "Account created and verified successfully."
+        resp = api_success(response_data, msg)
+        resp.set_cookie("xentro_session", access_token, max_age=86400, httponly=True, samesite="Lax")
+        return resp
 
 
 class SignInView(APIView):
@@ -410,10 +431,38 @@ class SendOtpView(APIView):
 
     def post(self, request):
         email = request.data.get("email", "").strip().lower()
+        purpose = request.data.get("purpose", "").strip().lower()
         if not email:
             return api_error("Email address is required.")
+
+        if purpose == "signup":
+            users_col = get_collection("users")
+            if users_col.find_one({"email": email}):
+                return api_error("An account with this email already exists. Please sign in instead.", status_code=409)
+
         res = send_email_otp(email)
-        return api_success(res, res.get("message"))
+        if res.get("success"):
+            return api_success(res, res.get("message"))
+        return api_error(res.get("message", "Failed to dispatch verification code."), status_code=400)
+
+
+class SendSignUpOtpView(APIView):
+    """Specifically dispatches a 6-digit OTP for new user signup after verifying email uniqueness."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get("email", "").strip().lower()
+        if not email:
+            return api_error("Email address is required.")
+
+        users_col = get_collection("users")
+        if users_col.find_one({"email": email}):
+            return api_error("An account with this email already exists. Please sign in instead.", status_code=409)
+
+        res = send_email_otp(email)
+        if res.get("success"):
+            return api_success(res, res.get("message"))
+        return api_error(res.get("message", "Failed to dispatch verification code."), status_code=400)
 
 
 class VerifyOtpView(APIView):

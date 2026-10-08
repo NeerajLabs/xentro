@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
-import { Loader2, ArrowRight } from "lucide-react";
+import { Loader2, ArrowRight, Mail, KeyRound, RefreshCw, CheckCircle2, ShieldCheck, ArrowLeft } from "lucide-react";
 import { AuthInput } from "./AuthInput";
 import { PasswordInput } from "./PasswordInput";
 import { GoogleAuthButton } from "./GoogleAuthButton";
@@ -18,6 +18,12 @@ import { getBackendBaseUrl } from "@/lib/backendUrl";
 import { getNewProUrl } from "@/lib/auth/xentroHandoff";
 
 export const SignupForm: React.FC = () => {
+  // Step state: "form" for initial details, "otp" for email code verification
+  const [step, setStep] = useState<"form" | "otp">("form");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpCountdown, setOtpCountdown] = useState(0);
+  const [otpInfoMessage, setOtpInfoMessage] = useState<string | null>(null);
+
   // Form values
   const [formData, setFormData] = useState<SignUpFormData>({
     fullName: "",
@@ -52,6 +58,14 @@ export const SignupForm: React.FC = () => {
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [isPendingApproval, setIsPendingApproval] = useState(false);
+
+  useEffect(() => {
+    let timer: any = null;
+    if (otpCountdown > 0) {
+      timer = setTimeout(() => setOtpCountdown(otpCountdown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [otpCountdown]);
 
   // Terms & Privacy modal state
   const [modalState, setModalState] = useState<{
@@ -91,9 +105,11 @@ export const SignupForm: React.FC = () => {
     }
   };
 
+  // Step 1: Validate form details and dispatch 6-digit OTP to user's email
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setGeneralError(null);
+    setOtpInfoMessage(null);
 
     // Mark all fields touched
     setTouched({
@@ -116,59 +132,135 @@ export const SignupForm: React.FC = () => {
 
     setIsSubmitting(true);
     try {
-      // 1. Submit to Django backend signup pipeline
-      let backendSuccess = false;
-      try {
-        const backendUrl = getBackendBaseUrl();
-        const resp = await fetch(`${backendUrl}/auth/signup/`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            fullName: formData.fullName,
-            email: formData.email,
-            phoneNumber: formData.phoneNumber,
-            password: formData.password,
-            role: "Explorer",
-            accountType: "Explorer",
-            userType: "Explorer",
-          })
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/auth/signup/otp/send/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
+      });
+      const data = await resp.json();
+
+      if (resp.status === 409) {
+        setGeneralError({
+          message: "An account with this email already exists. Please sign in instead.",
+          type: "EMAIL_EXISTS",
         });
-        const data = await resp.json();
-        if (resp.ok && data?.success) {
-          // Synchronize local fallback authService with real backend user ID & username
-          await authService.signUpWithEmail(formData, data?.data?.user);
-          if (data.data?.requiresApproval) {
-            setIsPendingApproval(true);
-          } else {
-            setIsSuccess(true);
-          }
-          return;
-        } else if (data?.message) {
-          setGeneralError({
-            message: data.message,
-            type: "SERVER_ERROR",
-          });
-          setIsSubmitting(false);
-          return;
-        }
-      } catch (backendFetchErr) {
-        console.warn("Backend signup request failed, falling back to local auth simulation:", backendFetchErr);
+        setIsSubmitting(false);
+        return;
       }
 
-      // 2. Local fallback registration
-      const result = await authService.signUpWithEmail(formData);
-      if (result.success) {
-        setIsSuccess(true);
-      } else if (result.error) {
+      if (resp.ok && data?.success) {
+        setStep("otp");
+        setOtpCode("");
+        setOtpCountdown(60);
+        setOtpInfoMessage(`A 6-digit verification code has been dispatched to ${formData.email.trim().toLowerCase()}.`);
+      } else {
         setGeneralError({
-          message: result.error.message,
-          type: result.error.type,
+          message: data?.message || "Failed to dispatch verification code. Please check your email and try again.",
+          type: "SERVER_ERROR",
         });
       }
     } catch {
       setGeneralError({
-        message: "Something went wrong during signup. Please try again.",
-        type: "UNKNOWN",
+        message: "Unable to connect to verification server. Please verify your internet connection and try again.",
+        type: "SERVER_ERROR",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Resend OTP code
+  const handleResendOtp = async () => {
+    if (otpCountdown > 0 || isSubmitting) return;
+    setIsSubmitting(true);
+    setGeneralError(null);
+    setOtpInfoMessage(null);
+
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/auth/signup/otp/send/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
+      });
+      const data = await resp.json();
+
+      if (resp.ok && data?.success) {
+        setOtpCountdown(60);
+        setOtpCode("");
+        setOtpInfoMessage(`A fresh verification code was sent to ${formData.email.trim().toLowerCase()}.`);
+      } else {
+        setGeneralError({
+          message: data?.message || "Failed to resend verification code. Please try again in a moment.",
+          type: "SERVER_ERROR",
+        });
+      }
+    } catch {
+      setGeneralError({
+        message: "Unable to reach verification service. Please try again.",
+        type: "SERVER_ERROR",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Step 2: Verify entered 6-digit OTP and complete user account registration
+  const handleVerifyAndSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!otpCode || otpCode.trim().length !== 6) {
+      setGeneralError({
+        message: "Please enter the complete 6-digit verification code.",
+        type: "SERVER_ERROR",
+      });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setGeneralError(null);
+
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/auth/signup/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: formData.fullName.trim(),
+          email: formData.email.trim().toLowerCase(),
+          phoneNumber: formData.phoneNumber.trim(),
+          password: formData.password,
+          otp: otpCode.trim(),
+          role: "Explorer",
+          accountType: "Explorer",
+          userType: "Explorer",
+        }),
+      });
+      const data = await resp.json();
+
+      if (resp.ok && data?.success) {
+        if (data.data?.tokens?.accessToken) {
+          localStorage.setItem("xentro_access_token", data.data.tokens.accessToken);
+          document.cookie = `xentro_session=${data.data.tokens.accessToken}; path=/; max-age=86400; SameSite=Lax`;
+        }
+
+        await authService.signUpWithEmail(formData, data?.data?.user);
+
+        if (data.data?.requiresApproval) {
+          setIsPendingApproval(true);
+        } else {
+          setIsSuccess(true);
+        }
+      } else {
+        setGeneralError({
+          message: data?.message || "Invalid or expired verification code. Please request a new code.",
+          type: "SERVER_ERROR",
+        });
+      }
+    } catch {
+      setGeneralError({
+        message: "Unable to complete account registration. Please try again.",
+        type: "SERVER_ERROR",
       });
     } finally {
       setIsSubmitting(false);
@@ -213,7 +305,7 @@ export const SignupForm: React.FC = () => {
   }
 
   if (isSuccess) {
-    return <SuccessState userName={formData.fullName} redirectTo="/onboarding/verify" />;
+    return <SuccessState userName={formData.fullName} redirectTo="/onboarding" />;
   }
 
   return (
@@ -221,10 +313,12 @@ export const SignupForm: React.FC = () => {
       {/* Form Title & Subtitle */}
       <div className="mb-6 text-left">
         <h1 className="font-manrope font-bold text-2xl sm:text-3xl lg:text-[34px] tracking-tight text-[#101212] dark:text-white leading-[1.2] mb-2">
-          Create your Xentro account
+          {step === "otp" ? "Verify your email" : "Create your Xentro account"}
         </h1>
         <p className="font-inter text-sm sm:text-base text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
-          Start by creating your personal account.
+          {step === "otp"
+            ? "Enter the 6-digit security code sent to activate your personal account."
+            : "Start by creating your personal account."}
         </p>
       </div>
 
@@ -239,205 +333,303 @@ export const SignupForm: React.FC = () => {
         </div>
       )}
 
-      {/* Main Signup Form */}
-      <form onSubmit={handleSubmit} noValidate className="space-y-4">
-        {/* Full Name */}
-        <AuthInput
-          id="fullName"
-          name="fullName"
-          type="text"
-          label="Full Name"
-          placeholder="Enter your full name"
-          autoComplete="name"
-          value={formData.fullName}
-          onChange={(e) => handleChange("fullName", e.target.value)}
-          onBlur={() => handleBlur("fullName")}
-          error={errors.fullName}
-          touched={touched.fullName}
-          required
-        />
+      {step === "otp" ? (
+        /* STEP 2: Email OTP Verification Form */
+        <form onSubmit={handleVerifyAndSignup} className="space-y-5">
+          <div className="p-3.5 rounded-xl bg-[#121413] border border-[#D9FF3F]/30 text-xs text-[#E0E2E1] flex items-start gap-3">
+            <div className="p-1 rounded-md bg-[#D9FF3F]/10 text-[#D9FF3F] shrink-0 mt-0.5">
+              <Mail className="w-4 h-4" />
+            </div>
+            <div className="leading-relaxed flex-1">
+              <div className="font-semibold text-white mb-0.5">Verification Code Dispatched</div>
+              A 6-digit verification code was sent to{" "}
+              <strong className="font-mono text-[#D9FF3F] font-semibold">{formData.email}</strong>. Valid for 10 minutes.
+            </div>
+          </div>
 
-        {/* Personal Email */}
-        <AuthInput
-          id="email"
-          name="email"
-          type="email"
-          label="Personal Email"
-          placeholder="Enter your personal email"
-          autoComplete="email"
-          value={formData.email}
-          onChange={(e) => handleChange("email", e.target.value)}
-          onBlur={() => handleBlur("email")}
-          error={errors.email}
-          touched={touched.email}
-          required
-        />
-
-        {/* Phone Number */}
-        <AuthInput
-          id="phoneNumber"
-          name="phoneNumber"
-          type="tel"
-          label="Phone Number"
-          placeholder="+91 98765 43210"
-          autoComplete="tel"
-          value={formData.phoneNumber}
-          onChange={(e) => handleChange("phoneNumber", e.target.value)}
-          onBlur={() => handleBlur("phoneNumber")}
-          error={errors.phoneNumber}
-          touched={touched.phoneNumber}
-          required
-        />
-
-        {/* Password */}
-        <PasswordInput
-          id="password"
-          name="password"
-          label="Password"
-          placeholder="Create a password (min. 8 characters)"
-          autoComplete="new-password"
-          value={formData.password}
-          onChange={(e) => handleChange("password", e.target.value)}
-          onBlur={() => handleBlur("password")}
-          error={errors.password}
-          touched={touched.password}
-          showStrengthMeter={true}
-          required
-        />
-
-        {/* Confirm Password */}
-        <PasswordInput
-          id="confirmPassword"
-          name="confirmPassword"
-          label="Confirm Password"
-          placeholder="Confirm your password"
-          autoComplete="new-password"
-          value={formData.confirmPassword}
-          onChange={(e) => handleChange("confirmPassword", e.target.value)}
-          onBlur={() => handleBlur("confirmPassword")}
-          error={errors.confirmPassword}
-          touched={touched.confirmPassword}
-          showStrengthMeter={false}
-          required
-        />
-
-        {/* Legal & Consent Checkboxes */}
-        <div className="pt-2 space-y-2.5">
-          {/* Checkbox 1: Terms of Service */}
           <div>
-            <label className="relative flex items-start gap-3 cursor-pointer select-none group">
-              <input
-                type="checkbox"
-                id="agreedToTerms"
-                name="agreedToTerms"
-                checked={formData.agreedToTerms}
-                onChange={(e) => handleChange("agreedToTerms", e.target.checked)}
-                onBlur={() => handleBlur("agreedToTerms")}
-                className="mt-0.5 w-4 h-4 rounded border-[#E3E5E3] dark:border-[#262928] text-[#101212] focus:ring-[#D9FF3F] accent-[#D9FF3F] cursor-pointer"
-              />
-              <span className="text-xs font-inter text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
-                I agree to the{" "}
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="text-xs font-medium text-[#101212] dark:text-white flex items-center gap-1.5">
+                <KeyRound className="w-3.5 h-3.5 text-[#D9FF3F]" />
+                <span>6-Digit Security Code *</span>
+              </label>
+              <span className="text-[10px] font-mono text-[#8E9290]">Valid for 10m</span>
+            </div>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              autoComplete="one-time-code"
+              maxLength={6}
+              placeholder="&bull; &bull; &bull; &bull; &bull; &bull;"
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+              className="w-full text-center tracking-[0.6em] font-mono font-bold text-2xl py-3.5 rounded-xl border border-[#CDD1CE] dark:border-[#262928] bg-white dark:bg-[#101212] text-[#101212] dark:text-[#D9FF3F] focus:outline-hidden focus:border-[#D9FF3F] focus:ring-1 focus:ring-[#D9FF3F]/30 transition-all placeholder:text-[#565B59] placeholder:tracking-widest"
+              required
+              autoFocus
+            />
+          </div>
+
+          <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setStep("form");
+                setGeneralError(null);
+              }}
+              className="text-[#8E9290] hover:text-[#101212] dark:hover:text-white underline cursor-pointer flex items-center gap-1"
+            >
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Back / Change Email</span>
+            </button>
+            <div>
+              {otpCountdown > 0 ? (
+                <span className="text-[11px] font-mono text-[#8E9290] flex items-center gap-1.5">
+                  <RefreshCw className="w-3 h-3 text-[#D9FF3F] animate-spin" />
+                  Resend in {otpCountdown}s
+                </span>
+              ) : (
                 <button
                   type="button"
-                  onClick={() => setModalState({ isOpen: true, type: "terms" })}
-                  className="font-medium text-[#101212] dark:text-white underline underline-offset-2 hover:text-[#565B59] dark:hover:text-[#D9FF3F] transition-colors"
+                  disabled={isSubmitting}
+                  onClick={handleResendOtp}
+                  className="text-xs font-semibold text-[#D9FF3F] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
                 >
-                  Terms of Service
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Resend Code</span>
                 </button>
-                .
-              </span>
-            </label>
-            {touched.agreedToTerms && errors.agreedToTerms && (
-              <p role="alert" className="text-xs text-[#DC2626] dark:text-[#F87171] mt-1 font-inter animate-in fade-in">
-                {errors.agreedToTerms}
-              </p>
-            )}
+              )}
+            </div>
           </div>
 
-          {/* Checkbox 2: Privacy Policy */}
-          <div>
-            <label className="relative flex items-start gap-3 cursor-pointer select-none group">
-              <input
-                type="checkbox"
-                id="agreedToPrivacy"
-                name="agreedToPrivacy"
-                checked={formData.agreedToPrivacy}
-                onChange={(e) => handleChange("agreedToPrivacy", e.target.checked)}
-                onBlur={() => handleBlur("agreedToPrivacy")}
-                className="mt-0.5 w-4 h-4 rounded border-[#E3E5E3] dark:border-[#262928] text-[#101212] focus:ring-[#D9FF3F] accent-[#D9FF3F] cursor-pointer"
-              />
-              <span className="text-xs font-inter text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
-                I agree to the{" "}
-                <button
-                  type="button"
-                  onClick={() => setModalState({ isOpen: true, type: "privacy" })}
-                  className="font-medium text-[#101212] dark:text-white underline underline-offset-2 hover:text-[#565B59] dark:hover:text-[#D9FF3F] transition-colors"
-                >
-                  Privacy Policy
-                </button>
-                .
-              </span>
-            </label>
-            {touched.agreedToPrivacy && errors.agreedToPrivacy && (
-              <p role="alert" className="text-xs text-[#DC2626] dark:text-[#F87171] mt-1 font-inter animate-in fade-in">
-                {errors.agreedToPrivacy}
-              </p>
+          <button
+            type="submit"
+            disabled={isSubmitting || otpCode.length < 6}
+            className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-inter font-semibold text-sm transition-all duration-150 select-none bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-sm font-bold"
+          >
+            {isSubmitting ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-[#101212]" />
+                <span>Verifying & Creating Account...</span>
+              </>
+            ) : (
+              <>
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Verify & Complete Registration</span>
+              </>
             )}
+          </button>
+
+          <div className="text-center pt-1">
+            <span className="text-[10px] text-[#6E7370] dark:text-[#8E9290] flex items-center justify-center gap-1">
+              <ShieldCheck className="w-3 h-3 text-[#D9FF3F]" />
+              Zero-Knowledge Verification &bull; Never share this code
+            </span>
           </div>
+        </form>
+      ) : (
+        /* STEP 1: Main Signup Form */
+        <>
+          <form onSubmit={handleSubmit} noValidate className="space-y-4">
+            {/* Full Name */}
+            <AuthInput
+              id="fullName"
+              name="fullName"
+              type="text"
+              label="Full Name"
+              placeholder="Enter your full name"
+              autoComplete="name"
+              value={formData.fullName}
+              onChange={(e) => handleChange("fullName", e.target.value)}
+              onBlur={() => handleBlur("fullName")}
+              error={errors.fullName}
+              touched={touched.fullName}
+              required
+            />
 
-          {/* Checkbox 3: Identity Verification Consent */}
-          <div>
-            <label className="relative flex items-start gap-3 cursor-pointer select-none group">
-              <input
-                type="checkbox"
-                id="consentIdentityVerification"
-                name="consentIdentityVerification"
-                checked={formData.consentIdentityVerification}
-                onChange={(e) => handleChange("consentIdentityVerification", e.target.checked)}
-                onBlur={() => handleBlur("consentIdentityVerification")}
-                className="mt-0.5 w-4 h-4 rounded border-[#E3E5E3] dark:border-[#262928] text-[#101212] focus:ring-[#D9FF3F] accent-[#D9FF3F] cursor-pointer"
-              />
-              <span className="text-xs font-inter text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
-                I consent to Xentro&apos;s identity verification process.
-              </span>
-            </label>
-            {touched.consentIdentityVerification && errors.consentIdentityVerification && (
-              <p role="alert" className="text-xs text-[#DC2626] dark:text-[#F87171] mt-1 font-inter animate-in fade-in">
-                {errors.consentIdentityVerification}
-              </p>
-            )}
-          </div>
-        </div>
+            {/* Personal Email */}
+            <AuthInput
+              id="email"
+              name="email"
+              type="email"
+              label="Personal Email"
+              placeholder="Enter your personal email"
+              autoComplete="email"
+              value={formData.email}
+              onChange={(e) => handleChange("email", e.target.value)}
+              onBlur={() => handleBlur("email")}
+              error={errors.email}
+              touched={touched.email}
+              required
+            />
 
-        {/* Primary CTA: Create Account */}
-        <button
-          type="submit"
-          disabled={isSubmitting || isGoogleLoading}
-          className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-inter font-semibold text-sm transition-all duration-150 select-none bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] active:bg-[#9EBE12] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#101212] shadow-sm hover:shadow"
-        >
-          {isSubmitting ? (
-            <>
-              <Loader2 className="w-4 h-4 animate-spin text-[#101212]" />
-              <span>Creating account...</span>
-            </>
-          ) : (
-            <>
-              <span>Create Account</span>
-              <ArrowRight className="w-4 h-4 stroke-[2.5]" />
-            </>
-          )}
-        </button>
-      </form>
+            {/* Phone Number */}
+            <AuthInput
+              id="phoneNumber"
+              name="phoneNumber"
+              type="tel"
+              label="Phone Number"
+              placeholder="+91 98765 43210"
+              autoComplete="tel"
+              value={formData.phoneNumber || ""}
+              onChange={(e) => handleChange("phoneNumber", e.target.value)}
+              onBlur={() => handleBlur("phoneNumber")}
+              error={errors.phoneNumber}
+              touched={touched.phoneNumber}
+              required
+            />
 
-      {/* Divider */}
-      <AuthDivider label="OR" />
+            {/* Password */}
+            <PasswordInput
+              id="password"
+              name="password"
+              label="Password"
+              placeholder="Create a password (min. 8 characters)"
+              autoComplete="new-password"
+              value={formData.password}
+              onChange={(e) => handleChange("password", e.target.value)}
+              onBlur={() => handleBlur("password")}
+              error={errors.password}
+              touched={touched.password}
+              showStrengthMeter={true}
+              required
+            />
 
-      {/* Google Authentication */}
-      <GoogleAuthButton
-        onClick={handleGoogleSignIn}
-        isLoading={isGoogleLoading}
-        disabled={isSubmitting}
-      />
+            {/* Confirm Password */}
+            <PasswordInput
+              id="confirmPassword"
+              name="confirmPassword"
+              label="Confirm Password"
+              placeholder="Confirm your password"
+              autoComplete="new-password"
+              value={formData.confirmPassword}
+              onChange={(e) => handleChange("confirmPassword", e.target.value)}
+              onBlur={() => handleBlur("confirmPassword")}
+              error={errors.confirmPassword}
+              touched={touched.confirmPassword}
+              showStrengthMeter={false}
+              required
+            />
+
+            {/* Legal & Consent Checkboxes */}
+            <div className="pt-2 space-y-2.5">
+              {/* Checkbox 1: Terms of Service */}
+              <div>
+                <label className="relative flex items-start gap-3 cursor-pointer select-none group">
+                  <input
+                    type="checkbox"
+                    id="agreedToTerms"
+                    name="agreedToTerms"
+                    checked={formData.agreedToTerms}
+                    onChange={(e) => handleChange("agreedToTerms", e.target.checked)}
+                    onBlur={() => handleBlur("agreedToTerms")}
+                    className="mt-0.5 w-4 h-4 rounded border-[#E3E5E3] dark:border-[#262928] text-[#101212] focus:ring-[#D9FF3F] accent-[#D9FF3F] cursor-pointer"
+                  />
+                  <span className="text-xs font-inter text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
+                    I agree to the{" "}
+                    <button
+                      type="button"
+                      onClick={() => setModalState({ isOpen: true, type: "terms" })}
+                      className="font-medium text-[#101212] dark:text-white underline underline-offset-2 hover:text-[#565B59] dark:hover:text-[#D9FF3F] transition-colors"
+                    >
+                      Terms of Service
+                    </button>
+                    .
+                  </span>
+                </label>
+                {touched.agreedToTerms && errors.agreedToTerms && (
+                  <p role="alert" className="text-xs text-[#DC2626] dark:text-[#F87171] mt-1 font-inter animate-in fade-in">
+                    {errors.agreedToTerms}
+                  </p>
+                )}
+              </div>
+
+              {/* Checkbox 2: Privacy Policy */}
+              <div>
+                <label className="relative flex items-start gap-3 cursor-pointer select-none group">
+                  <input
+                    type="checkbox"
+                    id="agreedToPrivacy"
+                    name="agreedToPrivacy"
+                    checked={formData.agreedToPrivacy}
+                    onChange={(e) => handleChange("agreedToPrivacy", e.target.checked)}
+                    onBlur={() => handleBlur("agreedToPrivacy")}
+                    className="mt-0.5 w-4 h-4 rounded border-[#E3E5E3] dark:border-[#262928] text-[#101212] focus:ring-[#D9FF3F] accent-[#D9FF3F] cursor-pointer"
+                  />
+                  <span className="text-xs font-inter text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
+                    I agree to the{" "}
+                    <button
+                      type="button"
+                      onClick={() => setModalState({ isOpen: true, type: "privacy" })}
+                      className="font-medium text-[#101212] dark:text-white underline underline-offset-2 hover:text-[#565B59] dark:hover:text-[#D9FF3F] transition-colors"
+                    >
+                      Privacy Policy
+                    </button>
+                    .
+                  </span>
+                </label>
+                {touched.agreedToPrivacy && errors.agreedToPrivacy && (
+                  <p role="alert" className="text-xs text-[#DC2626] dark:text-[#F87171] mt-1 font-inter animate-in fade-in">
+                    {errors.agreedToPrivacy}
+                  </p>
+                )}
+              </div>
+
+              {/* Checkbox 3: Identity Verification Consent */}
+              <div>
+                <label className="relative flex items-start gap-3 cursor-pointer select-none group">
+                  <input
+                    type="checkbox"
+                    id="consentIdentityVerification"
+                    name="consentIdentityVerification"
+                    checked={formData.consentIdentityVerification}
+                    onChange={(e) => handleChange("consentIdentityVerification", e.target.checked)}
+                    onBlur={() => handleBlur("consentIdentityVerification")}
+                    className="mt-0.5 w-4 h-4 rounded border-[#E3E5E3] dark:border-[#262928] text-[#101212] focus:ring-[#D9FF3F] accent-[#D9FF3F] cursor-pointer"
+                  />
+                  <span className="text-xs font-inter text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
+                    I consent to Xentro&apos;s identity verification process.
+                  </span>
+                </label>
+                {touched.consentIdentityVerification && errors.consentIdentityVerification && (
+                  <p role="alert" className="text-xs text-[#DC2626] dark:text-[#F87171] mt-1 font-inter animate-in fade-in">
+                    {errors.consentIdentityVerification}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Primary CTA: Create Account */}
+            <button
+              type="submit"
+              disabled={isSubmitting || isGoogleLoading}
+              className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-inter font-semibold text-sm transition-all duration-150 select-none bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] active:bg-[#9EBE12] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#101212] shadow-sm hover:shadow cursor-pointer font-bold"
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-[#101212]" />
+                  <span>Dispatching verification code...</span>
+                </>
+              ) : (
+                <>
+                  <span>Create Account</span>
+                  <ArrowRight className="w-4 h-4 stroke-[2.5]" />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Divider */}
+          <AuthDivider label="OR" />
+
+          {/* Google Authentication */}
+          <GoogleAuthButton
+            onClick={handleGoogleSignIn}
+            isLoading={isGoogleLoading}
+            disabled={isSubmitting}
+          />
+        </>
+      )}
 
       {/* Already have an account */}
       <div className="mt-8 text-center">

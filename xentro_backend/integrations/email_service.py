@@ -89,10 +89,10 @@ The XENTRO Security Team
             "message": f"Verification code sent to {email}."
         }
     except Exception as e:
-        logger.warning(f"Email delivery via SMTP encountered issue: {e}")
+        logger.error(f"Email delivery via SMTP encountered issue: {e}")
         return {
-            "success": True,
-            "message": f"Verification code sent to {email}."
+            "success": False,
+            "message": "Failed to dispatch verification email. Please verify your email address and try again."
         }
 
 def verify_email_otp(email: str, entered_otp: str) -> dict:
@@ -128,10 +128,8 @@ def verify_email_otp(email: str, entered_otp: str) -> dict:
 
             stored_code = str(record.get("code", "")).strip()
             if stored_code == entered_clean:
-                otp_col.update_one(
-                    {"email": email.lower()},
-                    {"$set": {"verified": True, "verifiedAt": datetime.datetime.now(datetime.timezone.utc).isoformat()}}
-                )
+                # Immediately purge consumed OTP to prevent replay attacks
+                otp_col.delete_one({"email": email.lower()})
                 # Also clean up Redis
                 try:
                     redis_client = get_redis_client()
