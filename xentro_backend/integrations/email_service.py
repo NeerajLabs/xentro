@@ -26,11 +26,17 @@ def _send_via_https_dispatcher(to_email: str, subject: str, body: str) -> bool:
     Bypasses cloud provider SMTP firewall restrictions (e.g. Render Free Tier
     which blocks outbound ports 25, 465, and 587).
     """
-    dispatch_urls = [
-        os.getenv("VERCEL_EMAIL_DISPATCH_URL", "https://xentro-five.vercel.app/api/email/dispatch"),
-        "https://xentro.vercel.app/api/email/dispatch",
-        "http://127.0.0.1:3000/api/email/dispatch",
-    ]
+    if getattr(settings, "DEBUG", False):
+        dispatch_urls = [
+            "http://127.0.0.1:3000/api/email/dispatch",
+            os.getenv("VERCEL_EMAIL_DISPATCH_URL", "https://xentro-five.vercel.app/api/email/dispatch"),
+        ]
+    else:
+        dispatch_urls = [
+            os.getenv("VERCEL_EMAIL_DISPATCH_URL", "https://xentro-five.vercel.app/api/email/dispatch"),
+            "https://xentro.vercel.app/api/email/dispatch",
+            "http://127.0.0.1:3000/api/email/dispatch",
+        ]
     secret = os.getenv("EMAIL_DISPATCH_SECRET", "xentro-internal-email-dispatch-key-2026")
     payload = json.dumps({
         "to": to_email,
@@ -50,7 +56,7 @@ def _send_via_https_dispatcher(to_email: str, subject: str, body: str) -> bool:
                     "User-Agent": "Xentro-Backend-Dispatcher/1.0"
                 }
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=5) as resp:
                 res_data = json.loads(resp.read().decode())
                 if res_data.get("success"):
                     logger.info(f"Dispatched email to {to_email} via HTTPS dispatcher ({url}).")
