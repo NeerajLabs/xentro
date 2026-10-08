@@ -20,8 +20,7 @@ import {
   Check,
   Clock,
 } from 'lucide-react';
-import { connectionService } from '@/lib/connectionService';
-import { followService, FollowStats, FOLLOWS_UPDATED_EVENT } from '@/lib/followService';
+import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { messagingService } from '@/lib/messagingService';
 import { useToast } from '@/components/ui/Toast';
 import { getUserProfile, UserProfile } from '@/lib/userProfile';
@@ -103,53 +102,28 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
 
   const partnerId = profile.id;
 
-  // Connection status with this explorer
   const [connStatus, setConnStatus] = useState<'none' | 'pending' | 'received' | 'connected'>(() =>
     connectionService.getConnectionStatus(partnerId)
   );
-
-  // Follow stats
-  const [followStats, setFollowStats] = useState<FollowStats>({
-    targetUserId: partnerId,
-    followersCount: 14,
-    followingCount: 28,
-    isFollowing: followService.isFollowing(partnerId),
-    followers: [],
-    following: [],
-  });
+  const [liveConnectionsCount, setLiveConnectionsCount] = useState<number>(() =>
+    connectionService.getConnectedCount(partnerId)
+  );
 
   useEffect(() => {
-    followService.getFollowStats(partnerId).then((stats) => {
-      setFollowStats(stats);
-    });
-
-    const handleFollowsUpdate = (e: Event) => {
-      const ce = e as CustomEvent;
-      if (ce.detail?.targetUserId === partnerId) {
-        setFollowStats((prev) => ({
-          ...prev,
-          isFollowing: Boolean(ce.detail.following),
-          followersCount: ce.detail.followersCount ?? prev.followersCount,
-          followingCount: ce.detail.followingCount ?? prev.followingCount,
-        }));
-      }
+    const handleConnectionsChange = () => {
+      setConnStatus(connectionService.getConnectionStatus(partnerId));
+      setLiveConnectionsCount(connectionService.getConnectedCount(partnerId));
     };
+    handleConnectionsChange();
+    connectionService.syncFromServer().then(() => handleConnectionsChange()).catch(() => {});
 
-    window.addEventListener(FOLLOWS_UPDATED_EVENT, handleFollowsUpdate);
+    window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
+    window.addEventListener('xentro-connection-event', handleConnectionsChange);
     return () => {
-      window.removeEventListener(FOLLOWS_UPDATED_EVENT, handleFollowsUpdate);
+      window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
+      window.removeEventListener('xentro-connection-event', handleConnectionsChange);
     };
   }, [partnerId]);
-
-  // Handle follow / unfollow
-  const handleToggleFollow = async () => {
-    try {
-      const res = await followService.toggleFollow(partnerId);
-      showToast(res.following ? `Now following ${profile.name}` : `Unfollowed ${profile.name}`, 'info');
-    } catch {
-      showToast('Could not update follow status.', 'error');
-    }
-  };
 
   // Handle connection request
   const handleConnect = async () => {
@@ -290,18 +264,6 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
                   )}
                 </button>
 
-                {/* Follow Button */}
-                <button
-                  type="button"
-                  onClick={handleToggleFollow}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors ${
-                    followStats.isFollowing
-                      ? 'bg-white dark:bg-[#202422] border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white hover:bg-gray-50'
-                      : 'bg-white dark:bg-[#181B1A] border-[#D9FF3F] text-[#101212] dark:text-white hover:bg-[#D9FF3F]/10'
-                  }`}
-                >
-                  {followStats.isFollowing ? 'Following' : 'Follow'}
-                </button>
 
                 {/* Message Button */}
                 <button
@@ -337,14 +299,9 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
               <Calendar className="w-3.5 h-3.5" />
               <span>{profile.joinedDate}</span>
             </div>
-            <div className="flex items-center gap-3 ml-auto font-semibold">
-              <span className="text-[#101212] dark:text-white">
-                <span className="font-bold">{followStats.followersCount}</span> Followers
-              </span>
-              <span>&bull;</span>
-              <span className="text-[#101212] dark:text-white">
-                <span className="font-bold">{followStats.followingCount}</span> Following
-              </span>
+            <div className="flex items-center gap-1.5 ml-auto font-semibold text-[#565B59] dark:text-[#B6B8B7]">
+              <Users className="w-3.5 h-3.5 text-purple-500" />
+              <span>{liveConnectionsCount} Connections</span>
             </div>
           </div>
         </div>
@@ -582,28 +539,21 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
       {activeTab === 'network' && (
         <div className="bg-white dark:bg-[#181B1A] p-6 rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] shadow-sm space-y-4">
           <h2 className="text-sm font-bold text-[#101212] dark:text-white flex items-center gap-2">
-            <Users className="w-4 h-4 text-[#9EBE12]" />
-            Network Connections & Followers
+            <Users className="w-4 h-4 text-purple-500" />
+            <span>Network Connections</span>
           </h2>
           <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
             Connected with ecosystem members, incubators, and advisory partners across India.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
-            <div className="p-4 rounded-xl bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between">
+            <div className="p-4 rounded-xl bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between sm:col-span-2">
               <div>
                 <span className="text-xs text-[#565B59] dark:text-[#B6B8B7]">Active Connections</span>
                 <p className="text-lg font-bold text-[#101212] dark:text-white">
-                  {connectionService.getConnectedCount()}
+                  {liveConnectionsCount}
                 </p>
               </div>
-              <Users className="w-6 h-6 text-[#9EBE12]" />
-            </div>
-            <div className="p-4 rounded-xl bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between">
-              <div>
-                <span className="text-xs text-[#565B59] dark:text-[#B6B8B7]">Followers</span>
-                <p className="text-lg font-bold text-[#101212] dark:text-white">{followStats.followersCount}</p>
-              </div>
-              <Sparkles className="w-6 h-6 text-[#9EBE12]" />
+              <Users className="w-6 h-6 text-purple-500" />
             </div>
           </div>
         </div>

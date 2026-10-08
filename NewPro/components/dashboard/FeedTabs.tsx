@@ -11,7 +11,7 @@ interface FeedTabsProps {
 export const FeedTabs: React.FC<FeedTabsProps> = ({ activeTab, onTabChange }) => {
   const tabs: { id: FeedTabType; label: string }[] = [
     { id: 'for-you', label: 'For you' },
-    { id: 'following', label: 'Following' },
+    { id: 'following', label: 'Connections' },
     { id: 'opportunities', label: 'Opportunities' },
     { id: 'mentors', label: 'Mentors' },
     { id: 'investors', label: 'Investors' },

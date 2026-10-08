@@ -78,6 +78,7 @@ export const StartupDashboard: React.FC<StartupDashboardProps> = ({ profile, onN
     const refresh = () => {
       setConnectedCount(connectionService.getConnectedCount());
     };
+    connectionService.syncFromServer().then(refresh).catch(() => {});
     window.addEventListener('xentro-connections-updated', refresh);
     window.addEventListener('xentro-connection-event', refresh);
     return () => {

@@ -826,3 +826,5 @@ export const authService = {
   },
 };
 
+export { resolveAvatarUrl } from '../messagingService';
+

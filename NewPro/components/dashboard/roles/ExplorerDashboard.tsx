@@ -20,6 +20,8 @@ import {
 } from 'lucide-react';
 import { UserProfile } from '@/lib/userProfile';
 import { connectionService, ConnectionRecord } from '@/lib/connectionService';
+import { messagingService } from '@/lib/messagingService';
+import { resolveAvatarUrl } from '@/lib/auth/authService';
 import { useToast } from '@/components/ui/Toast';
 
 export type ExplorerTab = 'overview' | 'explore' | 'connections' | 'upgrade';
@@ -416,9 +418,11 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
                     className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between"
                   >
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-gray-200 dark:bg-[#2a302d] flex items-center justify-center font-bold text-xs">
-                        {partner.name?.charAt(0) || 'U'}
-                      </div>
+                      <img
+                        src={resolveAvatarUrl(partner.avatar, partner.name)}
+                        alt={partner.name}
+                        className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-700"
+                      />
                       <div>
                         <h4 className="text-sm font-bold text-[#101212] dark:text-white">
                           {partner.name}
@@ -429,7 +433,15 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
                       </div>
                     </div>
                     <button
-                      onClick={() => onNavigateTab && onNavigateTab('messages')}
+                      onClick={() => {
+                        messagingService.startOrOpenConversation({
+                          id: partner.id,
+                          name: partner.name,
+                          role: partner.role,
+                          avatar: partner.avatar,
+                        });
+                        if (onNavigateTab) onNavigateTab('messages');
+                      }}
                       className="px-3 py-1.5 rounded-lg bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] text-xs font-bold flex items-center gap-1.5 cursor-pointer hover:opacity-90 active:scale-95 transition-all"
                     >
                       <MessageSquare className="w-3.5 h-3.5" />

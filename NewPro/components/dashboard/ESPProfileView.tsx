@@ -53,6 +53,7 @@ import {
 } from "@/types/esp";
 import { getESPProfileById } from "@/data/espProfilesData";
 import { getUserProfile } from "@/lib/userProfile";
+import { connectionService, CONNECTIONS_UPDATED_EVENT } from "@/lib/connectionService";
 import {
   espPublicTeamService,
   ESP_PUBLIC_TEAM_EVENT,
@@ -171,10 +172,26 @@ export const ESPProfileView: React.FC<ESPProfileViewProps> = ({
     };
   }, [esp.id]);
 
-  // Interactive local states
-  const [isFollowing, setIsFollowing] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
+  // Interactive connection state
+  const [connStatus, setConnStatus] = useState<'none' | 'pending' | 'received' | 'connected'>(() =>
+    connectionService.getConnectionStatus(esp.id)
+  );
+  const isConnected = connStatus === 'connected';
   const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    const handleConnectionsChange = () => {
+      setConnStatus(connectionService.getConnectionStatus(esp.id));
+    };
+    handleConnectionsChange();
+    connectionService.syncFromServer().then(() => handleConnectionsChange()).catch(() => {});
+    window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
+    window.addEventListener('xentro-connection-event', handleConnectionsChange);
+    return () => {
+      window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
+      window.removeEventListener('xentro-connection-event', handleConnectionsChange);
+    };
+  }, [esp.id]);
 
   // Sub-filters
   const [programCategory, setProgramCategory] = useState<"all" | "active" | "upcoming" | "past">("all");
@@ -194,17 +211,6 @@ export const ESPProfileView: React.FC<ESPProfileViewProps> = ({
       navigator.clipboard.writeText(window.location.href);
     }
     showToast("Institution profile link copied to clipboard!", "success");
-  };
-
-  const handleToggleFollow = () => {
-    const next = !isFollowing;
-    setIsFollowing(next);
-    showToast(
-      next
-        ? `Now following ${esp.identity.name} for program & event alerts`
-        : `Unfollowed ${esp.identity.name}`,
-      "info"
-    );
   };
 
   const handleToggleSave = () => {
@@ -236,10 +242,16 @@ export const ESPProfileView: React.FC<ESPProfileViewProps> = ({
     setSelectedEventForModal(null);
   };
 
-  const handleSendConnect = (e: React.FormEvent) => {
+  const handleSendConnect = async (e: React.FormEvent) => {
     e.preventDefault();
-    setIsConnected(true);
-    showToast(`Partnership inquiry sent to ${esp.identity.name} leadership!`, "success");
+    await connectionService.requestConnection({
+      id: esp.id,
+      name: esp.identity.name,
+      role: 'ESP',
+      avatar: esp.identity.logo,
+    });
+    setConnStatus('pending');
+    showToast(`Partnership connection request sent to ${esp.identity.name}!`, "success");
     setIsConnectModalOpen(false);
   };
 
@@ -407,32 +419,42 @@ export const ESPProfileView: React.FC<ESPProfileViewProps> = ({
                 </button>
               )}
 
-              {/* Follow Action */}
-              <button
-                onClick={handleToggleFollow}
-                className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  isFollowing
-                    ? "bg-gray-100 dark:bg-[#202422] text-[#101212] dark:text-white border border-gray-200 dark:border-[#262A29]"
-                    : "border border-[#E5E7EB] dark:border-[#262A29] bg-white dark:bg-[#202422] text-[#101212] dark:text-white hover:border-[#D9FF3F] hover:text-[#D9FF3F]"
-                }`}
-              >
-                <Heart className={`w-3.5 h-3.5 ${isFollowing ? "fill-rose-500 text-rose-500" : ""}`} />
-                <span>{isFollowing ? "Following" : "Follow"}</span>
-              </button>
-
               {/* Connect Action */}
               <button
-                onClick={() => setIsConnectModalOpen(true)}
+                onClick={() => {
+                  if (connStatus === 'received') {
+                    connectionService.acceptConnection(esp.id);
+                    setConnStatus('connected');
+                    showToast(`Accepted connection with ${esp.identity.name}!`, 'success');
+                  } else if (connStatus === 'none') {
+                    setIsConnectModalOpen(true);
+                  }
+                }}
+                disabled={connStatus === 'pending'}
                 className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
-                  isConnected
+                  connStatus === 'connected'
                     ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
+                    : connStatus === 'pending'
+                    ? "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 cursor-not-allowed opacity-90"
+                    : connStatus === 'received'
+                    ? "bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212]"
                     : "bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-xs active:scale-95"
                 }`}
               >
-                {isConnected ? (
+                {connStatus === 'connected' ? (
                   <>
                     <Check className="w-3.5 h-3.5" />
-                    <span>Inquired</span>
+                    <span>Connected</span>
+                  </>
+                ) : connStatus === 'pending' ? (
+                  <>
+                    <Clock className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                    <span>Pending</span>
+                  </>
+                ) : connStatus === 'received' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>Accept Request</span>
                   </>
                 ) : (
                   <>

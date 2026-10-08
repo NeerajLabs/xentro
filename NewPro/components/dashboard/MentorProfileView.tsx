@@ -38,8 +38,6 @@ import { getUserProfile } from '@/lib/userProfile';
 import { notificationService } from '@/lib/notificationService';
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { messagingService } from '@/lib/messagingService';
-import { followService, FollowStats, FOLLOWS_UPDATED_EVENT } from '@/lib/followService';
-import { FollowersModal } from './FollowersModal';
 
 export type MentorTabType = 'basic' | 'experience' | 'slots' | 'mentorship';
 
@@ -113,49 +111,24 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
   const isConnected = connectionStatus === 'connected';
   const [isMentorshipRequested, setIsMentorshipRequested] = useState(false);
 
-  const [followStats, setFollowStats] = useState<FollowStats>({
-    targetUserId: partnerId,
-    followersCount: 0,
-    followingCount: 0,
-    isFollowing: followService.isFollowing(partnerId),
-    followers: [],
-    following: [],
-  });
+  const [liveConnectionsCount, setLiveConnectionsCount] = useState<number>(() =>
+    connectionService.getConnectedCount(partnerId)
+  );
 
-  const [isFollowersModalOpen, setIsFollowersModalOpen] = useState(false);
-  const [followersModalTab, setFollowersModalTab] = useState<'followers' | 'following'>('followers');
-
-  React.useEffect(() => {
-    followService.getFollowStats(partnerId).then((stats) => {
-      setFollowStats(stats);
-    });
-
-    const handleFollowsUpdate = (e: Event) => {
-      const ce = e as CustomEvent;
-      if (ce.detail?.targetUserId === partnerId) {
-        setFollowStats((prev) => ({
-          ...prev,
-          isFollowing: Boolean(ce.detail.following),
-          followersCount: ce.detail.followersCount ?? prev.followersCount,
-          followingCount: ce.detail.followingCount ?? prev.followingCount,
-        }));
-      }
-    };
-
-    window.addEventListener(FOLLOWS_UPDATED_EVENT, handleFollowsUpdate);
-    return () => {
-      window.removeEventListener(FOLLOWS_UPDATED_EVENT, handleFollowsUpdate);
-    };
-  }, [partnerId]);
-
-  // Sync connection status on events
+  // Sync connection status and count on events
   React.useEffect(() => {
     const handleConnectionsChange = () => {
       setConnectionStatus(connectionService.getConnectionStatus(partnerId));
+      setLiveConnectionsCount(connectionService.getConnectedCount(partnerId));
     };
+    handleConnectionsChange();
+    connectionService.syncFromServer().then(() => handleConnectionsChange()).catch(() => {});
+
     window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
+    window.addEventListener('xentro-connection-event', handleConnectionsChange);
     return () => {
       window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
+      window.removeEventListener('xentro-connection-event', handleConnectionsChange);
     };
   }, [partnerId]);
 
@@ -513,47 +486,6 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                     )}
                   </button>
 
-                  {/* Follow Mentor Button */}
-                  <button
-                    onClick={async () => {
-                      const res = await followService.toggleFollow(partnerId, {
-                        id: partnerId,
-                        name: mentor.name,
-                        role: mentor.currentRole?.designation || 'Mentor',
-                        avatar: mentor.avatar || '/xentro-logo.png',
-                      });
-                      setFollowStats((prev) => ({
-                        ...prev,
-                        isFollowing: res.following,
-                        followersCount: res.followersCount,
-                        followingCount: res.followingCount,
-                      }));
-                      showToast(
-                        res.following
-                          ? `You are now following ${mentor.name}`
-                          : `Unfollowed ${mentor.name}`,
-                        'success'
-                      );
-                    }}
-                    className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-1.5 cursor-pointer active:scale-95 ${
-                      followStats.isFollowing
-                        ? 'bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] border-[#D9FF3F]/40'
-                        : 'border-[#E5E7EB] dark:border-[#262A29] bg-white dark:bg-[#202422] text-[#101212] dark:text-white hover:border-[#D9FF3F]'
-                    }`}
-                  >
-                    {followStats.isFollowing ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-[#9EBE12]" />
-                        <span>Following</span>
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Follow</span>
-                      </>
-                    )}
-                  </button>
-
                   {connectionStatus === 'connected' && (
                     <button
                       onClick={() => {
@@ -644,28 +576,9 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                 <Award className="w-4 h-4 text-[#9EBE12] dark:text-[#D9FF3F]" />
                 <span>{mentor.primaryExpertise}</span>
               </div>
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFollowersModalTab('followers');
-                    setIsFollowersModalOpen(true);
-                  }}
-                  className="hover:underline font-semibold text-[#101212] dark:text-white cursor-pointer"
-                >
-                  <span className="font-bold">{followStats.followersCount}</span> Followers
-                </button>
-                <span className="text-gray-300 dark:text-gray-700">&bull;</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFollowersModalTab('following');
-                    setIsFollowersModalOpen(true);
-                  }}
-                  className="hover:underline font-semibold text-[#565B59] dark:text-[#B6B8B7] cursor-pointer"
-                >
-                  <span className="font-bold">{followStats.followingCount}</span> Following
-                </button>
+              <div className="flex items-center gap-1.5 font-semibold text-[#565B59] dark:text-[#B6B8B7]">
+                <Users className="w-4 h-4 text-purple-500" />
+                <span>{liveConnectionsCount} Connections</span>
               </div>
             </div>
           </div>
@@ -1908,15 +1821,6 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
         </div>
       )}
 
-      {/* Followers & Following Modal */}
-      <FollowersModal
-        isOpen={isFollowersModalOpen}
-        onClose={() => setIsFollowersModalOpen(false)}
-        title={mentor.name}
-        initialTab={followersModalTab}
-        followers={followStats.followers}
-        following={followStats.following}
-      />
     </div>
   );
 };

@@ -45,6 +45,7 @@ import { connectionService } from '@/lib/connectionService';
 import { notificationService } from '@/lib/notificationService';
 import { messagingService } from '@/lib/messagingService';
 import { getActiveMentorships } from '@/lib/mentorshipService';
+import { resolveAvatarUrl } from '@/lib/auth/authService';
 import {
   initialMentorMeetings,
   defaultAvailability,
@@ -86,6 +87,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({ profile, onNav
       setConnectedPartners(connectionService.getConnectedPartners());
       setConnectedCount(connectionService.getConnectedCount());
     };
+    connectionService.syncFromServer().then(refresh).catch(() => {});
     window.addEventListener('xentro-connections-updated', refresh);
     window.addEventListener('xentro-connection-event', refresh);
     return () => {
@@ -310,7 +312,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({ profile, onNav
                 {connectedPartners.map((c) => (
                   <div key={c.id} className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-center justify-between">
                     <div className="flex items-center gap-3">
-                      <img src={c.avatar || '/xentro-logo.png'} alt={c.name} className="w-10 h-10 rounded-full object-cover" />
+                      <img src={resolveAvatarUrl(c.avatar, c.name)} alt={c.name} className="w-10 h-10 rounded-full object-cover" />
                       <div>
                         <h4 className="text-xs font-bold text-[#101212] dark:text-white">{c.name}</h4>
                         <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">{c.role}</p>

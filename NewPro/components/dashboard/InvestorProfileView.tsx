@@ -46,6 +46,7 @@ import {
 } from '@/lib/investorProfileState';
 import { investorDomainService } from '@/lib/investorDomainService';
 import { messagingService } from '@/lib/messagingService';
+import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 
 export type InvestorTabType =
   | 'about'
@@ -90,9 +91,30 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
     }
   }, [investorData]);
 
-  // Interactive local states
-  const [isConnected, setIsConnected] = useState(false);
+  // Interactive connection states
+  const [connStatus, setConnStatus] = useState<'none' | 'pending' | 'received' | 'connected'>(() =>
+    connectionService.getConnectionStatus(investor.id)
+  );
+  const isConnected = connStatus === 'connected';
+  const [liveConnectionsCount, setLiveConnectionsCount] = useState<number>(() =>
+    connectionService.getConnectedCount(investor.id)
+  );
   const [isSaved, setIsSaved] = useState(false);
+
+  useEffect(() => {
+    const handleConnUpdate = () => {
+      setConnStatus(connectionService.getConnectionStatus(investor.id));
+      setLiveConnectionsCount(connectionService.getConnectedCount(investor.id));
+    };
+    handleConnUpdate();
+    connectionService.syncFromServer().then(() => handleConnUpdate()).catch(() => {});
+    window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnUpdate);
+    window.addEventListener('xentro-connection-event', handleConnUpdate);
+    return () => {
+      window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnUpdate);
+      window.removeEventListener('xentro-connection-event', handleConnUpdate);
+    };
+  }, [investor.id]);
 
   // Settings & Visibility live subscription
   const [liveSettings, setLiveSettings] = useState(() => investorDomainService.getSettings());
@@ -183,18 +205,35 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
     showToast('Investor profile link copied to clipboard!', 'success');
   };
 
-  const handleToggleConnect = () => {
-    if (!effectiveOpenToConnections) {
+  const handleToggleConnect = async () => {
+    if (!effectiveOpenToConnections && connStatus === 'none') {
       showToast(`${investor.name} is currently not accepting direct connection requests.`, 'info');
       return;
     }
-    const next = !isConnected;
-    setIsConnected(next);
-    if (next) {
-      showToast(`Connected with ${investor.name}!`, 'success');
-    } else {
-      showToast(`Disconnected from ${investor.name}.`, 'info');
+    if (connStatus === 'connected') {
+      showToast(`Already connected with ${investor.name}.`, 'info');
+      return;
     }
+    if (connStatus === 'pending') {
+      connectionService.cancelConnection(investor.id);
+      setConnStatus('none');
+      showToast(`Cancelled connection request to ${investor.name}.`, 'info');
+      return;
+    }
+    if (connStatus === 'received') {
+      setConnStatus('connected');
+      await connectionService.acceptConnection(investor.id);
+      showToast(`Accepted connection with ${investor.name}!`, 'success');
+      return;
+    }
+    setConnStatus('pending');
+    await connectionService.requestConnection({
+      id: investor.id,
+      name: investor.name,
+      role: investor.currentRole || 'Investor',
+      avatar: investor.logo,
+    });
+    showToast(`Connection request sent to ${investor.name}!`, 'success');
   };
 
   const handleToggleSave = () => {
@@ -439,26 +478,42 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
               {/* Primary Connect CTA */}
               <button
                 onClick={handleToggleConnect}
-                disabled={!effectiveOpenToConnections && !isConnected}
+                disabled={(!effectiveOpenToConnections && connStatus === 'none') || connStatus === 'pending'}
                 className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 active:scale-95 ${
-                  !effectiveOpenToConnections && !isConnected
+                  !effectiveOpenToConnections && connStatus === 'none'
                     ? 'opacity-50 cursor-not-allowed bg-gray-100 dark:bg-[#202422] text-[#565B59] dark:text-[#B6B8B7]'
-                    : isConnected
+                    : connStatus === 'connected'
                     ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 cursor-pointer'
+                    : connStatus === 'pending'
+                    ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 cursor-not-allowed opacity-90'
+                    : connStatus === 'received'
+                    ? 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] cursor-pointer'
                     : 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] cursor-pointer'
                 }`}
                 title={
-                  !effectiveOpenToConnections && !isConnected
+                  !effectiveOpenToConnections && connStatus === 'none'
                     ? 'Connection requests closed by investor settings'
-                    : isConnected
+                    : connStatus === 'connected'
                     ? 'Connected'
+                    : connStatus === 'pending'
+                    ? 'Connection request pending'
                     : 'Connect with investor'
                 }
               >
-                {isConnected ? (
+                {connStatus === 'connected' ? (
                   <>
-                    <Check className="w-4 h-4" />
+                    <Check className="w-4 h-4 text-emerald-500" />
                     <span>Connected</span>
+                  </>
+                ) : connStatus === 'pending' ? (
+                  <>
+                    <Clock className="w-4 h-4 text-amber-500 animate-pulse" />
+                    <span>Pending</span>
+                  </>
+                ) : connStatus === 'received' ? (
+                  <>
+                    <Check className="w-4 h-4 text-[#101212]" />
+                    <span>Accept Request</span>
                   </>
                 ) : (
                   <>
@@ -557,6 +612,11 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
               <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
                 <DollarSign className="w-3.5 h-3.5" />
                 <span>Check: {effectiveCheque}</span>
+              </span>
+
+              <span className="inline-flex items-center gap-1 font-semibold text-[#565B59] dark:text-[#B6B8B7]">
+                <Users className="w-3.5 h-3.5 text-purple-500" />
+                <span>{liveConnectionsCount} Connections</span>
               </span>
             </div>
 

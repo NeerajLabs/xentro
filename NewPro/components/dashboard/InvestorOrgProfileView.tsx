@@ -35,6 +35,7 @@ import {
   investorOrganizationService,
   INVESTOR_ORG_EVENTS,
 } from '@/lib/investorOrganizationService';
+import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { useToast } from '@/components/ui/Toast';
 
 export type OrgPublicTabType =
@@ -62,7 +63,8 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<OrgPublicTabType>('about');
   const [isSaved, setIsSaved] = useState(false);
-  const [isConnected, setIsConnected] = useState(false);
+  const [connStatus, setConnStatus] = useState<'none' | 'pending' | 'received' | 'connected'>('none');
+  const isConnected = connStatus === 'connected';
 
   // Load organization data
   const [organization, setOrganization] = useState<InvestorOrganization>(() => {
@@ -257,30 +259,62 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
             {/* Quick Action Button */}
             <div className="flex items-center gap-2.5 self-start md:self-end">
               <button
-                onClick={() => {
-                  setIsConnected(!isConnected);
-                  showToast(
-                    isConnected
-                      ? 'Disconnected from organization'
-                      : 'Pitch connection request dispatched to team',
-                    'success'
-                  );
+                onClick={async () => {
+                  if (connStatus === 'connected') {
+                    showToast('Already connected with this organization', 'info');
+                    return;
+                  }
+                  if (connStatus === 'pending') {
+                    connectionService.cancelConnection(organization.id);
+                    setConnStatus('none');
+                    showToast('Cancelled connection request', 'info');
+                    return;
+                  }
+                  if (connStatus === 'received') {
+                    setConnStatus('connected');
+                    await connectionService.acceptConnection(organization.id);
+                    showToast(`Accepted connection with ${organization.name}!`, 'success');
+                    return;
+                  }
+                  setConnStatus('pending');
+                  await connectionService.requestConnection({
+                    id: organization.id,
+                    name: organization.name,
+                    role: organization.organizationType || 'Investor Entity',
+                    avatar: organization.logo,
+                  });
+                  showToast(`Connection request dispatched to ${organization.name} team!`, 'success');
                 }}
+                disabled={connStatus === 'pending'}
                 className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md ${
-                  isConnected
+                  connStatus === 'connected'
                     ? 'bg-emerald-500 text-white'
+                    : connStatus === 'pending'
+                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 opacity-90 cursor-not-allowed'
+                    : connStatus === 'received'
+                    ? 'bg-[#D9FF3F] text-[#101212]'
                     : 'bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] hover:opacity-90 active:scale-98'
                 }`}
               >
-                {isConnected ? (
+                {connStatus === 'connected' ? (
                   <>
                     <Check className="w-4 h-4" />
                     <span>Connected</span>
                   </>
+                ) : connStatus === 'pending' ? (
+                  <>
+                    <Clock className="w-4 h-4 animate-pulse" />
+                    <span>Pending</span>
+                  </>
+                ) : connStatus === 'received' ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Accept Request</span>
+                  </>
                 ) : (
                   <>
-                    <Send className="w-4 h-4" />
-                    <span>Send Pitch</span>
+                    <Sparkles className="w-4 h-4" />
+                    <span>Connect</span>
                   </>
                 )}
               </button>

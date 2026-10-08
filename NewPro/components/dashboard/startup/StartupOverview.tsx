@@ -49,7 +49,7 @@ import {
 } from '@/data/startupWorkspaceData';
 import { useToast } from '@/components/ui/Toast';
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
-import { followService, FOLLOWS_UPDATED_EVENT } from '@/lib/followService';
+import { messagingService, resolveAvatarUrl } from '@/lib/messagingService';
 import { getUserProfile } from '@/lib/userProfile';
 import {
   getStartupBanner,
@@ -109,10 +109,6 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
 
   // Integrated Connections Module State
   const [connections, setConnections] = useState<EcosystemConnection[]>([]);
-  const [followStats, setFollowStats] = useState<{ followersCount: number; followingCount: number }>({
-    followersCount: 0,
-    followingCount: 0,
-  });
   const [activeConnectionCategory, setActiveConnectionCategory] = useState<'All' | 'Investor' | 'Mentor' | 'Startup' | 'ESP'>('All');
   const [connectionSearchQuery, setConnectionSearchQuery] = useState('');
   const [editingNoteConn, setEditingNoteConn] = useState<EcosystemConnection | null>(null);
@@ -246,62 +242,53 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
     };
 
     const syncLiveConnections = () => {
-      const raw = connectionService.getConnections();
+      const currentProfile = getUserProfile();
+      const currentUid = (currentProfile?.id || '').trim().toLowerCase();
+      const raw = connectionService.getConnections(currentUid).filter((c) => c.status === 'accepted');
       if (raw && raw.length > 0) {
-        const mapped: EcosystemConnection[] = raw.map((c: any) => ({
-          id: c.id,
-          name: c.name || 'Connected Member',
-          role: c.role || 'Partner',
-          organization: c.organization || c.company || 'Ecosystem',
-          avatar: c.avatar || '/xentro-logo.png',
-          category: (c.role?.toLowerCase().includes('investor')
+        const mapped: EcosystemConnection[] = raw.map((c: any) => {
+          const isSender = (c.senderId || '').trim().toLowerCase() === currentUid;
+          const partnerId = isSender ? c.recipientId : c.senderId;
+          const partnerName = (isSender ? c.recipientName : c.senderName) || 'Connected Member';
+          const partnerRole = (isSender ? c.recipientRole : c.senderRole) || 'Partner';
+          const partnerAvatar = resolveAvatarUrl(isSender ? c.recipientAvatar : c.senderAvatar, partnerName);
+          const roleLower = partnerRole.toLowerCase();
+          const category = roleLower.includes('investor')
             ? 'Investor'
-            : c.role?.toLowerCase().includes('mentor')
+            : roleLower.includes('mentor')
             ? 'Mentor'
-            : c.role?.toLowerCase().includes('esp')
+            : roleLower.includes('esp')
             ? 'ESP'
-            : 'Startup') as any,
-          email: c.email || '',
-          connectionDate: c.connectedAt || 'Recently',
-          status: 'Connected',
-          founderNotes: {
-            notes: 'Connected via Xentro ecosystem',
-            nextFollowUpDate: '',
-            relationshipStatus: 'Active Discussion',
-          },
-        }));
+            : 'Startup';
+
+          return {
+            id: partnerId || c.id,
+            name: partnerName,
+            role: partnerRole,
+            organization: (c as any).organization || (c as any).company || 'Xentro Network',
+            avatar: partnerAvatar,
+            category: category as any,
+            email: (c as any).email || '',
+            connectionDate: c.updatedAt ? new Date(c.updatedAt).toLocaleDateString() : 'Recently',
+            status: 'Connected',
+            founderNotes: {
+              notes: c.note || 'Connected via Xentro ecosystem',
+              nextFollowUpDate: '',
+              relationshipStatus: 'Active Discussion',
+            },
+          };
+        });
         setConnections(mapped);
       } else {
         setConnections([]);
       }
     };
 
-    const currentProfile = getUserProfile();
-    const currentUid = currentProfile?.id || '';
-    if (currentUid) {
-      followService.getFollowStats(currentUid).then((stats) => {
-        setFollowStats({
-          followersCount: stats.followersCount,
-          followingCount: stats.followingCount,
-        });
-      });
-    }
-
     syncLiveConnections();
+    connectionService.syncFromServer().then(() => syncLiveConnections()).catch(() => {});
 
     const handleConnectionsUpdate = () => {
       syncLiveConnections();
-    };
-
-    const handleFollowsUpdate = (e: Event) => {
-      const ce = e as CustomEvent;
-      if (!currentUid || ce.detail?.targetUserId === currentUid) {
-        setFollowStats((prev) => ({
-          ...prev,
-          followersCount: ce.detail?.followersCount ?? prev.followersCount,
-          followingCount: ce.detail?.followingCount ?? prev.followingCount,
-        }));
-      }
     };
 
     window.addEventListener('xentro-startup-banner-changed', handleBannerChange);
@@ -310,7 +297,7 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
     window.addEventListener('xentro-startup-billing-changed', handleDomainChange);
     window.addEventListener('xentro-startup-endorsements-changed', handleDomainChange);
     window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsUpdate);
-    window.addEventListener(FOLLOWS_UPDATED_EVENT, handleFollowsUpdate);
+    window.addEventListener('xentro-connection-event', handleConnectionsUpdate);
 
     return () => {
       window.removeEventListener('xentro-startup-banner-changed', handleBannerChange);
@@ -319,7 +306,7 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
       window.removeEventListener('xentro-startup-billing-changed', handleDomainChange);
       window.removeEventListener('xentro-startup-endorsements-changed', handleDomainChange);
       window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsUpdate);
-      window.removeEventListener(FOLLOWS_UPDATED_EVENT, handleFollowsUpdate);
+      window.removeEventListener('xentro-connection-event', handleConnectionsUpdate);
       if (cameraStreamRef.current) {
         cameraStreamRef.current.getTracks().forEach((track) => track.stop());
       }
@@ -962,7 +949,7 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
             {connections.length}
           </div>
           <p className="text-[9px] text-[#565B59] dark:text-[#B6B8B7] truncate font-medium">
-            {followStats.followersCount} Followers &bull; {followStats.followingCount} Following
+            Verified network connections
           </p>
         </div>
 
@@ -1526,8 +1513,14 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
 
                   <button
                     onClick={() => {
-                      showToast(`Starting direct chat with ${conn.name}...`, 'info');
-                      window.dispatchEvent(new CustomEvent('xentro-open-messages', { detail: { participant: conn.name } }));
+                      showToast(`Opening chat with ${conn.name}...`, 'info');
+                      messagingService.startOrOpenConversation({
+                        id: conn.id,
+                        name: conn.name,
+                        role: conn.role,
+                        avatar: conn.avatar,
+                      });
+                      window.dispatchEvent(new CustomEvent('xentro-open-messages', { detail: { participant: conn.name, partnerId: conn.id } }));
                     }}
                     className="px-2.5 py-1 rounded-lg bg-[#D9FF3F] hover:bg-[#C7F020] text-[11px] font-bold text-[#101212] transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95"
                   >

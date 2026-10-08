@@ -47,8 +47,6 @@ import {
 import { useToast } from "@/components/ui/Toast";
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from "@/lib/connectionService";
 import { messagingService } from "@/lib/messagingService";
-import { followService, FollowStats, FOLLOWS_UPDATED_EVENT } from "@/lib/followService";
-import { FollowersModal } from "./FollowersModal";
 import {
   FullStartupProfile,
   StartupAskItem,
@@ -435,52 +433,22 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
   const [financePeriod, setFinancePeriod] = useState<"monthly" | "quarterly">("monthly");
 
   const [liveConnectionsCount, setLiveConnectionsCount] = useState<number>(() => {
-    return connectionService.getConnections().length;
+    return connectionService.getConnectedCount(partnerId);
   });
-
-  const [followStats, setFollowStats] = useState<FollowStats>({
-    targetUserId: partnerId,
-    followersCount: 0,
-    followingCount: 0,
-    isFollowing: followService.isFollowing(partnerId),
-    followers: [],
-    following: [],
-  });
-
-  const [isFollowersModalOpen, setIsFollowersModalOpen] = useState(false);
-  const [followersModalTab, setFollowersModalTab] = useState<'followers' | 'following'>('followers');
-
-  useEffect(() => {
-    followService.getFollowStats(partnerId).then((stats) => {
-      setFollowStats(stats);
-    });
-
-    const handleFollowsUpdate = (e: Event) => {
-      const ce = e as CustomEvent;
-      if (ce.detail?.targetUserId === partnerId) {
-        setFollowStats((prev) => ({
-          ...prev,
-          isFollowing: Boolean(ce.detail.following),
-          followersCount: ce.detail.followersCount ?? prev.followersCount,
-          followingCount: ce.detail.followingCount ?? prev.followingCount,
-        }));
-      }
-    };
-
-    window.addEventListener(FOLLOWS_UPDATED_EVENT, handleFollowsUpdate);
-    return () => {
-      window.removeEventListener(FOLLOWS_UPDATED_EVENT, handleFollowsUpdate);
-    };
-  }, [partnerId]);
 
   useEffect(() => {
     const handleConnectionsChange = () => {
       setConnectionStatus(connectionService.getConnectionStatus(partnerId));
-      setLiveConnectionsCount(connectionService.getConnections().length);
+      setLiveConnectionsCount(connectionService.getConnectedCount(partnerId));
     };
+    handleConnectionsChange();
+    connectionService.syncFromServer().then(() => handleConnectionsChange()).catch(() => {});
+
     window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
+    window.addEventListener('xentro-connection-event', handleConnectionsChange);
     return () => {
       window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
+      window.removeEventListener('xentro-connection-event', handleConnectionsChange);
     };
   }, [partnerId]);
 
@@ -925,34 +893,12 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
                   {startup.identity.tagline}
                 </p>
 
-                {/* Followers, Following, & Connections Counters */}
-                <div className="flex items-center gap-3 pt-1 text-xs flex-wrap">
+                {/* Connections Counter */}
+                <div className="flex items-center gap-2 pt-1 text-xs">
                   <div className="flex items-center gap-1 font-semibold text-[#565B59] dark:text-[#B6B8B7]">
-                    <Users className="w-3.5 h-3.5 text-gray-400" />
+                    <Users className="w-3.5 h-3.5 text-purple-500" />
                     <span>{liveConnectionsCount} Connections</span>
                   </div>
-                  <span className="text-gray-300 dark:text-gray-700">&bull;</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFollowersModalTab('followers');
-                      setIsFollowersModalOpen(true);
-                    }}
-                    className="hover:underline font-semibold text-[#101212] dark:text-white cursor-pointer"
-                  >
-                    <span className="font-bold">{followStats.followersCount}</span> Followers
-                  </button>
-                  <span className="text-gray-300 dark:text-gray-700">&bull;</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFollowersModalTab('following');
-                      setIsFollowersModalOpen(true);
-                    }}
-                    className="hover:underline font-semibold text-[#565B59] dark:text-[#B6B8B7] cursor-pointer"
-                  >
-                    <span className="font-bold">{followStats.followingCount}</span> Following
-                  </button>
                 </div>
               </div>
             </div>
@@ -1099,47 +1045,6 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
                       <>
                         <Sparkles className="w-3.5 h-3.5" />
                         <span>Connect</span>
-                      </>
-                    )}
-                  </button>
-
-                  {/* Follow Action for External Visitors */}
-                  <button
-                    onClick={async () => {
-                      const res = await followService.toggleFollow(partnerId, {
-                        id: partnerId,
-                        name: startup.identity.name,
-                        role: startup.identity.industry || 'Startup',
-                        avatar: startup.identity.logo || '/xentro-logo.png',
-                      });
-                      setFollowStats((prev) => ({
-                        ...prev,
-                        isFollowing: res.following,
-                        followersCount: res.followersCount,
-                        followingCount: res.followingCount,
-                      }));
-                      showToast(
-                        res.following
-                          ? `You are now following ${startup.identity.name}`
-                          : `Unfollowed ${startup.identity.name}`,
-                        'success'
-                      );
-                    }}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all border cursor-pointer flex items-center gap-1.5 ${
-                      followStats.isFollowing
-                        ? 'bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] border-[#D9FF3F]/40'
-                        : 'border-[#E5E7EB] dark:border-[#262A29] bg-white dark:bg-[#202422] text-[#101212] dark:text-white hover:border-[#D9FF3F]'
-                    }`}
-                  >
-                    {followStats.isFollowing ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-[#9EBE12]" />
-                        <span>Following</span>
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Follow</span>
                       </>
                     )}
                   </button>
@@ -3640,15 +3545,6 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
         document.body
       )}
 
-      {/* Followers & Following Modal */}
-      <FollowersModal
-        isOpen={isFollowersModalOpen}
-        onClose={() => setIsFollowersModalOpen(false)}
-        title={startup.identity.name}
-        initialTab={followersModalTab}
-        followers={followStats.followers}
-        following={followStats.following}
-      />
     </div>
   );
 };

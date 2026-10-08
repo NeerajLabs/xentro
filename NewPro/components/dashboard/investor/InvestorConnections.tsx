@@ -17,6 +17,7 @@ import {
 import { useToast } from '@/components/ui/Toast';
 import { connectionService } from '@/lib/connectionService';
 import { messagingService } from '@/lib/messagingService';
+import { resolveAvatarUrl } from '@/lib/auth/authService';
 
 type ConnectionCategory = 'founders' | 'co_investors' | 'mentors' | 'esps';
 
@@ -33,8 +34,6 @@ interface ConnectionItem {
   mutualDeals?: number;
   notes?: string;
 }
-
-const mockConnections: ConnectionItem[] = [];
 
 export interface InvestorConnectionsProps {
   showFilters?: boolean;
@@ -53,22 +52,44 @@ export const InvestorConnections: React.FC<InvestorConnectionsProps> = ({
   const [activeMessageConn, setActiveMessageConn] = useState<ConnectionItem | null>(null);
   const [messageText, setMessageText] = useState('');
 
-  const realPartners = connectionService.getConnectedPartners();
-  const allConnections: ConnectionItem[] = [
-    ...realPartners.map((p) => ({
+  const mapToConnectionItem = (p: any): ConnectionItem => {
+    const roleLower = (p.role || '').toLowerCase();
+    let cat: ConnectionCategory = 'founders';
+    if (roleLower.includes('mentor')) cat = 'mentors';
+    else if (roleLower.includes('investor')) cat = 'co_investors';
+    else if (roleLower.includes('esp') || roleLower.includes('institution')) cat = 'esps';
+
+    return {
       id: p.id,
       name: p.name,
-      title: p.role,
-      organization: 'Verified Network',
-      avatar: p.avatar,
-      category: 'founders' as ConnectionCategory,
-      location: 'India',
-      connectedDate: 'Active',
+      title: p.role || 'Member',
+      organization: p.company || 'Verified Network',
+      avatar: resolveAvatarUrl(p.avatar, p.name),
+      category: cat,
+      location: 'Verified Partner',
+      connectedDate: p.connectedAt ? new Date(p.connectedAt).toLocaleDateString() : 'Active',
       verified: true,
-      notes: 'Connected on Xentro (MongoDB)',
-    })),
-    ...mockConnections,
-  ];
+      notes: 'Connected on Xentro',
+    };
+  };
+
+  const [allConnections, setAllConnections] = useState<ConnectionItem[]>(() => {
+    return connectionService.getConnectedPartners().map(mapToConnectionItem);
+  });
+
+  React.useEffect(() => {
+    const refresh = () => {
+      setAllConnections(connectionService.getConnectedPartners().map(mapToConnectionItem));
+    };
+
+    connectionService.syncFromServer().then(refresh).catch(() => {});
+    window.addEventListener('xentro-connections-updated', refresh);
+    window.addEventListener('xentro-connection-event', refresh);
+    return () => {
+      window.removeEventListener('xentro-connections-updated', refresh);
+      window.removeEventListener('xentro-connection-event', refresh);
+    };
+  }, []);
 
   const filteredConnections = allConnections.filter((c) => {
     const matchesCategory = showFilters ? c.category === selectedCategory : true;
@@ -190,8 +211,21 @@ export const InvestorConnections: React.FC<InvestorConnectionsProps> = ({
       )}
 
       {/* 3. Connections Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filteredConnections.map((conn) => (
+      {filteredConnections.length === 0 ? (
+        <div className="p-12 text-center rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-3">
+          <Users className="w-10 h-10 text-gray-400 mx-auto opacity-60" />
+          <h4 className="text-sm font-bold text-[#101212] dark:text-white">
+            No active connections found
+          </h4>
+          <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] max-w-sm mx-auto">
+            {searchTerm
+              ? 'No connections match your search filter.'
+              : 'Send connection requests to ecosystem founders and partners to start collaborating.'}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredConnections.map((conn) => (
           <div
             key={conn.id}
             className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle flex flex-col justify-between space-y-3 hover:border-[#D9FF3F]/50 transition-all"
@@ -250,7 +284,8 @@ export const InvestorConnections: React.FC<InvestorConnectionsProps> = ({
             </div>
           </div>
         ))}
-      </div>
+        </div>
+      )}
 
       {/* Message Modal */}
       {activeMessageConn && (

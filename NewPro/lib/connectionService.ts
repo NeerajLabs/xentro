@@ -66,7 +66,7 @@ function getCurrentUserId(): { id: string; name: string; role: string; avatar: s
   const id = profile.id || '';
   const name = profile.name || 'Member';
   const role = profile.roleTitle || profile.role || 'Member';
-  const avatar = profile.avatar || '/xentro-logo.png';
+  const avatar = resolveAvatarUrl(profile.avatar, name);
   return { id, name, role, avatar };
 }
 
@@ -278,15 +278,16 @@ export const connectionService = {
   getConnectionStatus(partnerId: string): 'none' | 'pending' | 'received' | 'connected' {
     const currentUser = getCurrentUserId();
     const all = this.getRawConnections();
-    const normalizedCurrent = normalizeUserId(currentUser.id);
-    const normalizedPartner = normalizeUserId(partnerId);
+    const normalizedCurrent = normalizeUserId(currentUser.id).toLowerCase();
+    const normalizedPartner = normalizeUserId(partnerId).toLowerCase();
 
     if (!normalizedPartner || !normalizedCurrent) return 'none';
+    if (normalizedPartner === normalizedCurrent) return 'none';
 
     // Match either direction with normalized IDs
     const conn = all.find((c) => {
-      const s = normalizeUserId(c.senderId);
-      const r = normalizeUserId(c.recipientId);
+      const s = normalizeUserId(c.senderId).toLowerCase();
+      const r = normalizeUserId(c.recipientId).toLowerCase();
       return (
         (s === normalizedCurrent && r === normalizedPartner) ||
         (r === normalizedCurrent && s === normalizedPartner)
@@ -302,7 +303,7 @@ export const connectionService = {
     }
 
     if (conn.status === 'pending') {
-      if (normalizeUserId(conn.senderId) === normalizedCurrent) {
+      if (normalizeUserId(conn.senderId).toLowerCase() === normalizedCurrent) {
         return 'pending'; // Current user requested it
       } else {
         return 'received'; // Current user received it
@@ -322,18 +323,18 @@ export const connectionService = {
     const currentUser = getCurrentUserId();
     const senderId = normalizeUserId(currentUser.id);
     const recipientId = normalizeUserId(partner.id);
-    const connId = `conn_${[senderId, recipientId].sort().join('_')}`;
+    const connId = `conn_${[senderId.toLowerCase(), recipientId.toLowerCase()].sort().join('_')}`;
 
     const newConn: ConnectionRecord = {
       id: connId,
       senderId,
       senderName: currentUser.name,
       senderRole: currentUser.role,
-      senderAvatar: currentUser.avatar,
+      senderAvatar: resolveAvatarUrl(currentUser.avatar, currentUser.name),
       recipientId,
       recipientName: partner.name,
       recipientRole: partner.role,
-      recipientAvatar: partner.avatar || '/xentro-logo.png',
+      recipientAvatar: resolveAvatarUrl(partner.avatar, partner.name),
       status: 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -504,30 +505,36 @@ export const connectionService = {
     return all.filter((c) => normalizeUserId(c.recipientId) === currentNorm && c.status === 'pending').length;
   },
 
-  /** Number of established connections for current user from MongoDB */
-  getConnectedCount(): number {
-    const currentUser = getCurrentUserId();
-    const currentNorm = normalizeUserId(currentUser.id);
+  /** Number of established connections for current user (or specified target user) from MongoDB */
+  getConnectedCount(userId?: string): number {
+    const targetNorm = userId ? normalizeUserId(userId).toLowerCase() : normalizeUserId(getCurrentUserId().id).toLowerCase();
+    if (!targetNorm) return 0;
     const all = this.getRawConnections();
     return all.filter(
       (c) =>
-        (normalizeUserId(c.senderId) === currentNorm || normalizeUserId(c.recipientId) === currentNorm) &&
+        (normalizeUserId(c.senderId).toLowerCase() === targetNorm ||
+         normalizeUserId(c.recipientId).toLowerCase() === targetNorm) &&
         c.status === 'accepted'
     ).length;
   },
 
-  /** Get all user profiles that current user has an accepted connection with */
-  getConnectedPartners(): ConnectedPartner[] {
-    const currentUser = getCurrentUserId();
-    const currentNorm = normalizeUserId(currentUser.id);
+  /** Get all user profiles that current user (or specified target user) has an accepted connection with */
+  getConnectedPartners(userId?: string): ConnectedPartner[] {
+    const targetNorm = userId ? normalizeUserId(userId).toLowerCase() : normalizeUserId(getCurrentUserId().id).toLowerCase();
+    if (!targetNorm) return [];
 
-    // Try reading cached server partners first
-    if (typeof window !== 'undefined') {
+    // Try reading cached server partners first if checking current user
+    if (!userId && typeof window !== 'undefined') {
       try {
         const raw = localStorage.getItem(CONNECTIONS_PARTNERS_KEY);
         if (raw) {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.map((p) => ({
+              ...p,
+              avatar: resolveAvatarUrl(p.avatar, p.name),
+            }));
+          }
         }
       } catch {}
     }
@@ -535,17 +542,20 @@ export const connectionService = {
     const all = this.getRawConnections();
     const connected = all.filter(
       (c) =>
-        (normalizeUserId(c.senderId) === currentNorm || normalizeUserId(c.recipientId) === currentNorm) &&
+        (normalizeUserId(c.senderId).toLowerCase() === targetNorm ||
+         normalizeUserId(c.recipientId).toLowerCase() === targetNorm) &&
         c.status === 'accepted'
     );
 
     return connected.map((c) => {
-      const isSender = normalizeUserId(c.senderId) === currentNorm;
+      const isSender = normalizeUserId(c.senderId).toLowerCase() === targetNorm;
+      const partnerName = (isSender ? c.recipientName : c.senderName) || 'Connected Member';
+      const partnerAvatar = isSender ? c.recipientAvatar : c.senderAvatar;
       return {
         id: isSender ? c.recipientId : c.senderId,
-        name: isSender ? c.recipientName : c.senderName,
-        role: isSender ? c.recipientRole : c.senderRole,
-        avatar: (isSender ? c.recipientAvatar : c.senderAvatar) || '/xentro-logo.png',
+        name: partnerName,
+        role: (isSender ? c.recipientRole : c.senderRole) || 'Member',
+        avatar: resolveAvatarUrl(partnerAvatar, partnerName),
         connectionId: c.id,
         connectedAt: c.updatedAt || c.createdAt,
       };

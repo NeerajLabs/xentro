@@ -6,6 +6,7 @@ Synchronizes bidirectional connection status across all users, dashboards, and m
 """
 import uuid
 import datetime
+import urllib.parse
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from integrations.mongodb import get_collection
@@ -16,6 +17,13 @@ def normalize_id(uid):
     if not uid:
         return ""
     return str(uid).strip()
+
+
+def resolve_avatar(avatar, name):
+    if avatar and "/xentro-logo.png" not in str(avatar) and len(str(avatar).strip()) > 0:
+        return str(avatar).strip()
+    safe_name = urllib.parse.quote(str(name or "Member").strip())
+    return f"https://api.dicebear.com/7.x/initials/svg?seed={safe_name}"
 
 
 def make_pair_key(id1, id2):
@@ -92,7 +100,7 @@ class ConnectionListView(APIView):
                     "id": partner_id,
                     "name": partner_name,
                     "role": partner_role or "Member",
-                    "avatar": partner_avatar or "/xentro-logo.png",
+                    "avatar": resolve_avatar(partner_avatar, partner_name),
                     "connectionId": c.get("id"),
                     "connectedAt": c.get("updatedAt") or c.get("createdAt")
                 })
@@ -139,8 +147,8 @@ class ConnectionRequestView(APIView):
         recipient_name = request.data.get("recipientName", "Ecosystem Partner").strip()
         sender_role = request.data.get("senderRole", "Member")
         recipient_role = request.data.get("recipientRole", "Member")
-        sender_avatar = request.data.get("senderAvatar", "/xentro-logo.png")
-        recipient_avatar = request.data.get("recipientAvatar", "/xentro-logo.png")
+        sender_avatar = resolve_avatar(request.data.get("senderAvatar"), sender_name)
+        recipient_avatar = resolve_avatar(request.data.get("recipientAvatar"), recipient_name)
         note = request.data.get("note", "").strip()
 
         conn_col = get_collection("connections")

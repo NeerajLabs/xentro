@@ -8,8 +8,10 @@ import {
   Flag,
   MoreHorizontal,
   Bookmark,
-  Send,
   Check,
+  UserPlus,
+  Clock,
+  Send,
 } from 'lucide-react';
 import { Post, PostComment } from '@/types';
 import { currentUser } from '@/data/mockData';
@@ -17,7 +19,8 @@ import { useToast } from '@/components/ui/Toast';
 import { toggleStartupBookmark } from '@/lib/startupBookmarkState';
 import { getUserProfile, GUEST_AVATAR } from '@/lib/userProfile';
 import { feedService } from '@/lib/feedService';
-import { followService, FOLLOWS_UPDATED_EVENT } from '@/lib/followService';
+import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
+import { resolveAvatarUrl } from '@/lib/messagingService';
 
 interface PostCardProps {
   post: Post;
@@ -25,23 +28,25 @@ interface PostCardProps {
 }
 
 export const PostCard: React.FC<PostCardProps> = ({ post, onLikeToggle }) => {
-  const author = post.author || {
-    id: (post as any).authorId || post.id,
-    name: (post as any).authorName || 'Ecosystem Member',
-    username: `@${((post as any).authorName || 'member').toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-    role: (post as any).authorRole || 'Founder & Innovator',
-    company: (post as any).authorCompany,
-    avatar: (post as any).authorAvatar || '/xentro-logo.png',
+  const authorRawName = (post as any).authorName || (post.author as any)?.name || 'Ecosystem Member';
+  const authorRawAvatar = (post as any).authorAvatar || (post.author as any)?.avatar;
+  const author = {
+    id: (post as any).authorId || post.author?.id || post.id,
+    name: authorRawName,
+    username: `@${authorRawName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+    role: (post as any).authorRole || post.author?.role || 'Founder & Innovator',
+    company: (post as any).authorCompany || post.author?.company,
+    avatar: resolveAvatarUrl(authorRawAvatar, authorRawName),
     verified: true,
   };
 
   const myProfile = getUserProfile();
-  const isMe = myProfile.id === author.id;
+  const isMe = (myProfile.id || '').trim().toLowerCase() === (author.id || '').trim().toLowerCase();
 
   const [isLiked, setIsLiked] = useState(Boolean(post.isLiked));
   const [likeCount, setLikeCount] = useState(post.metrics?.likes ?? (post as any).likes ?? 0);
-  const [isFollowing, setIsFollowing] = useState(
-    followService.isFollowing(author.id) || Boolean(post.isFollowing)
+  const [connStatus, setConnStatus] = useState<'none' | 'pending' | 'received' | 'connected'>(() =>
+    connectionService.getConnectionStatus(author.id)
   );
   const [isSaved, setIsSaved] = useState(Boolean(post.isSaved));
   const [showComments, setShowComments] = useState(false);
@@ -55,19 +60,18 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onLikeToggle }) => {
     setComments(post.commentsList || []);
     setLikeCount(post.metrics?.likes ?? (post as any).likes ?? 0);
     setIsLiked(Boolean(post.isLiked));
-    setIsFollowing(followService.isFollowing(author.id) || Boolean(post.isFollowing));
+    setConnStatus(connectionService.getConnectionStatus(author.id));
     setIsSaved(Boolean(post.isSaved));
 
-    const handleFollowsUpdated = (e: Event) => {
-      const ce = e as CustomEvent;
-      if (ce.detail?.targetUserId === author.id) {
-        setIsFollowing(Boolean(ce.detail.following));
-      }
+    const handleConnUpdated = () => {
+      setConnStatus(connectionService.getConnectionStatus(author.id));
     };
 
-    window.addEventListener(FOLLOWS_UPDATED_EVENT, handleFollowsUpdated);
+    window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnUpdated);
+    window.addEventListener('xentro-connection-event', handleConnUpdated);
     return () => {
-      window.removeEventListener(FOLLOWS_UPDATED_EVENT, handleFollowsUpdated);
+      window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnUpdated);
+      window.removeEventListener('xentro-connection-event', handleConnUpdated);
     };
   }, [post, author.id]);
 
@@ -105,18 +109,28 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onLikeToggle }) => {
     }
   };
 
-  const handleFollow = async () => {
+  const handleConnectAction = async () => {
     try {
-      const res = await followService.toggleFollow(author.id, author);
-      setIsFollowing(res.following);
-      showToast(
-        res.following
-          ? `You are now following ${author.name}`
-          : `Unfollowed ${author.name}`,
-        'success'
-      );
+      if (connStatus === 'none') {
+        setConnStatus('pending');
+        await connectionService.requestConnection({
+          id: author.id,
+          name: author.name,
+          role: author.role,
+          avatar: author.avatar,
+        });
+        showToast(`Connection request sent to ${author.name}`, 'success');
+      } else if (connStatus === 'pending') {
+        connectionService.cancelConnection(author.id);
+        setConnStatus('none');
+        showToast(`Cancelled connection request to ${author.name}`, 'info');
+      } else if (connStatus === 'received') {
+        setConnStatus('connected');
+        await connectionService.acceptConnection(author.id);
+        showToast(`Accepted connection with ${author.name}!`, 'success');
+      }
     } catch {
-      showToast('Failed to update follow status.', 'error');
+      showToast('Failed to update connection.', 'error');
     }
   };
 
@@ -351,19 +365,37 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onLikeToggle }) => {
         <div className="flex items-center gap-2 relative">
           {!isMe && (
             <button
-              onClick={handleFollow}
-              className={`px-3.5 py-1 rounded-full text-xs font-semibold transition-all border cursor-pointer ${
-                isFollowing
-                  ? 'bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] border-[#D9FF3F]/40'
-                  : 'text-[#101212] dark:text-white border-[#E5E7EB] dark:border-[#262A29] hover:bg-[#D9FF3F] hover:text-[#101212] hover:border-[#D9FF3F] active:scale-95'
+              onClick={handleConnectAction}
+              className={`px-3 py-1 rounded-full text-xs font-semibold transition-all border cursor-pointer active:scale-95 flex items-center gap-1 ${
+                connStatus === 'connected'
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                  : connStatus === 'pending'
+                  ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                  : connStatus === 'received'
+                  ? 'bg-[#D9FF3F] text-[#101212] border-[#D9FF3F]'
+                  : 'text-[#101212] dark:text-white border-[#E5E7EB] dark:border-[#262A29] hover:bg-[#D9FF3F] hover:text-[#101212] hover:border-[#D9FF3F]'
               }`}
             >
-              {isFollowing ? (
-                <span className="flex items-center gap-1">
-                  <Check className="w-3 h-3 text-[#9EBE12]" /> Following
-                </span>
+              {connStatus === 'connected' ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-500" />
+                  <span>Connected</span>
+                </>
+              ) : connStatus === 'pending' ? (
+                <>
+                  <Clock className="w-3 h-3 text-amber-500 animate-pulse" />
+                  <span>Pending</span>
+                </>
+              ) : connStatus === 'received' ? (
+                <>
+                  <Check className="w-3 h-3 text-[#101212]" />
+                  <span>Accept</span>
+                </>
               ) : (
-                '+ Follow'
+                <>
+                  <UserPlus className="w-3 h-3" />
+                  <span>Connect</span>
+                </>
               )}
             </button>
           )}

@@ -21,10 +21,11 @@ import {
   Save,
   X,
 } from 'lucide-react';
-import { initialConnectionsData, EcosystemConnection } from '@/data/startupWorkspaceData';
 import { useToast } from '@/components/ui/Toast';
 import { messagingService } from '@/lib/messagingService';
 import { connectionService } from '@/lib/connectionService';
+import { resolveAvatarUrl } from '@/lib/auth/authService';
+import { EcosystemConnection } from '@/data/startupWorkspaceData';
 
 interface StartupConnectionsProps {
   onMessageClick?: (conn: EcosystemConnection) => void;
@@ -33,31 +34,44 @@ interface StartupConnectionsProps {
 export const StartupConnections: React.FC<StartupConnectionsProps> = ({ onMessageClick }) => {
   const { showToast } = useToast();
   
-  const mapPartnerToConn = (p: any): EcosystemConnection => ({
-    id: p.id,
-    name: p.name,
-    role: p.role || 'Member',
-    organization: 'Verified Network',
-    avatar: p.avatar,
-    category: (p.role?.toLowerCase().includes('mentor') ? 'Mentor' : p.role?.toLowerCase().includes('investor') ? 'Investor' : 'Startup') as any,
-    status: 'Connected',
-    connectedSince: p.connectedAt ? new Date(p.connectedAt).toLocaleDateString() : 'Recent',
-    isVerified: true,
-    lastActive: 'Active now',
-    engagementCount: 1,
-    relationshipStrength: 'Verified Connection',
-  });
+  const mapPartnerToConn = (p: any): EcosystemConnection => {
+    const roleLower = (p.role || '').toLowerCase();
+    const cat = roleLower.includes('mentor')
+      ? 'Mentor'
+      : roleLower.includes('investor')
+      ? 'Investor'
+      : roleLower.includes('esp') || roleLower.includes('institution')
+      ? 'ESP'
+      : 'Startup';
+
+    return {
+      id: p.id,
+      name: p.name,
+      role: p.role || 'Member',
+      organization: p.company || 'Verified Network',
+      avatar: resolveAvatarUrl(p.avatar, p.name),
+      category: cat as any,
+      status: 'Connected',
+      connectedSince: p.connectedAt ? new Date(p.connectedAt).toLocaleDateString() : 'Active',
+      isVerified: true,
+      lastActive: 'Active now',
+      engagementCount: 1,
+      relationshipStrength: 'Verified Connection',
+    };
+  };
 
   const [connections, setConnections] = useState<EcosystemConnection[]>(() => {
-    const real = connectionService.getConnectedPartners().map(mapPartnerToConn);
-    return [...real, ...initialConnectionsData];
+    return connectionService.getConnectedPartners().map(mapPartnerToConn);
   });
 
   React.useEffect(() => {
     const refresh = () => {
       const real = connectionService.getConnectedPartners().map(mapPartnerToConn);
-      setConnections([...real, ...initialConnectionsData]);
+      setConnections(real);
     };
+    
+    connectionService.syncFromServer().then(refresh).catch(() => {});
+
     window.addEventListener('xentro-connections-updated', refresh);
     window.addEventListener('xentro-connection-event', refresh);
     return () => {
@@ -187,7 +201,20 @@ export const StartupConnections: React.FC<StartupConnectionsProps> = ({ onMessag
 
       {/* Connections List */}
       <div className="space-y-4 animate-fade-slide">
-        {filteredConnections.map((conn) => (
+        {filteredConnections.length === 0 ? (
+          <div className="p-12 text-center rounded-3xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-3">
+            <Users className="w-10 h-10 text-gray-400 mx-auto opacity-60" />
+            <h4 className="text-base font-bold text-[#101212] dark:text-white">
+              No active connections found
+            </h4>
+            <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] max-w-md mx-auto">
+              {searchQuery || activeCategory !== 'All'
+                ? 'Try adjusting your search query or filter category.'
+                : 'Connect with investors, mentors, and startups across the ecosystem to grow your network.'}
+            </p>
+          </div>
+        ) : (
+          filteredConnections.map((conn) => (
           <div
             key={conn.id}
             className="p-5 rounded-3xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle hover:border-[#D9FF3F]/40 transition-all flex flex-col lg:flex-row lg:items-center justify-between gap-5"
@@ -320,7 +347,7 @@ export const StartupConnections: React.FC<StartupConnectionsProps> = ({ onMessag
               </button>
             </div>
           </div>
-        ))}
+        )))}
       </div>
 
       {/* Private Founder Note Modal */}

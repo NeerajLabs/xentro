@@ -875,7 +875,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                   Mentors & Advisors
                 </option>
                 <option value="following" className="bg-white dark:bg-[#181B1A]">
-                  My Connections & Followers
+                  My Connections
                 </option>
               </select>
             </div>
