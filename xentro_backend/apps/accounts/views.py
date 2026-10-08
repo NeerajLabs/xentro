@@ -1593,10 +1593,12 @@ def resolve_verified_session_user(request):
     Authoritatively extracts and verifies user identity from the authenticated session:
     1. Authenticated request.user
     2. Decoded JWT or JSON session token from Authorization header or cookies
-    3. X-User-Id header if verified against the database
+    3. X-User-Id and X-User-Email headers verified against the database
     Returns: (user_id, user_doc)
     """
     user_id = None
+    session_email = (request.headers.get("X-User-Email") or "").strip().lower()
+    session_name = (request.headers.get("X-User-Name") or "").strip()
     users_col = get_collection("users")
     admin_col = get_collection("admin_users")
 
@@ -1621,29 +1623,40 @@ def resolve_verified_session_user(request):
                 payload = decode_token(token)
                 if payload:
                     user_id = str(payload.get("sub") or payload.get("id") or payload.get("user_id") or payload.get("employeeId") or "").strip()
+                    if payload.get("email"):
+                        session_email = str(payload.get("email")).strip().lower()
+                    if payload.get("name"):
+                        session_name = str(payload.get("name")).strip()
             except Exception:
                 pass
 
-    # 3. Check X-User-Id header if verified against MongoDB
+    # 3. Check X-User-Id header
     if not user_id:
         header_uid = (request.headers.get("X-User-Id") or request.headers.get("x-user-id") or "").strip()
         if header_uid:
-            if users_col.find_one({"id": header_uid}) or admin_col.find_one({"$or": [{"employee_id": header_uid}, {"employeeId": header_uid}]}):
-                user_id = header_uid
+            user_id = header_uid
 
     # 4. Check cookie xentro_user_id
     if not user_id:
         cookie_uid = (request.COOKIES.get("xentro_user_id") or "").strip()
         if cookie_uid:
-            if users_col.find_one({"id": cookie_uid}) or admin_col.find_one({"$or": [{"employee_id": cookie_uid}, {"employeeId": cookie_uid}]}):
-                user_id = cookie_uid
+            user_id = cookie_uid
 
-    if not user_id:
+    if not user_id and not session_email:
         return None, None
 
     # Load authoritative document from MongoDB
-    user_doc = users_col.find_one({"id": user_id})
-    if not user_doc:
+    user_doc = None
+    if user_id:
+        user_doc = users_col.find_one({"id": user_id})
+
+    # If not found by ID, look up by verified session email
+    if not user_doc and session_email:
+        user_doc = users_col.find_one({"email": {"$regex": f"^{session_email}$", "$options": "i"}})
+        if user_doc and user_doc.get("id"):
+            user_id = user_doc["id"]
+
+    if not user_doc and user_id:
         admin_doc = admin_col.find_one({"$or": [{"employee_id": user_id}, {"employeeId": user_id}]})
         if admin_doc:
             user_doc = {
@@ -1652,11 +1665,11 @@ def resolve_verified_session_user(request):
                 "email": admin_doc.get("email", ""),
                 "role": admin_doc.get("role", "Admin"),
             }
-        elif getattr(request.user, "is_authenticated", False):
+        else:
             user_doc = {
                 "id": user_id,
-                "fullName": getattr(request.user, "full_name", "Ecosystem Member"),
-                "email": getattr(request.user, "email", ""),
+                "fullName": session_name or getattr(request.user, "full_name", None) or "Ecosystem Member",
+                "email": session_email or getattr(request.user, "email", ""),
                 "role": getattr(request.user, "role", "Explorer"),
             }
 
@@ -1702,6 +1715,15 @@ class UserSupportComplaintView(APIView):
 
     def post(self, request):
         user_id, u_doc = resolve_verified_session_user(request)
+        if not user_id:
+            # Check body fallback if header was omitted by client
+            fallback_uid = request.data.get("accountId") or request.data.get("userId")
+            if fallback_uid:
+                fallback_uid = str(fallback_uid).strip()
+                u_doc = get_collection("users").find_one({"id": fallback_uid})
+                if u_doc:
+                    user_id = fallback_uid
+
         if not user_id:
             return api_error("An authenticated session is required to file a support complaint. Please sign in.", status_code=401)
 
@@ -1756,19 +1778,25 @@ class UserSupportComplaintView(APIView):
         }, f"Support complaint #{ticket_id} created successfully.", status_code=201)
 
     def get(self, request):
-        user_id, _ = resolve_verified_session_user(request)
+        user_id, u_doc = resolve_verified_session_user(request)
         if not user_id:
-            # Fallback to query param if verified in database
             query_uid = request.query_params.get("accountId") or request.query_params.get("userId")
-            if query_uid and get_collection("users").find_one({"id": query_uid}):
-                user_id = query_uid
-            else:
-                return api_error("User identification is required.", status_code=401)
+            if query_uid:
+                user_id = str(query_uid).strip()
+                u_doc = get_collection("users").find_one({"id": user_id})
+
+        if not user_id:
+            return api_error("User identification is required.", status_code=401)
 
         user_id = str(user_id).strip()
         tickets_col = get_collection("support_tickets")
-        # Enforce strict user isolation: only fetch submissions belonging to this accountId
-        user_tickets = list(tickets_col.find({"accountId": user_id}, sort=[("createdAt", -1)]))
+        
+        # Enforce strict user isolation: match by accountId, userId, or verified email
+        query_conditions = [{"accountId": user_id}, {"userId": user_id}]
+        if u_doc and u_doc.get("email"):
+            query_conditions.append({"userEmail": u_doc["email"]})
+
+        user_tickets = list(tickets_col.find({"$or": query_conditions}, sort=[("createdAt", -1)]))
         formatted_list = [format_user_ticket(t) for t in user_tickets]
 
         return api_success({

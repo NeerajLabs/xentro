@@ -8,7 +8,9 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const backendBase = getBackendBaseUrl();
-    const token = req.cookies.get('xentro_session')?.value || req.headers.get('authorization')?.replace('Bearer ', '');
+    const authHdr = req.headers.get('authorization')?.replace('Bearer ', '').trim();
+    const cookieToken = req.cookies.get('xentro_session')?.value;
+    const token = authHdr || cookieToken;
 
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -16,6 +18,10 @@ export async function POST(req: NextRequest) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const xUserId = req.headers.get('x-user-id');
     if (xUserId) headers['X-User-Id'] = xUserId;
+    const xUserEmail = req.headers.get('x-user-email');
+    if (xUserEmail) headers['X-User-Email'] = xUserEmail;
+    const xUserName = req.headers.get('x-user-name');
+    if (xUserName) headers['X-User-Name'] = xUserName;
 
     const cookieHeader = req.headers.get('cookie');
     if (cookieHeader) headers['Cookie'] = cookieHeader;
@@ -38,12 +44,18 @@ export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const backendBase = getBackendBaseUrl();
-    const token = req.cookies.get('xentro_session')?.value || req.headers.get('authorization')?.replace('Bearer ', '');
+    const authHdr = req.headers.get('authorization')?.replace('Bearer ', '').trim();
+    const cookieToken = req.cookies.get('xentro_session')?.value;
+    const token = authHdr || cookieToken;
 
     const headers: Record<string, string> = {};
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const xUserId = req.headers.get('x-user-id') || searchParams.get('userId') || searchParams.get('accountId');
     if (xUserId) headers['X-User-Id'] = xUserId;
+    const xUserEmail = req.headers.get('x-user-email');
+    if (xUserEmail) headers['X-User-Email'] = xUserEmail;
+    const xUserName = req.headers.get('x-user-name');
+    if (xUserName) headers['X-User-Name'] = xUserName;
 
     const cookieHeader = req.headers.get('cookie');
     if (cookieHeader) headers['Cookie'] = cookieHeader;

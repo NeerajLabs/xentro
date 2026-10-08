@@ -59,22 +59,17 @@ function getActiveSessionIdentity(): { id: string; name: string; email: string; 
       };
     }
 
-    const storedId = localStorage.getItem('xentro_user_id');
+    const personal = JSON.parse(localStorage.getItem('xentro_personal_profile') || 'null');
     const profile = getUserProfile();
-    if (storedId) {
-      return {
-        id: storedId,
-        name: profile.name || 'Ecosystem Member',
-        email: profile.email || '',
-        role: profile.role || 'Explorer'
-      };
-    }
+    const storedId = localStorage.getItem('xentro_user_id') || profile?.id || '';
+    const resolvedName = (personal && personal.fullName) || profile?.name || 'Ecosystem Member';
+    const resolvedEmail = (personal && personal.email) || profile?.email || '';
 
     return {
-      id: profile.id || '',
-      name: profile.name || 'Ecosystem Member',
-      email: profile.email || '',
-      role: profile.role || 'Explorer'
+      id: storedId,
+      name: resolvedName,
+      email: resolvedEmail,
+      role: profile?.role || 'Explorer'
     };
   } catch {
     return { id: '', name: 'Ecosystem Member', email: '', role: 'Explorer' };
@@ -108,14 +103,28 @@ export const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) =
   const fetchHistory = async (explicitUserId?: string) => {
     try {
       setIsLoadingHistory(true);
-      const identity = explicitUserId || sessionUser.id || getActiveSessionIdentity().id;
+      const identity = explicitUserId ? { ...sessionUser, id: explicitUserId } : getActiveSessionIdentity();
+      const accessToken = typeof window !== 'undefined' ? localStorage.getItem('xentro_access_token') : null;
 
       const headers: Record<string, string> = {};
-      if (identity) {
-        headers['X-User-Id'] = identity;
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+      if (identity.id) {
+        headers['X-User-Id'] = identity.id;
+      }
+      if (identity.email) {
+        headers['X-User-Email'] = identity.email;
+      }
+      if (identity.name) {
+        headers['X-User-Name'] = identity.name;
       }
 
-      const res = await fetch(`/api/support/complaints${identity ? `?accountId=${encodeURIComponent(identity)}` : ''}`, {
+      const params = new URLSearchParams();
+      if (identity.id) params.set('accountId', identity.id);
+      if (identity.email) params.set('email', identity.email);
+
+      const res = await fetch(`/api/support/complaints?${params.toString()}`, {
         headers,
         credentials: 'include',
         cache: 'no-store'
@@ -152,19 +161,38 @@ export const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) =
     try {
       setIsSubmitting(true);
       const identity = getActiveSessionIdentity();
+      const accessToken = typeof window !== 'undefined' ? localStorage.getItem('xentro_access_token') : null;
+
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
+      if (identity.id) {
+        headers['X-User-Id'] = identity.id;
+      }
+      if (identity.email) {
+        headers['X-User-Email'] = identity.email;
+      }
+      if (identity.name) {
+        headers['X-User-Name'] = identity.name;
+      }
+
       const payload = {
         subject: subject.trim(),
         category,
         priority,
         message: message.trim(),
+        userId: identity.id,
+        accountId: identity.id,
+        userEmail: identity.email,
+        userName: identity.name,
       };
 
       const res = await fetch('/api/support/complaints', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(identity.id ? { 'X-User-Id': identity.id } : {})
-        },
+        headers,
         credentials: 'include',
         body: JSON.stringify(payload),
       });
@@ -178,10 +206,10 @@ export const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) =
         setMessage('');
         fetchHistory(identity.id);
       } else {
-        showToast(data?.message || 'Failed to submit complaint. Please sign in and try again.', 'error');
+        showToast(data?.message || 'Failed to submit the request.', 'error');
       }
     } catch {
-      showToast('Network error while filing complaint.', 'error');
+      showToast('Network error while filing complaint. Please try again.', 'error');
     } finally {
       setIsSubmitting(false);
     }
