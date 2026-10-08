@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { ECOSYSTEM_GROWTH_DATA } from '@/data/adminData';
 import { adminDomainService } from '@/lib/adminDomainService';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 
 export const AdminAnalyticsView: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<'Ecosystem' | 'Revenue' | 'Mentorship' | 'Endorsements'>('Ecosystem');
@@ -31,7 +32,8 @@ export const AdminAnalyticsView: React.FC = () => {
     const loadStats = async () => {
       let usersList: any[] = [];
       try {
-        const resp = await fetch('http://127.0.0.1:8000/api/v1/admin/users/');
+        const backendUrl = getBackendBaseUrl();
+        const resp = await fetch(`${backendUrl}/admin/users/`);
         if (resp.ok) {
           const d = await resp.json();
           usersList = d?.data?.users || d?.data || [];

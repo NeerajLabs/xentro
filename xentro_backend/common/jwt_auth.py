@@ -58,6 +58,8 @@ class XentroUserWrapper:
         self.admin_role = data.get("admin_role")
         self.admin_permissions = data.get("admin_permissions", [])
         self.active_roles = data.get("active_roles", ["Explorer"])
+        self.account_type = data.get("accountType") or data.get("userType") or data.get("account_type") or "Explorer"
+        self.user_type = self.account_type
         self.verification_status = data.get("verification_status", "NOT_SUBMITTED")
 
     def has_perm(self, perm: str) -> bool:

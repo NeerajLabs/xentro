@@ -5,11 +5,12 @@ import {
   getServerConnections,
   ServerConnectionRecord,
 } from '@/lib/serverMessages';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const BACKEND_BASE = process.env.BACKEND_API_URL || 'http://127.0.0.1:8000/api/v1';
+const BACKEND_BASE = getBackendBaseUrl();
 
 export async function GET(req: NextRequest) {
   try {

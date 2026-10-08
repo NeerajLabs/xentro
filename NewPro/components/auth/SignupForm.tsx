@@ -14,6 +14,7 @@ import { RegistrationPendingState } from "./RegistrationPendingState";
 import { SignUpFormData, FormErrors, AuthErrorType } from "@/lib/auth/types";
 import { validateSignUpForm, validateField } from "@/lib/auth/validation";
 import { authService } from "@/lib/auth/authService";
+import { getBackendBaseUrl } from "@/lib/backendUrl";
 import { getNewProUrl } from "@/lib/auth/xentroHandoff";
 import { Building2, Sparkles } from "lucide-react";
 
@@ -125,7 +126,8 @@ export const SignupForm: React.FC = () => {
       // 1. Submit to Django backend signup pipeline
       let backendSuccess = false;
       try {
-        const resp = await fetch("http://127.0.0.1:8000/api/v1/auth/signup/", {
+        const backendUrl = getBackendBaseUrl();
+        const resp = await fetch(`${backendUrl}/auth/signup/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -134,6 +136,8 @@ export const SignupForm: React.FC = () => {
             phoneNumber: formData.phoneNumber,
             password: formData.password,
             role: selectedRole,
+            accountType: selectedRole,
+            userType: selectedRole,
             institutionName: selectedRole === "ESP" ? institutionName : "",
             espType: selectedRole === "ESP" ? espType : "",
           })

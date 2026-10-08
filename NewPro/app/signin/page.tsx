@@ -12,6 +12,7 @@ import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
 import { AuthDivider } from "@/components/auth/AuthDivider";
 import { AuthError } from "@/components/auth/AuthError";
 import { authService } from "@/lib/auth/authService";
+import { getBackendBaseUrl } from "@/lib/backendUrl";
 import { Loader2, ArrowRight, ShieldCheck, User, Lock, KeyRound } from "lucide-react";
 
 export default function SignInPage() {
@@ -68,7 +69,8 @@ export default function SignInPage() {
     setOtpLoading(true);
 
     try {
-      const resp = await fetch("http://127.0.0.1:8000/api/v1/auth/signin/otp/send/", {
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/auth/signin/otp/send/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim().toLowerCase() })
@@ -111,7 +113,8 @@ export default function SignInPage() {
     try {
       let signedInUser: any = null;
       try {
-        const resp = await fetch("http://127.0.0.1:8000/api/v1/auth/signin/otp/verify/", {
+        const backendUrl = getBackendBaseUrl();
+        const resp = await fetch(`${backendUrl}/auth/signin/otp/verify/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: email.trim().toLowerCase(), otp: otpCode.trim() })
@@ -154,18 +157,19 @@ export default function SignInPage() {
   const finalizeLogin = (signedInUser: any, normEmail: string) => {
     const displayName = signedInUser.fullName || signedInUser.name || normEmail.split("@")[0];
     const roles: string[] = signedInUser.activeRoles || [];
-    const rawAccountType = (signedInUser.accountType || "").toString().toLowerCase();
+    const reqRole = signedInUser.registrationRequest?.requestedRole || "";
+    const rawAccountType = (signedInUser.accountType || signedInUser.userType || signedInUser.primaryRole || reqRole || "").toString().toLowerCase();
 
     let activeRole = "explorer";
-    if (rawAccountType === "startup" || roles.some((r) => r.toLowerCase().includes("startup") || r.toLowerCase().includes("founder"))) {
+    if (rawAccountType.includes("startup") || roles.some((r) => r.toLowerCase().includes("startup") || r.toLowerCase().includes("founder"))) {
       activeRole = "startup";
-    } else if (rawAccountType === "mentor" || roles.some((r) => r.toLowerCase().includes("mentor"))) {
+    } else if (rawAccountType.includes("mentor") || roles.some((r) => r.toLowerCase().includes("mentor"))) {
       activeRole = "mentor";
-    } else if (rawAccountType === "investor" || roles.some((r) => r.toLowerCase().includes("investor"))) {
+    } else if (rawAccountType.includes("investor") || roles.some((r) => r.toLowerCase().includes("investor"))) {
       activeRole = "investor";
-    } else if (rawAccountType === "esp" || roles.some((r) => r.toLowerCase().includes("esp"))) {
+    } else if (rawAccountType.includes("esp") || roles.some((r) => r.toLowerCase().includes("esp"))) {
       activeRole = "esp";
-    } else if (rawAccountType === "explorer" || roles.some((r) => r.toLowerCase().includes("explorer"))) {
+    } else if (rawAccountType.includes("explorer") || roles.some((r) => r.toLowerCase().includes("explorer"))) {
       activeRole = "explorer";
     }
 
@@ -249,10 +253,16 @@ export default function SignInPage() {
 
     const hasChosenPath = Boolean(
       signedInUser.accountType ||
+      signedInUser.userType ||
+      signedInUser.primaryRole ||
+      reqRole ||
       roles.some((r) => {
         const lower = r.toLowerCase();
         return lower.includes("startup") || lower.includes("mentor") || lower.includes("investor") || lower.includes("esp") || lower.includes("founder") || lower.includes("explorer");
-      })
+      }) ||
+      signedInUser.entityId ||
+      signedInUser.accountStatus === "ACTIVE" ||
+      signedInUser.createdAt
     );
 
     let hasEntities = Boolean(signedInUser.entityId);
@@ -318,7 +328,8 @@ export default function SignInPage() {
 
       // 1. Try real Django Backend Auth first
       try {
-        const resp = await fetch("http://127.0.0.1:8000/api/v1/auth/signin/", {
+        const backendUrl = getBackendBaseUrl();
+        const resp = await fetch(`${backendUrl}/auth/signin/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: normEmail, password })

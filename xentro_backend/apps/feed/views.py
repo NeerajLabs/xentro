@@ -178,11 +178,13 @@ class FeedPostsView(APIView):
         author_avatar = (u_doc.get("avatar") if u_doc else (request.data.get("author") or {}).get("avatar")) or f"https://api.dicebear.com/7.x/initials/svg?seed={author_name}"
 
         post_id = request.data.get("id") or generate_xentro_id("opportunity")
+        role_type = request.data.get("authorRoleType") or (request.data.get("author") or {}).get("roleType") or (u_doc.get("accountType", "").lower() if u_doc else "startup")
         doc = {
             "id": post_id,
             "authorId": author_id,
             "authorName": author_name,
             "authorRole": author_role,
+            "authorRoleType": role_type,
             "authorCompany": author_company,
             "authorAvatar": author_avatar,
             "content": content,

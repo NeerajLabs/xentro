@@ -7,7 +7,7 @@ import { getUserProfile, UserProfile } from '@/lib/userProfile';
 import { feedService, fetchInitialServerFeed } from '@/lib/feedService';
 import { CreatePostTrigger } from './feed/CreatePostTrigger';
 import { CreatePostModal } from './feed/CreatePostModal';
-import { Sparkles, Plus } from 'lucide-react';
+import { Sparkles, Plus, AlertCircle, RefreshCw } from 'lucide-react';
 
 interface FeedProps {
   searchQuery?: string;
@@ -20,6 +20,8 @@ export const Feed: React.FC<FeedProps> = ({ searchQuery = '', onPostCreated }) =
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [modalInitialIntent, setModalInitialIntent] = useState<string | undefined>(undefined);
   const [modalInitialImageUrl, setModalInitialImageUrl] = useState<string | undefined>(undefined);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isRetrying, setIsRetrying] = useState(false);
 
   // Load posts and subscribe to feed & role updates
   useEffect(() => {
@@ -32,6 +34,11 @@ export const Feed: React.FC<FeedProps> = ({ searchQuery = '', onPostCreated }) =
       setPosts(feedService.getPosts());
     };
 
+    const handleFeedError = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setFetchError(customEvent.detail?.error || null);
+    };
+
     const handleRoleChanged = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail?.profile) {
@@ -42,13 +49,22 @@ export const Feed: React.FC<FeedProps> = ({ searchQuery = '', onPostCreated }) =
     };
 
     window.addEventListener('xentro-feed-updated', handleFeedUpdate);
+    window.addEventListener('xentro-feed-error', handleFeedError);
     window.addEventListener('xentro-role-changed', handleRoleChanged);
 
     return () => {
       window.removeEventListener('xentro-feed-updated', handleFeedUpdate);
+      window.removeEventListener('xentro-feed-error', handleFeedError);
       window.removeEventListener('xentro-role-changed', handleRoleChanged);
     };
   }, []);
+
+  const handleRetryFeed = async () => {
+    setIsRetrying(true);
+    await fetchInitialServerFeed();
+    setPosts(feedService.getPosts());
+    setIsRetrying(false);
+  };
 
   const handleLikeToggle = (postId: string) => {
     const updated = feedService.toggleLike(postId);
@@ -99,7 +115,58 @@ export const Feed: React.FC<FeedProps> = ({ searchQuery = '', onPostCreated }) =
 
       {/* 2. Social Posts List */}
       <div className="space-y-4 animate-fade-slide">
-        {filteredPosts.length > 0 ? (
+        {fetchError && filteredPosts.length > 0 && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl p-3 flex items-center justify-between text-xs text-amber-700 dark:text-amber-400">
+            <div className="flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span>Viewing cached feed. Server sync unavailable ({fetchError}).</span>
+            </div>
+            <button
+              type="button"
+              onClick={handleRetryFeed}
+              disabled={isRetrying}
+              className="px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 font-semibold cursor-pointer flex items-center gap-1 transition-all"
+            >
+              <RefreshCw className={`w-3 h-3 ${isRetrying ? 'animate-spin' : ''}`} />
+              <span>{isRetrying ? 'Retrying...' : 'Retry'}</span>
+            </button>
+          </div>
+        )}
+
+        {fetchError && filteredPosts.length === 0 ? (
+          <div className="bg-white dark:bg-[#181B1A] rounded-2xl border border-red-500/30 dark:border-red-500/20 p-8 text-center animate-fade-slide space-y-3">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 dark:bg-red-950/30 text-red-500 flex items-center justify-center mx-auto">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-[#101212] dark:text-white">
+                Unable to load feed
+              </p>
+              <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] mt-1 max-w-sm mx-auto">
+                {fetchError}. Please verify your connection or click retry below.
+              </p>
+            </div>
+            <div className="flex items-center justify-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleRetryFeed}
+                disabled={isRetrying}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-xs font-bold text-[#101212] shadow-2xs transition-all active:scale-95 cursor-pointer"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRetrying ? 'animate-spin' : ''}`} />
+                <span>{isRetrying ? 'Connecting...' : 'Retry Connection'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenCreateModal()}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-[#202422] dark:hover:bg-[#282D2B] text-xs font-bold text-[#101212] dark:text-white transition-all active:scale-95 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Create Post</span>
+              </button>
+            </div>
+          </div>
+        ) : filteredPosts.length > 0 ? (
           filteredPosts.map((post) => (
             <PostCard key={post.id} post={post} onLikeToggle={handleLikeToggle} />
           ))

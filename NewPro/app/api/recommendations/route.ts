@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -9,7 +10,8 @@ export async function GET(req: NextRequest) {
     const excludeUserId = searchParams.get('excludeUserId') || '';
     const excludeEmail = searchParams.get('excludeEmail') || '';
 
-    const backendUrl = new URL('http://127.0.0.1:8000/api/v1/users/recommendations/');
+    const backendBase = getBackendBaseUrl();
+    const backendUrl = new URL(`${backendBase}/users/recommendations/`);
     if (excludeUserId) backendUrl.searchParams.set('excludeUserId', excludeUserId);
     if (excludeEmail) backendUrl.searchParams.set('excludeEmail', excludeEmail);
 

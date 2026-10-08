@@ -7,6 +7,7 @@ import {
   AdminKPI,
 } from '@/data/adminData';
 import { adminDomainService } from '@/lib/adminDomainService';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 import { AdminTab } from './AdminLayout';
 import {
   TrendingUp,
@@ -56,7 +57,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({ onNavigate
     let pendingRequests: any[] = [];
 
     try {
-      const resp = await fetch('http://127.0.0.1:8000/api/v1/admin/users/');
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/admin/users/`);
       if (resp.ok) {
         const d = await resp.json();
         usersList = d?.data?.users || d?.data || [];
@@ -67,7 +69,8 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({ onNavigate
     }
 
     try {
-      const resp = await fetch('http://127.0.0.1:8000/api/v1/admin/registration-requests/');
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/admin/registration-requests/`);
       if (resp.ok) {
         const d = await resp.json();
         pendingRequests = d?.data?.requests || d?.data?.registrationRequests || [];

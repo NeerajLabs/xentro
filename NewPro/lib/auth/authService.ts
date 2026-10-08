@@ -104,21 +104,35 @@ export function generateUsername(name: string): string {
   return `@${clean}${num}`;
 }
 
+import { getBackendBaseUrl } from "../backendUrl";
+
 async function syncBackendAccountType(accountType: string, extraData?: any) {
   try {
     const rawUser = getStorageItem(SESSION_USER_KEY);
     const user = rawUser ? JSON.parse(rawUser) : null;
     if (!user) return;
-    await fetch("http://127.0.0.1:8000/api/v1/auth/account-type/", {
+
+    setStorageItem("xentro_account_type", accountType);
+    setStorageItem("xentro_onboarding_complete", "true");
+
+    const token = getStorageItem("xentro_access_token");
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      "X-User-Id": user.id || "",
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const backendUrl = getBackendBaseUrl();
+    await fetch(`${backendUrl}/auth/account-type/`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-User-Id": user.id || "",
-      },
+      headers,
       body: JSON.stringify({
         userId: user.id,
         email: user.email,
         accountType,
+        userType: accountType,
         ...extraData,
       }),
     });
@@ -451,7 +465,8 @@ export const authService = {
         avatar: profile.photoUrl,
       };
 
-      const res = await fetch("http://127.0.0.1:8000/api/v1/auth/profile/", {
+      const backendUrl = getBackendBaseUrl();
+      const res = await fetch(`${backendUrl}/auth/profile/`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -478,7 +493,8 @@ export const authService = {
     try {
       const user = this.getCurrentUser();
       if (!user) return null;
-      const res = await fetch(`http://127.0.0.1:8000/api/v1/auth/me/`, {
+      const backendUrl = getBackendBaseUrl();
+      const res = await fetch(`${backendUrl}/auth/me/`, {
         headers: {
           "X-User-Id": user.id || "",
         },

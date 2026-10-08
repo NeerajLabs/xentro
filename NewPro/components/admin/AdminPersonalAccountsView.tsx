@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { AdminPersonalAccount, ParticipationMode, IdentityVerificationStatus } from '@/types/admin';
 import { adminDomainService, logAdminAudit } from '@/lib/adminDomainService';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 import {
   Search,
   Filter,
@@ -62,7 +63,8 @@ export const AdminPersonalAccountsView: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const resp = await fetch("http://127.0.0.1:8000/api/v1/admin/users/");
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/admin/users/`);
       if (resp.ok) {
         const data = await resp.json();
         if (data?.success && data?.data?.users) {
@@ -101,7 +103,8 @@ export const AdminPersonalAccountsView: React.FC = () => {
 
   const fetchPendingRequests = async () => {
     try {
-      const resp = await fetch("http://127.0.0.1:8000/api/v1/admin/registration-requests/");
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/admin/registration-requests/`);
       if (resp.ok) {
         const data = await resp.json();
         if (data?.success && data?.data) {
@@ -117,7 +120,8 @@ export const AdminPersonalAccountsView: React.FC = () => {
   const handleApproveRegistration = async (id: string, email: string) => {
     setProcessingId(id);
     try {
-      const resp = await fetch(`http://127.0.0.1:8000/api/v1/admin/registration-requests/${id}/action/`, {
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/admin/registration-requests/${id}/action/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "APPROVE", notes: "Approved by Platform Admin" })
@@ -143,7 +147,8 @@ export const AdminPersonalAccountsView: React.FC = () => {
     if (!confirm(`Are you sure you want to reject the registration request for ${email}?`)) return;
     setProcessingId(id);
     try {
-      const resp = await fetch(`http://127.0.0.1:8000/api/v1/admin/registration-requests/${id}/action/`, {
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/admin/registration-requests/${id}/action/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "REJECT", notes: "Rejected by Administrator" })

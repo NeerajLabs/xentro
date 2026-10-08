@@ -35,7 +35,7 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
 }
 
 // Fetch initial feed from server
-export function fetchInitialServerFeed() {
+export async function fetchInitialServerFeed() {
   if (typeof window === 'undefined') return;
   try {
     const raw = localStorage.getItem('xentro_current_user');
@@ -45,19 +45,23 @@ export function fetchInitialServerFeed() {
       userId = parsed?.id || '';
     }
     const query = userId ? `?userId=${encodeURIComponent(userId)}` : '';
-    fetch(`/api/feed${query}`)
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data?.success && Array.isArray(data.posts)) {
-          if (data.posts.length === 0) {
-            feedService.savePosts([]);
-          } else {
-            feedService.applyRemotePosts(data.posts);
-          }
-        }
-      })
-      .catch(() => {});
-  } catch (_) {}
+    const res = await fetch(`/api/feed${query}`, { cache: 'no-store' });
+    if (!res.ok) {
+      window.dispatchEvent(new CustomEvent('xentro-feed-error', { detail: { error: `HTTP ${res.status}: Failed to reach server feed` } }));
+      return;
+    }
+    const data = await res.json();
+    if (data?.success && Array.isArray(data.posts)) {
+      if (data.posts.length > 0) {
+        feedService.applyRemotePosts(data.posts);
+      }
+      window.dispatchEvent(new CustomEvent('xentro-feed-error', { detail: { error: null } }));
+    } else if (data?.isFallback && data?.error) {
+      window.dispatchEvent(new CustomEvent('xentro-feed-error', { detail: { error: data.error } }));
+    }
+  } catch (err: any) {
+    window.dispatchEvent(new CustomEvent('xentro-feed-error', { detail: { error: err?.message || 'Network connection error' } }));
+  }
 }
 
 function getCurrentUserId(): string {
@@ -202,12 +206,11 @@ export const feedService = {
       map.set(p.id, merged);
     });
 
-    // Preserve only recently created optimistic in-flight posts (within 15 seconds)
-    const now = Date.now();
+    // Preserve locally created posts and optimistic in-flight posts
+    const me = getCurrentUserId();
     current.forEach((p) => {
-      if (!map.has(p.id) && p.id.startsWith('post_')) {
-        const timestampPart = parseInt(p.id.split('_')[1] || '0', 10);
-        if (timestampPart && now - timestampPart < 15000) {
+      if (!map.has(p.id)) {
+        if (p.id.startsWith('post_') || (me && p.author?.id === me)) {
           map.set(p.id, p);
         }
       }

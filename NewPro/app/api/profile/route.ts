@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -12,7 +13,8 @@ export async function GET(req: NextRequest) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (userId) headers['X-User-Id'] = userId;
 
-    const res = await fetch(`http://127.0.0.1:8000/api/v1/auth/profile/?userId=${encodeURIComponent(userId)}`, {
+    const backendUrl = getBackendBaseUrl();
+    const res = await fetch(`${backendUrl}/auth/profile/?userId=${encodeURIComponent(userId)}`, {
       headers,
       cache: 'no-store',
     });
@@ -39,7 +41,8 @@ export async function POST(req: NextRequest) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     if (userId) headers['X-User-Id'] = userId;
 
-    const res = await fetch('http://127.0.0.1:8000/api/v1/auth/profile/', {
+    const backendUrl = getBackendBaseUrl();
+    const res = await fetch(`${backendUrl}/auth/profile/`, {
       method: 'POST',
       headers,
       body: JSON.stringify(body),

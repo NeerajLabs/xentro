@@ -4,6 +4,7 @@ import {
   ApplicantStatus,
   OpportunityStatus,
 } from '@/types/opportunity';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 
 const STORAGE_KEY = 'xentro_universal_opportunities';
 const APPLICANTS_STORAGE_KEY = 'xentro_opportunity_applicants';
@@ -500,7 +501,8 @@ class OpportunityService {
 
   public async fetchOpportunitiesFromApi(): Promise<Opportunity[]> {
     try {
-      const resp = await fetch("http://127.0.0.1:8000/api/v1/opportunities/");
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/opportunities/`);
       if (resp.ok) {
         const json = await resp.json();
         const apiRecords = json?.data?.opportunities || json?.data || [];
@@ -574,9 +576,10 @@ class OpportunityService {
 
   public async importOpportunitiesCsv(csvFileOrText: File | string): Promise<{ success: boolean; count: number; message: string }> {
     try {
+      const backendUrl = getBackendBaseUrl();
       let resp: Response;
       if (typeof csvFileOrText === 'string') {
-        resp = await fetch("http://127.0.0.1:8000/api/v1/opportunities/import-csv/", {
+        resp = await fetch(`${backendUrl}/opportunities/import-csv/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ csvContent: csvFileOrText }),
@@ -584,7 +587,7 @@ class OpportunityService {
       } else {
         const formData = new FormData();
         formData.append("file", csvFileOrText);
-        resp = await fetch("http://127.0.0.1:8000/api/v1/opportunities/import-csv/", {
+        resp = await fetch(`${backendUrl}/opportunities/import-csv/`, {
           method: "POST",
           body: formData,
         });

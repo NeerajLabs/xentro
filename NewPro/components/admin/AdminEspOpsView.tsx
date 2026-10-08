@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { AdminEspRecord } from '@/types/admin';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 import {
   Landmark,
   Search,
@@ -55,7 +56,8 @@ export const AdminEspOpsView: React.FC = () => {
     // Fetch live pending registrations from backend
     const loadPending = async () => {
       try {
-        const resp = await fetch("http://127.0.0.1:8000/api/v1/admin/registration-requests/");
+        const backendUrl = getBackendBaseUrl();
+        const resp = await fetch(`${backendUrl}/admin/registration-requests/`);
         if (resp.ok) {
           const data = await resp.json();
           const liveRequests = data?.data?.requests || data?.data?.registrationRequests || [];
@@ -97,7 +99,8 @@ export const AdminEspOpsView: React.FC = () => {
 
   const handleApproveRequest = async (req: EspRequestQueueItem) => {
     try {
-      await fetch(`http://127.0.0.1:8000/api/v1/admin/registration-requests/${req.requestId}/action/`, {
+      const backendUrl = getBackendBaseUrl();
+      await fetch(`${backendUrl}/admin/registration-requests/${req.requestId}/action/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "APPROVE", notes: "Approved by Xentro Administration" })

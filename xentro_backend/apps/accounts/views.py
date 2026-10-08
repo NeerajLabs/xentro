@@ -38,14 +38,26 @@ def enrich_user_account_data(user_dict):
     user_clean.pop("passwordHash", None)
     user_clean.pop("_id", None)
 
-    # 1. Canonical Account Type
-    acct_type = user_clean.get("accountType")
+    # 1. Canonical Account Type (synchronized with userType)
+    acct_type = user_clean.get("accountType") or user_clean.get("userType")
     if not acct_type:
         roles = user_clean.get("activeRoles") or []
         req_role = user_clean.get("registrationRequest", {}).get("requestedRole")
         acct_type = normalize_account_type(req_role or (roles[0] if roles else "Explorer"))
-        user_clean["accountType"] = acct_type
+        # Immediately persist backfill into MongoDB for existing records
+        user_id = user_clean.get("id")
+        if user_id:
+            try:
+                users_col = get_collection("users")
+                users_col.update_one(
+                    {"id": user_id},
+                    {"$set": {"accountType": acct_type, "userType": acct_type, "primaryRole": acct_type}}
+                )
+            except Exception:
+                pass
 
+    user_clean["accountType"] = acct_type
+    user_clean["userType"] = acct_type
     user_clean["primaryRole"] = acct_type
     user_id = user_clean.get("id")
 
@@ -226,6 +238,7 @@ class SignUpView(APIView):
             "accountStatus": account_status,
             "isActive": is_active,
             "accountType": account_type,
+            "userType": account_type,
             "primaryRole": account_type,
             "activeRoles": active_roles,
             "entityId": entity_id,
@@ -509,6 +522,7 @@ class UpdateAccountTypeView(APIView):
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         update_fields = {
             "accountType": account_type,
+            "userType": account_type,
             "primaryRole": account_type,
             "updatedAt": now_iso,
         }

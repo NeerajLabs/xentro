@@ -8,6 +8,7 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { ProgressIndicator } from "@/components/onboarding/ProgressIndicator";
 import { AuthInput } from "@/components/auth/AuthInput";
 import { authService } from "@/lib/auth/authService";
+import { getBackendBaseUrl } from "@/lib/backendUrl";
 import { completeOnboardingAndHandoff, getNewProUrl } from "@/lib/auth/xentroHandoff";
 import { logoutFromNewPro } from "@/lib/authGuard";
 import { User, ParticipationPath, StartupEntity, InvestorOrgEntity, EspRequest } from "@/lib/auth/types";
@@ -310,7 +311,8 @@ export default function OnboardingPage() {
     setIsSubmittingEsp(true);
 
     try {
-      await fetch("http://127.0.0.1:8000/api/v1/auth/esp-request/", {
+      const backendUrl = getBackendBaseUrl();
+      await fetch(`${backendUrl}/auth/esp-request/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

@@ -10,8 +10,9 @@ import {
   deleteServerPost,
 } from '@/lib/serverMessages';
 import { Post, PostComment } from '@/types';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 
-const BACKEND = 'http://127.0.0.1:8000/api/v1';
+const BACKEND = getBackendBaseUrl();
 
 function mapBackendComment(c: any): PostComment {
   const a = c?.author || {};
@@ -41,6 +42,8 @@ export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   let backendPosts: any[] = [];
+  let backendFetchFailed = false;
+  let backendErrorMsg = '';
   try {
     const token = req.cookies.get('xentro_session')?.value || req.headers.get('authorization')?.replace('Bearer ', '');
     const userId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
@@ -95,13 +98,17 @@ export async function GET(req: NextRequest) {
           };
         });
       }
+    } else {
+      backendFetchFailed = true;
+      backendErrorMsg = `Backend HTTP ${res.status}`;
     }
-  } catch (err) {
-    // Backend offline or unreachable
+  } catch (err: any) {
+    backendFetchFailed = true;
+    backendErrorMsg = err?.message || 'Backend unreachable';
   }
 
   // If backend returned real posts, use them directly as the source of truth
-  if (backendPosts.length > 0) {
+  if (!backendFetchFailed) {
     return NextResponse.json({
       success: true,
       posts: backendPosts,
@@ -120,8 +127,10 @@ export async function GET(req: NextRequest) {
     };
   });
   return NextResponse.json({
-    success: true,
+    success: false,
+    error: backendErrorMsg,
     posts: localPosts,
+    isFallback: true,
   });
 }
 
@@ -139,24 +148,28 @@ export async function POST(req: NextRequest) {
       }
       const updated = addServerPost(post);
 
-      if (token || userId) {
-        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-        if (userId) headers['x-user-id'] = userId;
+      const authorId = post.author?.id || userId || 'anon';
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      headers['x-user-id'] = authorId;
 
-        fetch(`${BACKEND}/feed/posts/`, {
+      try {
+        await fetch(`${BACKEND}/feed/posts/`, {
           method: 'POST',
           headers,
-          // Forward the client id so likes/comments on this post resolve to the same MongoDB document
           body: JSON.stringify({
             id: post.id,
             author: post.author,
+            authorId: authorId,
+            authorRoleType: post.authorRoleType || 'startup',
             content: post.content,
             postType: post.postType,
             tags: post.tags || [],
             mediaUrls: post.media ? [post.media] : [],
           }),
-        }).catch(() => {});
+        });
+      } catch (err) {
+        console.debug('Failed to sync post to backend:', err);
       }
 
       return NextResponse.json({ success: true, posts: updated });

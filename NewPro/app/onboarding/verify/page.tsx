@@ -7,6 +7,7 @@ import { BrandLogo } from "@/components/ui/BrandLogo";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { ProgressIndicator } from "@/components/onboarding/ProgressIndicator";
 import { authService } from "@/lib/auth/authService";
+import { getBackendBaseUrl } from "@/lib/backendUrl";
 import { User } from "@/lib/auth/types";
 import {
   Mail,
@@ -104,7 +105,8 @@ export default function VerifyAccountPage() {
       // 1. Verify with backend MongoDB / Redis API
       if (user?.email) {
         try {
-          const resp = await fetch("http://127.0.0.1:8000/api/v1/auth/otp/verify/", {
+          const backendUrl = getBackendBaseUrl();
+          const resp = await fetch(`${backendUrl}/auth/otp/verify/`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ email: user.email.trim().toLowerCase(), code: code.trim() })
@@ -152,7 +154,8 @@ export default function VerifyAccountPage() {
 
     if (user?.email) {
       try {
-        const resp = await fetch("http://127.0.0.1:8000/api/v1/auth/otp/send/", {
+        const backendUrl = getBackendBaseUrl();
+        const resp = await fetch(`${backendUrl}/auth/otp/send/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ email: user.email.trim().toLowerCase() })

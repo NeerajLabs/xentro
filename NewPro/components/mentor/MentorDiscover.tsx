@@ -15,6 +15,7 @@ import {
 import { useToast } from '@/components/ui/Toast';
 import { messagingService } from '@/lib/messagingService';
 import { toggleStartupBookmark, getBookmarkedStartups } from '@/lib/startupBookmarkState';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 import {
   DiscoverCategory,
   StartupRecommendation,
@@ -260,7 +261,8 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
     }
 
     // Query Django Backend for live registered startups
-    fetch('http://127.0.0.1:8000/api/v1/startups/discover/')
+    const backendUrl = getBackendBaseUrl();
+    fetch(`${backendUrl}/startups/discover/`)
       .then((res) => res.json())
       .then((data) => {
         if (data?.success && Array.isArray(data?.data?.startups)) {

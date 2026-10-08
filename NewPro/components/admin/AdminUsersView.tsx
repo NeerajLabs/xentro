@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { MOCK_ADMIN_USERS } from '@/data/adminData';
 import { AdminUserRecord } from '@/types/admin';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 import {
   Search,
   Filter,
@@ -42,7 +43,8 @@ export const AdminUsersView: React.FC = () => {
   React.useEffect(() => {
     const loadUsers = async () => {
       try {
-        const resp = await fetch("http://127.0.0.1:8000/api/v1/admin/users/");
+        const backendUrl = getBackendBaseUrl();
+        const resp = await fetch(`${backendUrl}/admin/users/`);
         if (resp.ok) {
           const data = await resp.json();
           if (data?.success && data?.data?.users) {

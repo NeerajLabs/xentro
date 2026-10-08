@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Sparkles,
@@ -213,6 +214,25 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   const [isShowingPresetList, setIsShowingPresetList] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') onClose();
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = '';
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [isOpen, onClose]);
 
   // Sync role and defaults when opened
   useEffect(() => {
@@ -420,11 +440,16 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     }
   };
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
-  return (
-    /* Modal Wrapper anchored at the top-center (items-start pt-6 sm:pt-10) so it appears RIGHT THERE without going down */
-    <div className="fixed inset-0 z-50 flex items-start justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-xs animate-fade-in overflow-y-auto pt-6 sm:pt-10 pb-6 sm:pb-10">
+  const modalContent = (
+    /* Modal Portal Wrapper: centered in viewport, escape hatch from parent transforms, fixed z-[9999] */
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-3 sm:p-4 md:p-6 bg-black/80 backdrop-blur-xs animate-fade-in overflow-hidden"
+      onClick={onClose}
+      role="dialog"
+      aria-modal="true"
+    >
       {/* Hidden file input for modal uploads */}
       <input
         type="file"
@@ -436,11 +461,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
       />
 
       <div
-        className="bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-2xl sm:rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[calc(100vh-3.5rem)] sm:max-h-[calc(100vh-5rem)] relative"
+        className="bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-2xl sm:rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[88vh] relative"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Modal Header */}
-        <div className="px-5 sm:px-6 py-3.5 border-b border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between bg-white dark:bg-[#181B1A] sticky top-0 z-20">
+        {/* Modal Header: Pinned */}
+        <div className="flex-shrink-0 px-5 sm:px-6 py-3.5 border-b border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between bg-white dark:bg-[#181B1A] z-20">
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-[#D9FF3F] text-[#101212] flex items-center justify-center font-bold shadow-2xs">
               <Sparkles className="w-4 h-4" />
@@ -466,7 +491,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
         </div>
 
         {/* Modal Body: Scrollable */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1 custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-6 space-y-4 overscroll-contain custom-scrollbar">
           {/* 1. Author Persona Selector Card */}
           <div className="bg-gray-50 dark:bg-[#101212] rounded-2xl p-3 border border-[#E5E7EB] dark:border-[#262A29] relative">
             <div className="flex items-center justify-between gap-3">
@@ -862,8 +887,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
           </div>
         </div>
 
-        {/* Modal Footer */}
-        <div className="px-5 sm:px-6 py-3.5 border-t border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between bg-white dark:bg-[#181B1A] sticky bottom-0 z-20">
+        {/* Modal Footer: Pinned */}
+        <div className="flex-shrink-0 px-5 sm:px-6 py-3.5 border-t border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between bg-white dark:bg-[#181B1A] z-20">
           <button
             type="button"
             onClick={onClose}
@@ -891,4 +916,6 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };

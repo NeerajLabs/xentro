@@ -23,6 +23,7 @@ import {
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { investorDomainService } from '@/lib/investorDomainService';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
 import { getUserProfile } from '@/lib/userProfile';
 import { InvestorDDDocument, InvestorDDStatus, InvestorDeal } from '@/types/investor';
 
@@ -187,7 +188,8 @@ export const InvestorDiligenceLocker: React.FC = () => {
       // 1. Call backend DD verify / request endpoint
       const startupId = ndaDoc.startupId;
       try {
-        await fetch(`http://127.0.0.1:8000/api/v1/dd/${startupId}/request-access/`, {
+        const backendUrl = getBackendBaseUrl();
+        await fetch(`${backendUrl}/dd/${startupId}/request-access/`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
