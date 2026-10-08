@@ -193,9 +193,9 @@ export const authService = {
       };
     }
 
-    // Check for existing account
+    // Check for existing account ONLY if backendUser is NOT already provided
     const existing = getRegisteredEmails();
-    if (existing.includes(normalizedEmail)) {
+    if (!backendUser && existing.includes(normalizedEmail)) {
       return {
         success: false,
         error: {
@@ -213,19 +213,45 @@ export const authService = {
       id: xuId,
       xentroId: xuId,
       username: username,
-      fullName: data.fullName.trim(),
+      fullName: backendUser?.fullName || data.fullName.trim(),
       email: normalizedEmail,
-      phoneNumber: data.phoneNumber?.trim() || "",
+      phoneNumber: backendUser?.phoneNumber || data.phoneNumber?.trim() || "",
       provider: "email",
-      createdAt: new Date().toISOString(),
-      emailVerified: false,
-      phoneVerified: false,
-      identityStatus: "NOT_SUBMITTED",
-      activeRoles: ["Personal Account"],
+      createdAt: backendUser?.createdAt || new Date().toISOString(),
+      emailVerified: true, // Marked verified on successful OTP flow!
+      phoneVerified: Boolean(backendUser?.phoneVerified),
+      identityStatus: (backendUser?.identityStatus as any) || "NOT_SUBMITTED",
+      activeRoles: backendUser?.activeRoles || ["Personal Account"],
+      accountType: (backendUser as any)?.accountType || "Explorer",
+      role: (backendUser as any)?.role || (backendUser as any)?.accountType || "Explorer",
     };
 
     saveRegisteredEmail(normalizedEmail);
     setStorageItem(SESSION_USER_KEY, JSON.stringify(newUser));
+
+    // Also persist personal profile draft so Step 3 immediately has entered details
+    const existingProfile = this.getPersonalProfile();
+    const updatedProfile: PersonalProfile = {
+      fullName: newUser.fullName,
+      email: newUser.email,
+      phoneNumber: newUser.phoneNumber,
+      headline: existingProfile?.headline || "",
+      location: existingProfile?.location || "",
+      bio: existingProfile?.bio || "",
+      currentRole: existingProfile?.currentRole || "",
+      currentOrganization: existingProfile?.currentOrganization || "",
+      education: existingProfile?.education || "",
+      professionalExperience: existingProfile?.professionalExperience || "",
+      skills: existingProfile?.skills || [],
+      areasOfExpertise: existingProfile?.areasOfExpertise || [],
+      industries: existingProfile?.industries || [],
+      startupInterests: existingProfile?.startupInterests || [],
+      entrepreneurshipInterests: existingProfile?.entrepreneurshipInterests || [],
+      linkedin: existingProfile?.linkedin || "",
+      website: existingProfile?.website || "",
+      otherLinks: existingProfile?.otherLinks || [],
+    };
+    setStorageItem(PERSONAL_PROFILE_KEY, JSON.stringify(updatedProfile));
 
     return {
       success: true,
@@ -601,10 +627,31 @@ export const authService = {
   getPersonalProfile(): PersonalProfile | null {
     const stored = getStorageItem(PERSONAL_PROFILE_KEY);
     try {
-      return stored ? JSON.parse(stored) : null;
+      if (stored) return JSON.parse(stored);
     } catch {
-      return null;
+      // Fallback below
     }
+    const user = this.getCurrentUser();
+    if (user) {
+      return {
+        fullName: user.fullName,
+        email: user.email,
+        phoneNumber: user.phoneNumber,
+        headline: "",
+        location: "",
+        bio: "",
+        currentRole: "",
+        currentOrganization: "",
+        education: "",
+        professionalExperience: "",
+        skills: [],
+        areasOfExpertise: [],
+        industries: [],
+        startupInterests: [],
+        entrepreneurshipInterests: [],
+      };
+    }
+    return null;
   },
 
   /**

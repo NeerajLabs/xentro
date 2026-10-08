@@ -75,13 +75,35 @@ export default function PersonalProfilePage() {
   const [isSuccess, setIsSuccess] = useState(false);
 
   useEffect(() => {
-    const active = authService.getCurrentUser();
+    let active = authService.getCurrentUser();
+    if (!active && typeof window !== "undefined") {
+      try {
+        const raw = localStorage.getItem("xentro_current_user") || sessionStorage.getItem("xentro_current_user");
+        if (raw) active = JSON.parse(raw);
+      } catch (_) {}
+    }
+
     if (!active) {
+      const hasToken =
+        typeof window !== "undefined" &&
+        (localStorage.getItem("xentro_access_token") ||
+          document.cookie.includes("xentro_session"));
+      if (hasToken) {
+        authService.fetchUserProfileFromBackend().then((serverProfile) => {
+          if (serverProfile) {
+            applyProfile(serverProfile);
+          } else {
+            router.push("/signup");
+          }
+        });
+        return;
+      }
       router.push("/signup");
       return;
     }
+
     setUser(active);
-    setFullName(active.fullName);
+    if (active.fullName) setFullName(active.fullName);
 
     const applyProfile = (p: Partial<PersonalProfile>) => {
       if (p.fullName) setFullName(p.fullName);

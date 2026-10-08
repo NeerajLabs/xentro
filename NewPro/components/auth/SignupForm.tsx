@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Loader2, ArrowRight, Mail, KeyRound, RefreshCw, CheckCircle2, ShieldCheck, ArrowLeft } from "lucide-react";
 import { AuthInput } from "./AuthInput";
 import { PasswordInput } from "./PasswordInput";
@@ -16,7 +17,10 @@ import { getBackendBaseUrl } from "@/lib/backendUrl";
 import { getNewProUrl } from "@/lib/auth/xentroHandoff";
 import { ProgressIndicator } from "@/components/onboarding/ProgressIndicator";
 
+const SIGNUP_DRAFT_KEY = "xentro_signup_draft";
+
 export const SignupForm: React.FC = () => {
+  const router = useRouter();
   // Step state: "form" for initial details, "otp" for email code verification
   const [step, setStep] = useState<"form" | "otp">("form");
   const [otpCode, setOtpCode] = useState("");
@@ -57,6 +61,30 @@ export const SignupForm: React.FC = () => {
   const [isSuccess, setIsSuccess] = useState(false);
   const [isPendingApproval, setIsPendingApproval] = useState(false);
 
+  // Restore signup draft across refresh so user stays on OTP step without losing data
+  useEffect(() => {
+    try {
+      const draftRaw = sessionStorage.getItem(SIGNUP_DRAFT_KEY);
+      if (draftRaw) {
+        const draft = JSON.parse(draftRaw);
+        if (draft.fullName || draft.email) {
+          setFormData((prev) => ({
+            ...prev,
+            fullName: draft.fullName || prev.fullName,
+            email: draft.email || prev.email,
+            phoneNumber: draft.phoneNumber || prev.phoneNumber,
+          }));
+          if (draft.step === "otp" && draft.email) {
+            setStep("otp");
+            setOtpInfoMessage(
+              `A 6-digit verification code has been dispatched to ${draft.email}.`
+            );
+          }
+        }
+      }
+    } catch (_) {}
+  }, []);
+
   useEffect(() => {
     let timer: any = null;
     if (otpCountdown > 0) {
@@ -86,6 +114,20 @@ export const SignupForm: React.FC = () => {
   ) => {
     const updated = { ...formData, [field]: value };
     setFormData(updated);
+
+    if (field === "fullName" || field === "email" || field === "phoneNumber") {
+      try {
+        sessionStorage.setItem(
+          SIGNUP_DRAFT_KEY,
+          JSON.stringify({
+            step,
+            fullName: updated.fullName,
+            email: updated.email,
+            phoneNumber: updated.phoneNumber,
+          })
+        );
+      } catch (_) {}
+    }
 
     if (generalError) {
       setGeneralError(null);
@@ -152,6 +194,17 @@ export const SignupForm: React.FC = () => {
         setOtpCode("");
         setOtpCountdown(60);
         setOtpInfoMessage(`A 6-digit verification code has been dispatched to ${formData.email.trim().toLowerCase()}.`);
+        try {
+          sessionStorage.setItem(
+            SIGNUP_DRAFT_KEY,
+            JSON.stringify({
+              step: "otp",
+              fullName: formData.fullName.trim(),
+              email: formData.email.trim().toLowerCase(),
+              phoneNumber: formData.phoneNumber.trim(),
+            })
+          );
+        } catch (_) {}
       } else {
         setGeneralError({
           message: data?.message || "Failed to dispatch verification code. Please check your email and try again.",
@@ -244,10 +297,15 @@ export const SignupForm: React.FC = () => {
 
         await authService.signUpWithEmail(formData, data?.data?.user);
 
+        try {
+          sessionStorage.removeItem(SIGNUP_DRAFT_KEY);
+        } catch (_) {}
+
         if (data.data?.requiresApproval) {
           setIsPendingApproval(true);
         } else {
-          setIsSuccess(true);
+          // Immediately advance directly to Step 3: Profile without routing back to start
+          router.push("/onboarding/profile");
         }
       } else {
         setGeneralError({
@@ -357,6 +415,17 @@ export const SignupForm: React.FC = () => {
               onClick={() => {
                 setStep("form");
                 setGeneralError(null);
+                try {
+                  sessionStorage.setItem(
+                    SIGNUP_DRAFT_KEY,
+                    JSON.stringify({
+                      step: "form",
+                      fullName: formData.fullName.trim(),
+                      email: formData.email.trim().toLowerCase(),
+                      phoneNumber: formData.phoneNumber.trim(),
+                    })
+                  );
+                } catch (_) {}
               }}
               className="text-[#8E9290] hover:text-[#101212] dark:hover:text-white underline cursor-pointer flex items-center gap-1"
             >

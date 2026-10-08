@@ -64,6 +64,8 @@ export interface PersonalProfile {
   linkedin?: string;
   website?: string;
   otherLinks?: string[];
+  email?: string;
+  phoneNumber?: string;
 }
 
 export interface User {

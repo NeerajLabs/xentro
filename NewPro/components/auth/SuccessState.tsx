@@ -17,10 +17,10 @@ export const SuccessState: React.FC<SuccessStateProps> = ({
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      window.location.href = redirectTo;
-    }, 1800);
+      router.push(redirectTo);
+    }, 1200);
     return () => clearTimeout(timer);
-  }, [redirectTo]);
+  }, [redirectTo, router]);
 
   return (
     <div
