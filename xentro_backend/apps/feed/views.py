@@ -163,6 +163,21 @@ class FeedPostsView(APIView):
             else:
                 p["isLiked"] = False
 
+            # Ensure media object is consistently formatted
+            if p.get("media"):
+                pass
+            elif p.get("mediaUrls") and len(p["mediaUrls"]) > 0:
+                first_media = p["mediaUrls"][0]
+                if isinstance(first_media, str) and first_media.strip():
+                    p["media"] = {
+                        "type": "image",
+                        "url": first_media.strip(),
+                        "alt": f"{author_name} post media",
+                        "caption": p.get("postType")
+                    }
+                elif isinstance(first_media, dict) and first_media.get("url"):
+                    p["media"] = first_media
+
             clean.append(p)
 
         return api_success({"posts": clean})
@@ -174,10 +189,15 @@ class FeedPostsView(APIView):
 
         content = request.data.get("content", "").strip()
         media_urls = request.data.get("mediaUrls", [])
+        media_obj = request.data.get("media")
         tags = request.data.get("tags", [])
         post_type = request.data.get("postType", "General Update")
 
-        if not content and not media_urls:
+        if media_obj and isinstance(media_obj, dict) and media_obj.get("url"):
+            if media_obj["url"] not in media_urls:
+                media_urls.append(media_obj["url"])
+
+        if not content and not media_urls and not media_obj:
             return api_error("Post content or media is required.")
 
         users_col = get_collection("users")
@@ -202,6 +222,7 @@ class FeedPostsView(APIView):
             "authorAvatar": author_avatar,
             "content": content,
             "postType": post_type,
+            "media": media_obj if media_obj else ({"type": "image", "url": media_urls[0], "alt": "Post image"} if media_urls else None),
             "mediaUrls": media_urls,
             "tags": tags,
             "likesCount": 0,

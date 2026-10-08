@@ -163,11 +163,35 @@ export default function PersonalProfilePage() {
     setStartupInterests(startupInterests.filter((i) => i !== item));
   };
 
-  const handlePhotoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
+  const handlePhotoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const url = URL.createObjectURL(file);
-      setPhotoPreview(url);
+      setPhotoFile(file);
+      // Instant local preview
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        setPhotoPreview(ev.target?.result as string);
+      };
+      reader.readAsDataURL(file);
+
+      // Durably upload to MongoDB Atlas media_uploads collection
+      try {
+        setIsUploadingPhoto(true);
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        const data = await res.json();
+        if (data?.success && data?.url) {
+          setPhotoPreview(data.url);
+        }
+      } catch (uploadErr) {
+        console.warn("Profile photo upload warning:", uploadErr);
+      } finally {
+        setIsUploadingPhoto(false);
+      }
     }
   };
 
@@ -175,8 +199,23 @@ export default function PersonalProfilePage() {
     e.preventDefault();
     setIsSubmitting(true);
 
+    let finalPhotoUrl = photoPreview;
+    if (photoFile && (!photoPreview || photoPreview.startsWith("data:") || photoPreview.startsWith("blob:"))) {
+      try {
+        const fd = new FormData();
+        fd.append("file", photoFile);
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        const data = await res.json();
+        if (data?.success && data?.url) {
+          finalPhotoUrl = data.url;
+        }
+      } catch (uploadErr) {
+        console.warn("Upload error during submit:", uploadErr);
+      }
+    }
+
     const profileData: PersonalProfile = {
-      photoUrl: photoPreview || undefined,
+      photoUrl: finalPhotoUrl || undefined,
       fullName: fullName.trim() || user?.fullName || "Verified User",
       headline: headline.trim(),
       location: location.trim(),
@@ -198,10 +237,16 @@ export default function PersonalProfilePage() {
     // Save to local storage and persist to MongoDB
     await authService.savePersonalProfile(profileData);
 
+    // Clear stale path selection so user lands squarely on Step 4 (Choose Path)
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("xentro_selected_path_step4");
+      sessionStorage.removeItem("xentro_selected_path_step4");
+    }
+
     setIsSubmitting(false);
     setIsSuccess(true);
     setTimeout(() => {
-      router.push("/onboarding");
+      router.push("/onboarding?step=4");
     }, 1000);
   };
 

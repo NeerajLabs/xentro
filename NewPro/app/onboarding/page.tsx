@@ -99,6 +99,7 @@ export default function OnboardingPage() {
   const [user, setUser] = useState<User | null>(null);
   const [activeModal, setActiveModal] = useState<"startup" | "mentor" | "investor" | "esp" | "explorer" | null>(null);
   const [completedPaths, setCompletedPaths] = useState<string[]>([]);
+  const [isPathSelected, setIsPathSelected] = useState<boolean>(false);
   const [newProRedirectUrl, setNewProRedirectUrl] = useState<string>("");
 
   // Startup Entity Form State
@@ -170,10 +171,19 @@ export default function OnboardingPage() {
     const prof = authService.getPersonalProfile();
     setPersonalProfile(prof);
 
-    const specificRoles = (active.activeRoles || []).filter(
-      (r) => r !== "Personal Account" && r !== "Personal Role"
-    );
-    setCompletedPaths(specificRoles);
+    // If coming from Step 3 (profile) or with step=4, or no path selected yet:
+    // User is firmly on Step 4 (Choose Path)!
+    const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const isExplicitStep4 = urlParams ? urlParams.get("step") === "4" : false;
+    const storedChosen = typeof window !== "undefined" ? localStorage.getItem("xentro_selected_path_step4") : null;
+
+    if (isExplicitStep4 || !storedChosen) {
+      setIsPathSelected(false);
+      setCompletedPaths([]);
+    } else {
+      setIsPathSelected(true);
+      setCompletedPaths([storedChosen]);
+    }
   }, [router]);
 
   const handleGoToFeed = () => {
@@ -225,7 +235,12 @@ export default function OnboardingPage() {
 
     setIsCreatingStartup(false);
     setCreatedStartup(startup);
-    setCompletedPaths((p) => [...p, "Startup Founder"]);
+    setCompletedPaths(["Startup Founder"]);
+    setIsPathSelected(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("xentro_selected_path_step4", "Startup Founder");
+    }
+    setActiveModal(null);
 
     const { redirectUrl } = completeOnboardingAndHandoff("startup", {
       organization: startupName.trim(),
@@ -247,7 +262,12 @@ export default function OnboardingPage() {
       mentorshipAreas: mentorAreas.split(",").map((s) => s.trim()),
     });
     setIsActivatingMentor(false);
-    setCompletedPaths((p) => [...p, "Mentor"]);
+    setCompletedPaths(["Mentor"]);
+    setIsPathSelected(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("xentro_selected_path_step4", "Mentor");
+    }
+    setActiveModal(null);
 
     const { redirectUrl } = completeOnboardingAndHandoff("mentor", {
       organization: mentorOrg,
@@ -262,7 +282,12 @@ export default function OnboardingPage() {
     setIsProcessingInvestor(true);
     await authService.activateIndividualInvestorRole();
     setIsProcessingInvestor(false);
-    setCompletedPaths((p) => [...p, "Individual Investor"]);
+    setCompletedPaths(["Individual Investor"]);
+    setIsPathSelected(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("xentro_selected_path_step4", "Individual Investor");
+    }
+    setActiveModal(null);
 
     const { redirectUrl } = completeOnboardingAndHandoff("investor", {
       roleTitle: "Angel Investor",
@@ -293,7 +318,11 @@ export default function OnboardingPage() {
       isMembershipRequested: investorOrgFound === true,
     });
     setIsProcessingInvestor(false);
-    setCompletedPaths((p) => [...p, "Institutional Investor"]);
+    setCompletedPaths(["Institutional Investor"]);
+    setIsPathSelected(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("xentro_selected_path_step4", "Institutional Investor");
+    }
 
     const effectiveOrgName = investorOrgName.trim() || investorOrgSearch.trim() || "My Investment Fund";
     const dynamicOrgId = `org_${effectiveOrgName.toLowerCase().replace(/[^a-z0-9]+/g, '_').slice(0, 30)}_${Date.now().toString(36)}`;
@@ -363,12 +392,20 @@ export default function OnboardingPage() {
     setIsSubmittingEsp(false);
     setEspSubmittedRequest(req);
     setCompletedPaths((p) => [...p, "ESP Applicant"]);
+    setIsPathSelected(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("xentro_selected_path_step4", "ESP Applicant");
+    }
   };
 
   // 5. Explorer Logic
   const handleActivateExplorer = async () => {
     await authService.activateExplorerAccess();
     setCompletedPaths(["Explorer"]);
+    setIsPathSelected(true);
+    if (typeof window !== "undefined") {
+      localStorage.setItem("xentro_selected_path_step4", "Explorer");
+    }
     setActiveModal(null);
   };
 
@@ -457,13 +494,13 @@ export default function OnboardingPage() {
 
       {/* Main Container */}
       <div className="w-full max-w-4xl mx-auto my-8">
-        {/* Progress Indicator: Step 04 */}
+        {/* Progress Indicator: Step 04 or Step 05 */}
         <div className="mb-6">
-          <ProgressIndicator currentStep={completedPaths.length > 0 ? 5 : 4} />
+          <ProgressIndicator currentStep={isPathSelected && completedPaths.length > 0 ? 5 : 4} />
         </div>
 
         {/* Content Box */}
-        {completedPaths.length > 0 ? (
+        {isPathSelected && completedPaths.length > 0 ? (
           /* Step 5: Launch View */
           <div className="bg-white dark:bg-[#181B1A] p-6 sm:p-10 lg:p-12 rounded-2xl border border-[#CDD1CE] dark:border-[#262928] shadow-xentro-card transition-colors animate-fade-slide">
             {/* Header */}
@@ -559,10 +596,17 @@ export default function OnboardingPage() {
             <div className="pt-6 border-t border-[#E3E5E3] dark:border-[#262928] flex flex-col sm:flex-row items-center justify-between gap-4">
               <button
                 type="button"
-                onClick={() => setCompletedPaths([])}
-                className="text-xs font-inter text-[#565B59] dark:text-[#B6B8B7] hover:text-[#101212] dark:hover:text-white cursor-pointer"
+                onClick={() => {
+                  if (typeof window !== "undefined") {
+                    localStorage.removeItem("xentro_selected_path_step4");
+                  }
+                  setIsPathSelected(false);
+                  setCompletedPaths([]);
+                  router.push("/onboarding?step=4");
+                }}
+                className="text-xs font-inter font-semibold text-[#565B59] dark:text-[#B6B8B7] hover:text-[#101212] dark:hover:text-white cursor-pointer"
               >
-                ← Change Participation Path
+                ← Change Participation Path (Back to Step 4)
               </button>
 
               <button

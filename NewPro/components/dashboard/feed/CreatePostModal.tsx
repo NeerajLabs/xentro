@@ -315,6 +315,18 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
       }
     };
     reader.readAsDataURL(file);
+
+    // Concurrently upload to MongoDB Atlas for durable storage
+    const fd = new FormData();
+    fd.append('file', file);
+    fetch('/api/upload', { method: 'POST', body: fd })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.success && data?.url) {
+          setMediaUrl(data.url);
+        }
+      })
+      .catch((err) => console.warn('Durable upload background error:', err));
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -368,13 +380,30 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     }
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!content.trim() || isSubmitting) return;
 
     setIsSubmitting(true);
 
     try {
+      let finalMediaUrl = mediaUrl.trim();
+      if (finalMediaUrl.startsWith('data:')) {
+        try {
+          const res = await fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ dataUrl: finalMediaUrl }),
+          });
+          const data = await res.json();
+          if (data?.success && data?.url) {
+            finalMediaUrl = data.url;
+          }
+        } catch (upErr) {
+          console.warn('Failed to upload dataUrl to durable storage:', upErr);
+        }
+      }
+
       // Use active user's actual profile if available for the selected role
       const isSelectedOwnRole = selectedRole === currentUserProfile.role;
       const authorName = (isSelectedOwnRole && currentUserProfile.name?.trim())
@@ -407,10 +436,10 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
         category: category,
         postType: postType,
         tags: selectedTags,
-        media: mediaUrl.trim()
+        media: finalMediaUrl
           ? {
               type: 'image',
-              url: mediaUrl.trim(),
+              url: finalMediaUrl,
               alt: mediaCaption.trim() || `${currentPersona.name} post graphic`,
               caption: mediaCaption.trim() || postType,
             }

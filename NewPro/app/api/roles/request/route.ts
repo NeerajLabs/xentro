@@ -81,7 +81,7 @@ export async function POST(req: NextRequest) {
         await sendZohoEmail({
           to: userEmail.trim().toLowerCase(),
           subject: `XENTRO: Role Request Received (${requestedRole}) - Under Review`,
-          text: `Dear ${userName},\n\nYour application to add/change your participation type to "${requestedRole}" has been received by XENTRO Platform Operations.\n\nApplication Details:\n- Reference ID: ${requestId}\n- Requested Role: ${requestedRole}\n- Current Role: ${currentRole}\n- Status: UNDER ADMINISTRATIVE REVIEW\n\nOur administrative review team verifies credentials, entity documentation, and ecosystem compliance before granting access. You will receive an automated email notification once a decision is made.\n\nThank you for growing with the Xentro Ecosystem.\n\nWarm regards,\nXENTRO Ecosystem Operations & Administration\nhttps://xentro.in`,
+          text: `Dear ${userName},\n\nYour application to add or change your participation type to "${requestedRole}" has been received by XENTRO Platform Operations.\n\nApplication Details:\n- Reference ID: ${requestId}\n- Requested Role: ${requestedRole}\n- Current Role: ${currentRole}\n- Status: UNDER ADMINISTRATIVE REVIEW\n\nYour request has been received and will be reviewed within a few hours by our platform administrators. You will be notified by email as soon as a decision is made.\n\nThank you for growing with the Xentro Ecosystem.\n\nWarm regards,\nXENTRO Ecosystem Operations & Administration\nhttps://xentro.in`,
         });
       } catch (emailErr) {
         console.warn('[RoleRequest] Zoho email dispatch error:', emailErr);

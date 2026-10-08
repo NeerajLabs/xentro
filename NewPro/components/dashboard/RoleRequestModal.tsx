@@ -41,10 +41,18 @@ interface RoleRequestItem {
 
 const AVAILABLE_ROLES = [
   {
-    id: 'Startup Founder',
-    title: 'Startup & Founder',
+    id: 'Founder',
+    title: 'Startup Founder',
+    badge: 'Founder Role',
+    description: 'Lead early-stage ventures, raise capital, and collaborate with ecosystem partners.',
+    icon: Rocket,
+    color: 'emerald',
+  },
+  {
+    id: 'Startup',
+    title: 'Startup Entity',
     badge: 'Entity Account',
-    description: 'Register venture, access investor diligence vaults, and seek endorsements.',
+    description: 'Register company profile, access investor diligence vaults, and seek endorsements.',
     icon: Rocket,
     color: 'emerald',
   },
@@ -52,7 +60,7 @@ const AVAILABLE_ROLES = [
     id: 'Mentor',
     title: 'Advisory Mentor',
     badge: 'Personal Role',
-    description: 'Host advisory sessions, review founder pitch decks, and mentor founders.',
+    description: 'Host advisory sessions, review founder pitch decks, and mentor startups.',
     icon: GraduationCap,
     color: 'purple',
   },
@@ -66,7 +74,7 @@ const AVAILABLE_ROLES = [
   },
   {
     id: 'ESP / Institution',
-    title: 'Incubator / ESP',
+    title: 'Incubator / ESP / Institution',
     badge: 'Institution Account',
     description: 'Run cohort programs, grant incubation credits, and endorse startups.',
     icon: Building2,

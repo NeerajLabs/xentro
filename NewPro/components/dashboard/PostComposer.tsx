@@ -1,15 +1,16 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Image as ImageIcon,
   Briefcase,
   BarChart2,
   FileText,
 } from 'lucide-react';
-import { currentUser } from '@/data/mockData';
-import { Post } from '@/types';
+import { Post, User } from '@/types';
 import { useToast } from '@/components/ui/Toast';
+import { authService } from '@/lib/auth/authService';
+import { getUserProfile } from '@/lib/userProfile';
 
 interface PostComposerProps {
   onAddPost: (newPost: Post) => void;
@@ -20,8 +21,31 @@ export const PostComposer: React.FC<PostComposerProps> = ({ onAddPost }) => {
   const [activeType, setActiveType] = useState<string | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [imageFileName, setImageFileName] = useState<string>('');
+  const [durableImageUrl, setDurableImageUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [userState, setUserState] = useState<{ name: string; avatar: string; role: string; company?: string; id: string }>({
+    id: 'user_active',
+    name: 'Ecosystem Member',
+    avatar: '/xentro-logo.png',
+    role: 'Member',
+  });
+
   const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
+
+  useEffect(() => {
+    const active = authService.getCurrentUser();
+    const prof = authService.getPersonalProfile();
+    const up = getUserProfile();
+
+    const name = prof?.fullName || active?.fullName || up?.name || 'Ecosystem Member';
+    const avatar = (prof?.photoUrl || (active as any)?.avatar || up?.avatar || '/xentro-logo.png') as string;
+    const role = prof?.currentRole || (active as any)?.primaryRole || active?.activeRoles?.[0] || up?.roleTitle || 'Ecosystem Member';
+    const company = prof?.currentOrganization || up?.organization || '';
+    const id = active?.id || up?.id || 'usr_active';
+
+    setUserState({ id, name, avatar, role, company });
+  }, []);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -30,34 +54,76 @@ export const PostComposer: React.FC<PostComposerProps> = ({ onAddPost }) => {
         showToast('Please select a valid image file', 'error');
         return;
       }
+      setSelectedFile(file);
       setImageFileName(file.name);
+
+      // Instant local preview
       const reader = new FileReader();
       reader.onload = (event) => {
         setImagePreview(event.target?.result as string);
         showToast('Image attached to post');
       };
       reader.readAsDataURL(file);
+
+      // Upload in background to MongoDB Atlas media storage
+      const fd = new FormData();
+      fd.append('file', file);
+      fetch('/api/upload', { method: 'POST', body: fd })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.success && data?.url) {
+            setDurableImageUrl(data.url);
+          }
+        })
+        .catch((err) => console.warn('Background upload failed:', err));
     }
     e.target.value = '';
   };
 
-  const handlePost = () => {
+  const handlePost = async () => {
     if (!content.trim() && !imagePreview) {
       showToast('Please type your thoughts or attach an image before posting', 'info');
       return;
     }
 
+    let finalMediaUrl = durableImageUrl || imagePreview;
+
+    // If still in data URL format, convert durably
+    if (finalMediaUrl && finalMediaUrl.startsWith('data:')) {
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dataUrl: finalMediaUrl }),
+        });
+        const data = await res.json();
+        if (data?.success && data?.url) {
+          finalMediaUrl = data.url;
+        }
+      } catch (_) {}
+    }
+
+    const postAuthor: User = {
+      id: userState.id,
+      name: userState.name,
+      username: `@${userState.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+      role: userState.role,
+      company: userState.company,
+      avatar: userState.avatar,
+      verified: true,
+    };
+
     const newPost: Post = {
       id: `post_${Date.now()}`,
-      author: currentUser,
+      author: postAuthor,
       timestamp: 'Just now',
       category: activeType === 'Opportunity' ? 'opportunities' : 'all',
       content: content.trim(),
       tags: activeType ? [activeType, 'Innovation'] : ['Innovation', 'Tech'],
-      media: imagePreview
+      media: finalMediaUrl
         ? {
             type: 'image',
-            url: imagePreview,
+            url: finalMediaUrl,
             alt: imageFileName || 'Post image',
             caption: imageFileName.replace(/\.[^/.]+$/, '') || undefined,
           }
@@ -78,6 +144,8 @@ export const PostComposer: React.FC<PostComposerProps> = ({ onAddPost }) => {
     setActiveType(null);
     setImagePreview(null);
     setImageFileName('');
+    setDurableImageUrl(null);
+    setSelectedFile(null);
     showToast('Post published successfully!');
   };
 
@@ -100,8 +168,8 @@ export const PostComposer: React.FC<PostComposerProps> = ({ onAddPost }) => {
       <div className="flex items-center gap-3.5">
         <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0 border border-gray-200 dark:border-gray-700">
           <img
-            src={currentUser.avatar}
-            alt={currentUser.name}
+            src={userState.avatar}
+            alt={userState.name}
             className="w-full h-full object-cover object-top"
           />
         </div>
