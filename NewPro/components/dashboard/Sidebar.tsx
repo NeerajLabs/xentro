@@ -26,6 +26,7 @@ import {
   UserPlus,
   Eye,
   LogOut,
+  LifeBuoy,
 } from 'lucide-react';
 import { logoutFromNewPro } from '@/lib/authGuard';
 import { UserProfile, getUserProfile, GUEST_AVATAR } from '@/lib/userProfile';
@@ -185,6 +186,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
       hasDot: unreadNotifCount > 0,
       badge: unreadNotifCount > 0 ? unreadNotifCount : undefined,
       badgeColor: 'red',
+    },
+    {
+      id: 'support',
+      label: 'Support',
+      icon: LifeBuoy,
     },
   ];
 

@@ -30,6 +30,7 @@ import { getInvestorProfileById } from '@/data/investorProfilesData';
 import { DashboardWorkspace } from './workspace/DashboardWorkspace';
 import { DynamicDashboardView } from './DynamicDashboardView';
 import { SignupModal } from '@/components/auth/SignupModal';
+import { SupportPageView } from './SupportPageView';
 
 export const DashboardLayout: React.FC = () => {
   const [activeNavTab, setActiveNavTab] = useState('feed');
@@ -175,6 +176,7 @@ export const DashboardLayout: React.FC = () => {
               onSelectProfile={() => setActiveNavTab('profile')}
               onSelectNotifications={() => setActiveNavTab('notifications')}
               onSelectMessages={() => setActiveNavTab('messages')}
+              onSelectSupport={() => handleSelectNavTab('support')}
             />
           )}
 
@@ -301,6 +303,10 @@ export const DashboardLayout: React.FC = () => {
               ) : activeNavTab === 'opportunity' ? (
                 <div className="space-y-4 max-w-[1040px] mx-auto animate-fade-slide">
                   <MentorOpportunities opportunities={initialMentorOpportunities} />
+                </div>
+              ) : activeNavTab === 'support' ? (
+                <div className="space-y-4 max-w-[1040px] mx-auto animate-fade-slide">
+                  <SupportPageView onBackToFeed={() => setActiveNavTab('feed')} />
                 </div>
               ) : activeNavTab === 'dashboard' ? (
                 <div className="max-w-[1240px] mx-auto animate-fade-slide">
