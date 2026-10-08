@@ -21,6 +21,7 @@ import { Conversation, ChatMessage } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import {
   messagingService,
+  resolveAvatarUrl,
   CONVERSATIONS_UPDATED_EVENT,
   AUTO_REPLY_CHANGED_EVENT,
 } from '@/lib/messagingService';
@@ -317,7 +318,7 @@ export const FullMessagesPage: React.FC<FullMessagesPageProps> = ({ onBackToFeed
                     {/* Avatar with Online indicator */}
                     <div className="relative flex-shrink-0">
                       <img
-                        src={conv.user.avatar}
+                        src={resolveAvatarUrl(conv.user.avatar, conv.user.name)}
                         alt={conv.user.name}
                         className="w-11 h-11 rounded-full object-cover border border-gray-200 dark:border-gray-700"
                       />
@@ -411,7 +412,7 @@ export const FullMessagesPage: React.FC<FullMessagesPageProps> = ({ onBackToFeed
                 >
                   <div className="relative flex-shrink-0">
                     <img
-                      src={activeConversation.user.avatar}
+                      src={resolveAvatarUrl(activeConversation.user.avatar, activeConversation.user.name)}
                       alt={activeConversation.user.name}
                       className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-700 group-hover:ring-2 group-hover:ring-[#D9FF3F] transition-all"
                     />
@@ -506,64 +507,79 @@ export const FullMessagesPage: React.FC<FullMessagesPageProps> = ({ onBackToFeed
                 </span>
               </div>
 
-              {activeConversation.messages.map((msg) => (
-                <div
-                  key={msg.id}
-                  className={`flex items-end gap-2 ${
-                    msg.isMe ? 'justify-end' : 'justify-start'
-                  }`}
-                >
-                  {!msg.isMe && (
-                    <img
-                      src={activeConversation.user.avatar}
-                      alt={activeConversation.user.name}
-                      className="w-7 h-7 rounded-full object-cover flex-shrink-0 mb-1"
-                    />
-                  )}
+              {activeConversation.messages.map((msg) => {
+                const isSystem = Boolean((msg as any).isSystem || (msg as any).type === 'system' || msg.text.startsWith('🤝 Connection established'));
 
-                  <div className="max-w-[80%] sm:max-w-[70%]">
-                    <div
-                      className={`p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${
-                        msg.isMe
-                          ? 'bg-[#D9FF3F] text-[#101212] font-medium rounded-br-sm'
-                          : 'bg-white dark:bg-[#181B1A] text-[#101212] dark:text-white border border-[#E5E7EB] dark:border-[#262A29] rounded-bl-sm'
-                      }`}
-                    >
-                      {msg.text}
+                if (isSystem) {
+                  return (
+                    <div key={msg.id} className="flex justify-center my-3 animate-fade-in">
+                      <div className="max-w-[90%] sm:max-w-[75%] px-4 py-2.5 rounded-2xl bg-black/5 dark:bg-[#181B1A] border border-gray-200/80 dark:border-[#262A29] text-center text-xs sm:text-[13px] text-[#565B59] dark:text-[#B6B8B7] shadow-xs flex flex-col items-center gap-1">
+                        <span className="font-medium leading-relaxed">{msg.text}</span>
+                        <span className="text-[10px] text-[#94A3B8]">{msg.timestamp}</span>
+                      </div>
                     </div>
-                    <div
-                      className={`flex items-center gap-1 mt-1 text-[10px] ${
-                        msg.isMe ? 'justify-end' : 'justify-start'
-                      } ${msg.failed ? 'text-rose-500' : 'text-[#94A3B8]'}`}
-                    >
-                      {msg.failed ? (
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-semibold text-rose-500">Failed to send</span>
-                          <button
-                            type="button"
-                            onClick={() => handleRetryMessage(msg.id)}
-                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-500 font-bold hover:bg-rose-500/20 transition-colors cursor-pointer"
-                          >
-                            <RefreshCw className="w-2.5 h-2.5" />
-                            Retry
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <span>{msg.timestamp}</span>
-                          {msg.isMe && <CheckCheck className="w-3 h-3 text-[#9EBE12]" />}
-                        </>
-                      )}
+                  );
+                }
+
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex items-end gap-2 ${
+                      msg.isMe ? 'justify-end' : 'justify-start'
+                    }`}
+                  >
+                    {!msg.isMe && (
+                      <img
+                        src={resolveAvatarUrl(activeConversation.user.avatar, activeConversation.user.name)}
+                        alt={activeConversation.user.name}
+                        className="w-7 h-7 rounded-full object-cover flex-shrink-0 mb-1"
+                      />
+                    )}
+
+                    <div className="max-w-[80%] sm:max-w-[70%]">
+                      <div
+                        className={`p-3.5 rounded-2xl text-xs sm:text-sm leading-relaxed shadow-sm ${
+                          msg.isMe
+                            ? 'bg-[#D9FF3F] text-[#101212] font-medium rounded-br-sm'
+                            : 'bg-white dark:bg-[#181B1A] text-[#101212] dark:text-white border border-[#E5E7EB] dark:border-[#262A29] rounded-bl-sm'
+                        }`}
+                      >
+                        {msg.text}
+                      </div>
+                      <div
+                        className={`flex items-center gap-1 mt-1 text-[10px] ${
+                          msg.isMe ? 'justify-end' : 'justify-start'
+                        } ${msg.failed ? 'text-rose-500' : 'text-[#94A3B8]'}`}
+                      >
+                        {msg.failed ? (
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-semibold text-rose-500">Failed to send</span>
+                            <button
+                              type="button"
+                              onClick={() => handleRetryMessage(msg.id)}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-500 font-bold hover:bg-rose-500/20 transition-colors cursor-pointer"
+                            >
+                              <RefreshCw className="w-2.5 h-2.5" />
+                              Retry
+                            </button>
+                          </div>
+                        ) : (
+                          <>
+                            <span>{msg.timestamp}</span>
+                            {msg.isMe && <CheckCheck className="w-3 h-3 text-[#9EBE12]" />}
+                          </>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Typing indicator bubble */}
               {isTyping && (
                 <div className="flex items-end gap-2 justify-start animate-fade-slide">
                   <img
-                    src={activeConversation.user.avatar}
+                    src={resolveAvatarUrl(activeConversation.user.avatar, activeConversation.user.name)}
                     alt={activeConversation.user.name}
                     className="w-7 h-7 rounded-full object-cover flex-shrink-0 mb-1"
                   />

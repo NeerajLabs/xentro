@@ -42,6 +42,14 @@ export function formatMessageTime(rawTimestamp?: string): string {
   return trimmed;
 }
 
+export function resolveAvatarUrl(avatar?: string | null, name?: string | null): string {
+  if (avatar && avatar !== '/xentro-logo.png' && !avatar.includes('xentro-logo.png') && avatar.trim().length > 0) {
+    return avatar;
+  }
+  const cleanName = (name || 'Member').trim();
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
+}
+
 export interface StoredConversationMeta {
   id: string;
   user: User;
@@ -349,18 +357,21 @@ export const messagingService = {
       remoteConvs.forEach((rc: any) => {
         const convId = rc.id;
         const partner = rc.partner || rc.user || {};
+        const partnerName = partner.name || 'Member';
+        const partnerAvatar = resolveAvatarUrl(partner.avatar, partnerName);
         const partnerUser: User = {
           id: partner.id || 'usr_partner',
-          name: partner.name || 'Member',
-          username: `@${(partner.name || 'member').toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+          name: partnerName,
+          username: `@${partnerName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
           role: partner.role || 'Member',
-          company: partner.company || partner.name || 'Xentro Network',
-          avatar: partner.avatar || '/xentro-logo.png',
+          company: partner.company || partnerName || 'Xentro Network',
+          avatar: partnerAvatar,
           verified: true,
           status: 'Active now',
         };
 
         const participants = rc.participants || [currentUserId, partner.id];
+        const currentAvatar = resolveAvatarUrl(profile.avatar, profile.name);
 
         const meta: StoredConversationMeta = {
           id: convId,
@@ -373,7 +384,7 @@ export const messagingService = {
               username: `@${(profile.name || 'member').toLowerCase().replace(/[^a-z0-9]/g, '')}`,
               role: profile.roleTitle || profile.role || 'Member',
               company: profile.organization || 'Xentro Member',
-              avatar: profile.avatar || '/xentro-logo.png',
+              avatar: currentAvatar,
               verified: true,
               status: 'Active now',
             },
@@ -605,14 +616,19 @@ export const messagingService = {
         return tA - tB;
       });
 
-      const convMsgs = dedupedThread.map((m) => ({
-        id: m.id,
-        senderId: m.senderId,
-        text: m.text || m.content || '',
-        timestamp: formatMessageTime(m.timestamp || m.createdAt),
-        isMe: normalizeId(m.senderId).toLowerCase() === currentNorm || m.senderId === currentUserId,
-        failed: Boolean(m.failed),
-      }));
+      const convMsgs = dedupedThread.map((m) => {
+        const text = m.text || m.content || '';
+        const isSystem = text.startsWith('🤝 Connection established') || (m as any).type === 'system' || (m as any).isSystem;
+        return {
+          id: m.id,
+          senderId: m.senderId,
+          text,
+          timestamp: formatMessageTime(m.timestamp || m.createdAt),
+          isMe: isSystem ? false : (normalizeId(m.senderId).toLowerCase() === currentNorm || m.senderId === currentUserId),
+          isSystem: Boolean(isSystem),
+          failed: Boolean(m.failed),
+        };
+      });
 
       const lastMsg = convMsgs[convMsgs.length - 1];
       const unread = rawList.filter(
@@ -622,14 +638,19 @@ export const messagingService = {
           (!m.readBy || !m.readBy.some((r) => normalizeId(r).toLowerCase() === currentNorm))
       ).length;
 
+      const safePartnerUser: User = {
+        ...partnerUser,
+        avatar: resolveAvatarUrl(partnerUser.avatar, partnerUser.name),
+      };
+
       result.push({
         id: c.id,
-        user: partnerUser,
+        user: safePartnerUser,
         lastMessage: lastMsg?.text || c.lastMessage || 'Conversation initiated.',
         timestamp: lastMsg?.timestamp || 'Just now',
         unreadCount: unread,
         isOnline: true,
-        messages: convMsgs,
+        messages: convMsgs as ChatMessage[],
       });
     }
 
@@ -665,13 +686,16 @@ export const messagingService = {
     const sortedPair = [currentNorm, partnerNorm].sort();
     const convId = `conv_${sortedPair[0]}_${sortedPair[1]}`;
 
+    const partnerAvatar = resolveAvatarUrl(partner.avatar, partner.name);
+    const currentAvatar = resolveAvatarUrl(profile.avatar, profile.name);
+
     const partnerUser: User = {
       id: partner.id,
       name: partner.name,
       username: `@${partner.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
       role: partner.role || 'Member',
       company: partner.company || partner.name,
-      avatar: partner.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(partner.name)}`,
+      avatar: partnerAvatar,
       verified: true,
       status: 'Active now',
     };
@@ -682,7 +706,7 @@ export const messagingService = {
       username: `@${(profile.name || 'member').toLowerCase().replace(/[^a-z0-9]/g, '')}`,
       role: profile.roleTitle || profile.role || 'Member',
       company: profile.organization || 'Xentro Member',
-      avatar: profile.avatar || '/xentro-logo.png',
+      avatar: currentAvatar,
       verified: true,
       status: 'Active now',
     };

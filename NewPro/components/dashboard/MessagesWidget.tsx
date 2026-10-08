@@ -21,6 +21,7 @@ import { Conversation, ChatMessage } from '@/types';
 import { useToast } from '@/components/ui/Toast';
 import {
   messagingService,
+  resolveAvatarUrl,
   CONVERSATIONS_UPDATED_EVENT,
   AUTO_REPLY_CHANGED_EVENT,
 } from '@/lib/messagingService';
@@ -161,7 +162,7 @@ export const MessagesWidget: React.FC<MessagesWidgetProps> = ({ isOpen, onToggle
                 </button>
                 <div className="w-8 h-8 rounded-full overflow-hidden relative">
                   <img
-                    src={activeConversation.user.avatar}
+                    src={resolveAvatarUrl(activeConversation.user.avatar, activeConversation.user.name)}
                     alt={activeConversation.user.name}
                     className="w-full h-full object-cover"
                   />
@@ -224,25 +225,39 @@ export const MessagesWidget: React.FC<MessagesWidgetProps> = ({ isOpen, onToggle
             <div className="flex-1 flex flex-col h-full bg-[#F8FAFC]/50 dark:bg-[#0D0F0F]/50 overflow-hidden">
               {/* Messages thread */}
               <div className="flex-1 p-4 overflow-y-auto space-y-3">
-                {activeConversation.messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}
-                  >
+                {activeConversation.messages.map((msg) => {
+                  const isSystem = Boolean((msg as any).isSystem || (msg as any).type === 'system' || msg.text.startsWith('🤝 Connection established'));
+
+                  if (isSystem) {
+                    return (
+                      <div key={msg.id} className="flex justify-center my-2 animate-fade-in">
+                        <div className="max-w-[90%] px-3 py-1.5 rounded-xl bg-black/5 dark:bg-[#181B1A] border border-gray-200/80 dark:border-[#262A29] text-center text-[11px] text-[#565B59] dark:text-[#B6B8B7] shadow-xs">
+                          <span>{msg.text}</span>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
                     <div
-                      className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed ${
-                        msg.isMe
-                          ? 'bg-[#D9FF3F] text-[#101212] font-medium rounded-br-xs shadow-2xs'
-                          : 'bg-white dark:bg-[#181B1A] text-[#101212] dark:text-white border border-gray-100 dark:border-[#262A29] rounded-bl-xs shadow-xs'
-                      }`}
+                      key={msg.id}
+                      className={`flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}
                     >
-                      {msg.text}
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed ${
+                          msg.isMe
+                            ? 'bg-[#D9FF3F] text-[#101212] font-medium rounded-br-xs shadow-2xs'
+                            : 'bg-white dark:bg-[#181B1A] text-[#101212] dark:text-white border border-gray-100 dark:border-[#262A29] rounded-bl-xs shadow-xs'
+                        }`}
+                      >
+                        {msg.text}
+                      </div>
+                      <span className="text-[9px] text-[#565B59] dark:text-[#B6B8B7] mt-1 px-1">
+                        {msg.timestamp}
+                      </span>
                     </div>
-                    <span className="text-[9px] text-[#565B59] dark:text-[#B6B8B7] mt-1 px-1">
-                      {msg.timestamp}
-                    </span>
-                  </div>
-                ))}
+                  );
+                })}
                 <div ref={messagesEndRef} />
               </div>
 
@@ -333,7 +348,7 @@ export const MessagesWidget: React.FC<MessagesWidgetProps> = ({ isOpen, onToggle
                       <div className="relative flex-shrink-0">
                         <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-100 dark:border-gray-800">
                           <img
-                            src={conv.user.avatar}
+                            src={resolveAvatarUrl(conv.user.avatar, conv.user.name)}
                             alt={conv.user.name}
                             className="w-full h-full object-cover"
                           />

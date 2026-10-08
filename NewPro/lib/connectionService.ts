@@ -2,7 +2,7 @@
 
 import { getUserProfile } from './userProfile';
 import { notificationService } from './notificationService';
-import { messagingService } from './messagingService';
+import { messagingService, resolveAvatarUrl } from './messagingService';
 
 export const CONNECTIONS_STORAGE_KEY = 'xentro_connections_v2';
 export const CONNECTIONS_PARTNERS_KEY = 'xentro_connections_partners_v2';
@@ -435,9 +435,10 @@ export const connectionService = {
     // 2. Automated conversation kick-off message
     const isSender = normalizeUserId(conn.senderId) === currentNorm;
     const resolvedPartnerId = isSender ? conn.recipientId : conn.senderId;
-    const resolvedPartnerName = isSender ? conn.recipientName : conn.senderName;
-    const resolvedPartnerRole = isSender ? conn.recipientRole : conn.senderRole;
-    const resolvedPartnerAvatar = isSender ? conn.recipientAvatar : conn.senderAvatar;
+    const rawPartnerName = isSender ? conn.recipientName : conn.senderName;
+    const resolvedPartnerName = (rawPartnerName && rawPartnerName !== 'Partner' && rawPartnerName !== 'Sender') ? rawPartnerName : 'your connection';
+    const resolvedPartnerRole = (isSender ? conn.recipientRole : conn.senderRole) || 'Startup';
+    const resolvedPartnerAvatar = resolveAvatarUrl(isSender ? conn.recipientAvatar : conn.senderAvatar, resolvedPartnerName);
 
     messagingService.startOrOpenConversation({
       id: resolvedPartnerId,

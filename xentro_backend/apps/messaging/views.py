@@ -7,10 +7,12 @@ Enforces Connection-Gated Messaging:
 """
 import uuid
 import datetime
+import urllib.parse
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from integrations.mongodb import get_collection
 from common.response import api_success, api_error
+
 
 
 def normalize_id(uid):
@@ -148,21 +150,70 @@ class ConversationsListView(APIView):
             # Check live connection status in MongoDB
             is_accepted, conn_status, _ = check_connection_accepted(user_id, other_id)
 
+            # Check if conversation already has persisted participantDetails
+            p_details = c.get("participantDetails") or {}
+            cached_partner = p_details.get(other_id) or p_details.get(other_id.lower() if other_id else "") or {}
+
             # Resolve other participant profile from users collection
-            partner_name = "Connected Member"
-            partner_role = "Member"
-            partner_avatar = "/xentro-logo.png"
-            partner_company = "Xentro Network"
+            partner_name = cached_partner.get("name") or "Connected Member"
+            partner_role = cached_partner.get("role") or "Startup"
+            partner_avatar = cached_partner.get("avatar") or ""
+            partner_company = cached_partner.get("company") or "Xentro Network"
 
             if other_id:
-                u_doc = users_col.find_one({"id": {"$in": [other_id, other_id.lower(), other_id.upper()]}})
+                u_doc = users_col.find_one({
+                    "$or": [
+                        {"id": {"$in": [other_id, other_id.lower(), other_id.upper()]}},
+                        {"altIds": other_id},
+                        {"userId": other_id},
+                        {"xentroId": other_id},
+                        {"email": other_id.lower()}
+                    ]
+                })
+
+                # Fallback: check connections collection for partner identity
+                if not u_doc:
+                    conn_col = get_collection("connections")
+                    conn_doc = conn_col.find_one({
+                        "$or": [
+                            {"senderId": other_id},
+                            {"recipientId": other_id}
+                        ]
+                    })
+                    if conn_doc:
+                        is_sender = (normalize_id(conn_doc.get("senderId")).lower() == normalize_id(other_id).lower())
+                        c_name = conn_doc.get("senderName") if is_sender else conn_doc.get("recipientName")
+                        c_role = conn_doc.get("senderRole") if is_sender else conn_doc.get("recipientRole")
+                        c_avatar = conn_doc.get("senderAvatar") if is_sender else conn_doc.get("recipientAvatar")
+                        if c_name:
+                            partner_name = c_name
+                        if c_role:
+                            partner_role = c_role
+                        if c_avatar and c_avatar != "/xentro-logo.png":
+                            partner_avatar = c_avatar
+
+                # Fallback: check if other_id sent any messages with a senderName
+                if partner_name == "Connected Member":
+                    m_sample = msg_col.find_one({"conversationId": c.get("id"), "senderId": other_id, "senderName": {"$ne": ""}})
+                    if m_sample and m_sample.get("senderName") and m_sample.get("senderName") not in ["Sender", "Member", "Connected Member"]:
+                        partner_name = m_sample.get("senderName")
+
                 if u_doc:
-                    partner_name = u_doc.get("fullName") or partner_name
-                    partner_avatar = u_doc.get("avatar") or partner_avatar
+                    partner_name = u_doc.get("fullName") or u_doc.get("name") or partner_name
+                    u_avatar = u_doc.get("avatar")
+                    if u_avatar and u_avatar != "/xentro-logo.png":
+                        partner_avatar = u_avatar
                     roles = u_doc.get("activeRoles") or []
-                    if roles:
+                    account_type = u_doc.get("accountType") or u_doc.get("userType") or u_doc.get("primaryRole")
+                    if account_type:
+                        partner_role = account_type
+                    elif roles:
                         partner_role = roles[0]
-                    partner_company = u_doc.get("organization") or partner_name
+                    partner_company = u_doc.get("organization") or u_doc.get("entityName") or partner_name
+
+            # Ensure neutral initials avatar instead of brand logo
+            if not partner_avatar or partner_avatar == "/xentro-logo.png":
+                partner_avatar = f"https://api.dicebear.com/7.x/initials/svg?seed={urllib.parse.quote(partner_name)}"
 
             # Fetch messages belonging to this thread
             conv_id = c.get("id")
@@ -173,19 +224,23 @@ class ConversationsListView(APIView):
             ))
             clean_msgs = []
             for m in msgs:
+                m_content = m.get("content") or m.get("text", "")
+                m_raw_type = (m.get("type") or "TEXT").upper()
+                is_system = (m_raw_type == "SYSTEM") or m_content.startswith("🤝 Connection established")
                 clean_msgs.append({
                     "id": m.get("id", str(uuid.uuid4())),
                     "clientMessageId": m.get("clientMessageId") or m.get("id"),
                     "conversationId": conv_id,
                     "senderId": m.get("senderId"),
                     "senderName": m.get("senderName", partner_name),
-                    "text": m.get("content") or m.get("text", ""),
-                    "content": m.get("content") or m.get("text", ""),
-                    "type": m.get("type", "TEXT"),
+                    "text": m_content,
+                    "content": m_content,
+                    "type": "system" if is_system else m.get("type", "TEXT"),
+                    "isSystem": is_system,
                     "timestamp": m.get("createdAt", ""),
                     "createdAt": m.get("createdAt", ""),
                     "readBy": m.get("readBy", [m.get("senderId")]),
-                    "isMe": (normalize_id(m.get("senderId")).lower() == user_norm)
+                    "isMe": False if is_system else (normalize_id(m.get("senderId")).lower() == user_norm)
                 })
 
             # Get unread count
@@ -201,6 +256,7 @@ class ConversationsListView(APIView):
                 "id": conv_id,
                 "pair_key": c.get("pair_key"),
                 "participants": participants,
+                "participantDetails": p_details,
                 "partner": {
                     "id": other_id,
                     "name": partner_name,
@@ -333,20 +389,24 @@ class MessagesHistoryView(APIView):
         user_norm = normalize_id(user_id).lower() if user_id else ""
         for m in messages:
             m.pop("_id", None)
+            m_content = m.get("content") or m.get("text", "")
+            m_raw_type = (m.get("type") or "TEXT").upper()
+            is_system = (m_raw_type == "SYSTEM") or m_content.startswith("🤝 Connection established")
             clean.append({
                 "id": m.get("id", str(uuid.uuid4())),
                 "clientMessageId": m.get("clientMessageId") or m.get("id"),
                 "conversationId": conversation_id,
                 "senderId": m.get("senderId"),
                 "senderName": m.get("senderName", "User"),
-                "text": m.get("content") or m.get("text", ""),
-                "content": m.get("content") or m.get("text", ""),
-                "type": m.get("type", "TEXT"),
+                "text": m_content,
+                "content": m_content,
+                "type": "system" if is_system else m.get("type", "TEXT"),
+                "isSystem": is_system,
                 "attachments": m.get("attachments", []),
                 "timestamp": m.get("createdAt", ""),
                 "createdAt": m.get("createdAt", ""),
                 "readBy": m.get("readBy", [m.get("senderId")]),
-                "isMe": (normalize_id(m.get("senderId")).lower() == user_norm) if user_norm else False
+                "isMe": False if is_system else ((normalize_id(m.get("senderId")).lower() == user_norm) if user_norm else False)
             })
 
         # Mark as read for this user
