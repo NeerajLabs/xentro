@@ -26,7 +26,11 @@ class MyStartupsView(APIView):
         entities_col = get_collection("entities")
         startups = entities_col.find({
             "primaryOwnerId": user_id,
-            "entityType": "STARTUP"
+            "entityType": {"$in": ["STARTUP", "Startup"]},
+            "status": {"$nin": ["ORPHANED_DELETED", "DELETED", "INACTIVE", "ARCHIVED", "REJECTED"]},
+            "isActive": {"$ne": False},
+            "is_deleted": {"$ne": True},
+            "deleted": {"$ne": True}
         })
         results = []
         for s in startups:
@@ -96,16 +100,27 @@ class StartupDiscoverView(APIView):
 
     def get(self, request):
         entities_col = get_collection("entities")
-        startups = entities_col.find({"entityType": "STARTUP"})
         users_col = get_collection("users")
+        query = {
+            "entityType": {"$in": ["STARTUP", "Startup"]},
+            "status": {"$nin": ["ORPHANED_DELETED", "DELETED", "INACTIVE", "ARCHIVED", "REJECTED"]},
+            "isActive": {"$ne": False},
+            "is_deleted": {"$ne": True},
+            "deleted": {"$ne": True}
+        }
+        startups = entities_col.find(query)
         results = []
         for s in startups:
             s.pop("_id", None)
-            owner = users_col.find_one({"id": s.get("primaryOwnerId")})
+            owner_id = s.get("primaryOwnerId") or s.get("founderPersonalAccountId")
+            owner = users_col.find_one({"id": owner_id, "isActive": {"$ne": False}, "deleted": {"$ne": True}}) if owner_id else None
+            # Only display if the owner user exists and is active in MongoDB
+            if not owner:
+                continue
             s["founder"] = {
-                "name": owner.get("fullName", "Founder") if owner else "Founder",
-                "email": owner.get("email", "") if owner else "",
-                "id": owner.get("id", "") if owner else ""
+                "name": owner.get("fullName", "Founder"),
+                "email": owner.get("email", ""),
+                "id": owner.get("id", "")
             }
             results.append(s)
         return api_success({"startups": results})
@@ -136,6 +151,8 @@ class StartupDiscoverView(APIView):
             "visibility": "PUBLIC",
             "ghostMode": False,
             "readinessScore": 65,
+            "isActive": True,
+            "status": "ACTIVE",
             "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "updatedAt": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
@@ -159,12 +176,20 @@ class StartupDetailView(APIView):
     def get(self, request, startup_id):
         entities_col = get_collection("entities")
         doc = entities_col.find_one({
-            "$or": [
-                {"id": startup_id},
-                {"id": {"$regex": f"^{startup_id}$", "$options": "i"}},
-                {"primaryOwnerId": startup_id},
-                {"username": {"$regex": f"^{startup_id}$", "$options": "i"}},
-                {"name": {"$regex": f"^{startup_id}$", "$options": "i"}}
+            "$and": [
+                {
+                    "$or": [
+                        {"id": startup_id},
+                        {"id": {"$regex": f"^{startup_id}$", "$options": "i"}},
+                        {"primaryOwnerId": startup_id},
+                        {"username": {"$regex": f"^{startup_id}$", "$options": "i"}},
+                        {"name": {"$regex": f"^{startup_id}$", "$options": "i"}}
+                    ]
+                },
+                {"status": {"$nin": ["ORPHANED_DELETED", "DELETED", "INACTIVE", "ARCHIVED", "REJECTED"]}},
+                {"isActive": {"$ne": False}},
+                {"is_deleted": {"$ne": True}},
+                {"deleted": {"$ne": True}}
             ]
         })
         if not doc:

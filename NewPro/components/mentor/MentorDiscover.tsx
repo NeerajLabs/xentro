@@ -23,12 +23,7 @@ import {
   InvestorRecommendation,
   UniversityRecommendation,
 } from '@/types/discover';
-import {
-  mockRecommendedStartups,
-  mockRecommendedMentors,
-  mockRecommendedInvestors,
-  mockRecommendedUniversities,
-} from '@/data/discoverData';
+
 import {
   DiscoverFullProfileView,
   DiscoverProfileItem,
@@ -226,41 +221,7 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
   }, []);
 
   React.useEffect(() => {
-    const localList: StartupRecommendation[] = [];
-    try {
-      const stored = typeof window !== 'undefined' ? localStorage.getItem('xentro_startup_entities') : null;
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          parsed.forEach((st: any) => {
-            if (st.startupName) {
-              localList.push({
-                id: st.id || `st_local_${Date.now()}`,
-                name: st.startupName,
-                logo: '/xentro-logo.png',
-                industry: st.industry || 'Enterprise SaaS / AI',
-                stage: (st.stage as any) || 'Seed',
-                location: st.location || 'India',
-                fundingRaised: 'Active Round',
-                description: st.description || 'Next-generation venture connected via Xentro ecosystem.',
-                needsHelpWith: ['System Architecture', 'Scale Infrastructure', 'Institutional Advisory'],
-                tags: [st.industry || 'DeepTech', 'Innovation', 'Platform'],
-                founder: {
-                  name: st.founderName || 'Founder',
-                  avatar: '/xentro-logo.png',
-                  role: `Founder & CEO (${st.officialEmail || 'founder@startup.com'})`,
-                },
-                metrics: 'Verified Venture · Xentro Registry',
-              });
-            }
-          });
-        }
-      }
-    } catch (err) {
-      console.debug('Failed to read local startups', err);
-    }
-
-    // Query Django Backend for live registered startups
+    // Query Backend for live registered startups (strictly from MongoDB)
     const backendUrl = getBackendBaseUrl();
     fetch(`${backendUrl}/startups/discover/`)
       .then((res) => res.json())
@@ -284,22 +245,13 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
             },
             metrics: 'Live Monolith · Atlas Cloud Verified',
           }));
-
-          const combined = [...localList];
-          apiStartups.forEach((as) => {
-            if (!combined.some((c) => c.name.toLowerCase().trim() === as.name.toLowerCase().trim())) {
-              combined.push(as);
-            }
-          });
-          setDynamicStartups(combined);
-        } else if (localList.length > 0) {
-          setDynamicStartups(localList);
+          setDynamicStartups(apiStartups);
+        } else {
+          setDynamicStartups([]);
         }
       })
       .catch(() => {
-        if (localList.length > 0) {
-          setDynamicStartups(localList);
-        }
+        setDynamicStartups([]);
       });
   }, []);
 
@@ -313,14 +265,6 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
     const allStartupsPool: StartupRecommendation[] = [];
 
     dynamicStartups.forEach((st) => {
-      const norm = st.name.toLowerCase().trim();
-      if (!seenNames.has(norm)) {
-        seenNames.add(norm);
-        allStartupsPool.push(st);
-      }
-    });
-
-    mockRecommendedStartups.forEach((st) => {
       const norm = st.name.toLowerCase().trim();
       if (!seenNames.has(norm)) {
         seenNames.add(norm);
@@ -346,8 +290,8 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
   }, [searchQuery, isGhostMode, overallVisibility, dynamicStartups]);
 
   const filteredMentors = useMemo(() => {
-    // Prefer live backend data; fall back to mocks only if backend is empty
-    const allMentors = dynamicMentors.length > 0 ? dynamicMentors : mockRecommendedMentors;
+    // Strictly live backend data from MongoDB
+    const allMentors = dynamicMentors;
     const q = searchQuery.toLowerCase().trim();
     if (!q) return allMentors;
     return allMentors.filter(
@@ -363,8 +307,8 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
   }, [searchQuery, dynamicMentors]);
 
   const filteredInvestors = useMemo(() => {
-    // Prefer live backend data; fall back to mocks only if backend is empty
-    const allInvestors = dynamicInvestors.length > 0 ? dynamicInvestors : mockRecommendedInvestors;
+    // Strictly live backend data from MongoDB
+    const allInvestors = dynamicInvestors;
     const q = searchQuery.toLowerCase().trim();
     if (!q) return allInvestors;
     return allInvestors.filter(
@@ -379,8 +323,8 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
   }, [searchQuery, dynamicInvestors]);
 
   const filteredUniversities = useMemo(() => {
-    // Prefer live backend data; fall back to mocks only if backend is empty
-    const allESPs = dynamicESPs.length > 0 ? dynamicESPs : mockRecommendedUniversities;
+    // Strictly live backend data from MongoDB
+    const allESPs = dynamicESPs;
     const q = searchQuery.toLowerCase().trim();
     if (!q) return allESPs;
     return allESPs.filter(
@@ -449,7 +393,7 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
           investorId={selectedProfileItem.data.id}
           onBackToDiscover={() => setSelectedProfileItem(null)}
           onOpenStartupProfile={(startupId) => {
-            const found = mockRecommendedStartups.find((st) => st.id === startupId);
+            const found = dynamicStartups.find((st) => st.id === startupId);
             if (found) {
               setSelectedProfileItem({
                 type: 'startup',
@@ -480,7 +424,7 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
           espId={selectedProfileItem.data.id}
           onBackToDiscover={() => setSelectedProfileItem(null)}
           onOpenStartupProfile={(startupId) => {
-            const found = mockRecommendedStartups.find((st) => st.id === startupId);
+            const found = dynamicStartups.find((st) => st.id === startupId);
             if (found) {
               setSelectedProfileItem({
                 type: 'startup',
@@ -491,7 +435,7 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
             }
           }}
           onOpenMentorProfile={(mentorId) => {
-            const found = mockRecommendedMentors.find((m) => m.id === mentorId);
+            const found = dynamicMentors.find((m) => m.id === mentorId);
             if (found) {
               setSelectedProfileItem({
                 type: 'mentor',
@@ -502,7 +446,7 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
             }
           }}
           onOpenInvestorProfile={(investorId) => {
-            const found = mockRecommendedInvestors.find((inv) => inv.id === investorId);
+            const found = dynamicInvestors.find((inv) => inv.id === investorId);
             if (found) {
               setSelectedProfileItem({
                 type: 'investor',

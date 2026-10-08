@@ -85,7 +85,11 @@ class FeedPostsView(APIView):
         likes_col = get_collection("post_likes")
         users_col = get_collection("users")
 
-        posts = list(feed_col.find({}, sort=[("createdAt", -1)], limit=50))
+        posts = list(feed_col.find(
+            {"is_deleted": {"$ne": True}, "deleted": {"$ne": True}, "status": {"$nin": ["DELETED", "ARCHIVED"]}},
+            sort=[("createdAt", -1)],
+            limit=50
+        ))
         clean = []
         for p in posts:
             p.pop("_id", None)
@@ -95,7 +99,16 @@ class FeedPostsView(APIView):
             author_id = p.get("authorId")
             u_doc = None
             if author_id:
-                u_doc = users_col.find_one({"id": author_id})
+                u_doc = users_col.find_one({
+                    "id": author_id,
+                    "isActive": {"$ne": False},
+                    "accountStatus": {"$nin": ["DELETED", "REJECTED", "SUSPENDED"]},
+                    "deleted": {"$ne": True},
+                    "is_deleted": {"$ne": True}
+                })
+                # If author was removed or deactivated, do not show their posts
+                if not u_doc:
+                    continue
 
             author_name = (u_doc.get("fullName") or u_doc.get("username") if u_doc else p.get("authorName")) or "Ecosystem Member"
             author_username = (u_doc.get("username") if u_doc else None) or f"@{author_name.lower().replace(' ', '')}"

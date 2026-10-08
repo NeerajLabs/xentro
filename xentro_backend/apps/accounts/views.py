@@ -1047,8 +1047,13 @@ class UserRecommendationsView(APIView):
         if current_user_id:
             seen_user_ids.add(current_user_id.lower())
 
-        # 1. Query real users from MongoDB Atlas
-        query_users = {}
+        # 1. Query real users from MongoDB Atlas (strictly active, non-deleted)
+        query_users = {
+            "isActive": {"$ne": False},
+            "accountStatus": {"$nin": ["DELETED", "REJECTED", "SUSPENDED"]},
+            "deleted": {"$ne": True},
+            "is_deleted": {"$ne": True}
+        }
         if current_user_id:
             query_users["id"] = {"$ne": current_user_id}
         if current_email:
@@ -1166,10 +1171,13 @@ class UserRecommendationsView(APIView):
                     "mutualCount": 1
                 })
 
-        # 2. Query mentor_profiles for any distinct mentors not in users list
-        for mp in mentors_col.find({}, limit=20):
+        # 2. Query mentor_profiles for any distinct mentors with active user accounts
+        for mp in mentors_col.find({"$or": [{"isActive": {"$ne": False}}, {"isActive": {"$exists": False}}]}, limit=20):
             m_uid = mp.get("userId") or mp.get("id")
             if not m_uid or m_uid.lower() in seen_user_ids:
+                continue
+            owner = users_col.find_one({"id": m_uid, "isActive": {"$ne": False}, "deleted": {"$ne": True}})
+            if not owner:
                 continue
             seen_user_ids.add(m_uid.lower())
             m_name = mp.get("fullName") or mp.get("name") or "Mentor"
@@ -1187,10 +1195,13 @@ class UserRecommendationsView(APIView):
                 "mutualCount": 1
             })
 
-        # 3. Query investor_profiles for any distinct investors not in users list
-        for ip in inv_col.find({}, limit=20):
+        # 3. Query investor_profiles for any distinct investors with active user accounts
+        for ip in inv_col.find({"$or": [{"isActive": {"$ne": False}}, {"isActive": {"$exists": False}}]}, limit=20):
             i_uid = ip.get("userId") or ip.get("id")
             if not i_uid or i_uid.lower() in seen_user_ids:
+                continue
+            owner = users_col.find_one({"id": i_uid, "isActive": {"$ne": False}, "deleted": {"$ne": True}})
+            if not owner:
                 continue
             seen_user_ids.add(i_uid.lower())
             i_name = ip.get("fullName") or ip.get("name") or "Investor"
@@ -1208,15 +1219,26 @@ class UserRecommendationsView(APIView):
                 "mutualCount": 2
             })
 
-        # 4. Query real entities (Startups & ESPs)
-        for ent in entities_col.find({}, limit=20):
-            owner_id = ent.get("primaryOwnerId") or ent.get("id")
+        # 4. Query real entities (Startups & ESPs) — strictly active, non-orphaned, non-deleted with active owners
+        entity_query = {
+            "status": {"$nin": ["ORPHANED_DELETED", "DELETED", "INACTIVE", "ARCHIVED", "REJECTED"]},
+            "isActive": {"$ne": False},
+            "is_deleted": {"$ne": True},
+            "deleted": {"$ne": True}
+        }
+        for ent in entities_col.find(entity_query, limit=20):
+            owner_id = ent.get("primaryOwnerId") or ent.get("founderPersonalAccountId") or ent.get("id")
             if not owner_id or owner_id.lower() in seen_user_ids:
                 continue
+            # Crucial consistency check: if the owner user was removed/deleted by admin, do NOT show the entity
+            owner_user = users_col.find_one({"id": owner_id, "isActive": {"$ne": False}, "deleted": {"$ne": True}})
+            if not owner_user:
+                continue
+
             seen_user_ids.add(owner_id.lower())
             ent_name = ent.get("name") or "Ecosystem Entity"
             ent_type = ent.get("entityType", "STARTUP")
-            is_esp = ent_type == "ESP"
+            is_esp = str(ent_type).upper() == "ESP"
             profile_type = "esp" if is_esp else "startup"
             headline = "Incubator Hub" if is_esp else f"{ent.get('stage', 'Seed')} · {ent.get('industry', 'Tech')}"
             people.append({

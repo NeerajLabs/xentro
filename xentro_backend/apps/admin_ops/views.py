@@ -113,15 +113,23 @@ class AdminOverviewView(APIView):
         entities_col = get_collection("entities")
         verif_col = get_collection("verifications")
 
-        total_users = users_col.count_documents({})
-        verified_users = users_col.count_documents({"identityStatus": "VERIFIED"})
-        startups_count = entities_col.count_documents({"entityType": "STARTUP"})
-        investors_count = entities_col.count_documents({"entityType": "INVESTOR"})
-        esps_count = entities_col.count_documents({"entityType": "ESP"})
+        active_user_filter = {"isActive": {"$ne": False}, "deleted": {"$ne": True}, "is_deleted": {"$ne": True}}
+        total_users = users_col.count_documents(active_user_filter)
+        verified_users = users_col.count_documents({"identityStatus": "VERIFIED", **active_user_filter})
+
+        active_entity_filter = {
+            "status": {"$nin": ["ORPHANED_DELETED", "DELETED", "INACTIVE", "ARCHIVED", "REJECTED"]},
+            "isActive": {"$ne": False},
+            "is_deleted": {"$ne": True},
+            "deleted": {"$ne": True}
+        }
+        startups_count = entities_col.count_documents({"entityType": {"$in": ["STARTUP", "Startup"]}, **active_entity_filter})
+        investors_count = entities_col.count_documents({"entityType": {"$in": ["INVESTOR", "Investor"]}, **active_entity_filter})
+        esps_count = entities_col.count_documents({"entityType": {"$in": ["ESP", "Esp"]}, **active_entity_filter})
 
         pending_kyc = verif_col.count_documents({"status": "PENDING", "type": "IDENTITY"})
-        pending_startups = entities_col.count_documents({"entityType": "STARTUP", "verificationStatus": "PENDING"})
-        pending_esps = entities_col.count_documents({"entityType": "ESP", "verificationStatus": "PENDING"})
+        pending_startups = entities_col.count_documents({"entityType": {"$in": ["STARTUP", "Startup"]}, "verificationStatus": "PENDING", **active_entity_filter})
+        pending_esps = entities_col.count_documents({"entityType": {"$in": ["ESP", "Esp"]}, "verificationStatus": "PENDING", **active_entity_filter})
 
         return api_success({
             "kpis": {
@@ -289,9 +297,14 @@ class AdminRegistrationRequestsView(APIView):
         users_col = get_collection("users")
         entities_col = get_collection("entities")
 
-        # Find users with PENDING_APPROVAL status
+        # Find users with PENDING_APPROVAL status (strictly active and not deleted)
         pending_users = list(users_col.find(
-            {"$or": [{"accountStatus": "PENDING_APPROVAL"}, {"registrationRequest.status": "PENDING"}]},
+            {
+                "$or": [{"accountStatus": "PENDING_APPROVAL"}, {"registrationRequest.status": "PENDING"}],
+                "isActive": {"$ne": False},
+                "deleted": {"$ne": True},
+                "is_deleted": {"$ne": True}
+            },
             sort=[("createdAt", -1)],
             limit=100
         ))
@@ -315,9 +328,23 @@ class AdminRegistrationRequestsView(APIView):
                 "isEsp": req_info.get("requestedRole") == "ESP" or bool(req_info.get("institutionName"))
             })
 
-        # Also find any pending ESP entities
-        pending_esps = list(entities_col.find({"entityType": "ESP", "verificationStatus": "PENDING"}))
+        # Also find any pending ESP entities (strictly non-deleted/non-orphaned with valid owner)
+        pending_esps = list(entities_col.find({
+            "entityType": "ESP",
+            "verificationStatus": "PENDING",
+            "status": {"$nin": ["ORPHANED_DELETED", "DELETED", "INACTIVE", "ARCHIVED", "REJECTED"]},
+            "isActive": {"$ne": False},
+            "deleted": {"$ne": True},
+            "is_deleted": {"$ne": True}
+        }))
         for esp in pending_esps:
+            owner_id = esp.get("primaryOwnerId")
+            if owner_id:
+                owner_doc = users_col.find_one({"id": owner_id, "isActive": {"$ne": False}, "deleted": {"$ne": True}})
+                if not owner_doc:
+                    # Owner was removed, do not surface orphaned ESP in queue
+                    continue
+
             # Check if already included
             if not any(r.get("institutionName") == esp.get("name") for r in requests_list):
                 requests_list.append({
@@ -768,7 +795,15 @@ class AdminUsersListView(APIView):
 
     def get(self, request):
         users_col = get_collection("users")
-        all_users = list(users_col.find(sort=[("createdAt", -1)], limit=200))
+        all_users = list(users_col.find(
+            {
+                "deleted": {"$ne": True},
+                "is_deleted": {"$ne": True},
+                "accountStatus": {"$ne": "DELETED"}
+            },
+            sort=[("createdAt", -1)],
+            limit=200
+        ))
         result = []
         for u in all_users:
             req_info = u.get("registrationRequest", {})
@@ -799,3 +834,110 @@ class AdminUsersListView(APIView):
                 ] if req_info.get("institutionName") or req_info.get("requestedRole") in ["ESP", "Founder"] else []
             })
         return api_success({"users": result, "total": len(result)})
+
+
+class AdminEntitiesListView(APIView):
+    """
+    Returns real entity records (Startups, Investors, ESPs) from MongoDB for Admin Entity Accounts view.
+    Excludes orphaned/deleted records.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        entities_col = get_collection("entities")
+        users_col = get_collection("users")
+
+        query = {
+            "status": {"$nin": ["ORPHANED_DELETED", "DELETED", "INACTIVE", "ARCHIVED", "REJECTED"]},
+            "isActive": {"$ne": False},
+            "is_deleted": {"$ne": True},
+            "deleted": {"$ne": True}
+        }
+        all_entities = list(entities_col.find(query, sort=[("createdAt", -1)], limit=200))
+        results = []
+        for e in all_entities:
+            e.pop("_id", None)
+            owner_id = e.get("primaryOwnerId") or e.get("founderPersonalAccountId")
+            owner_name = e.get("primaryOwnerName") or e.get("founderName") or "Founder"
+            owner_email = e.get("officialEmail") or ""
+            if owner_id:
+                owner = users_col.find_one({"id": owner_id, "isActive": {"$ne": False}, "deleted": {"$ne": True}})
+                if not owner:
+                    # Owner was deleted, do not surface orphaned entity
+                    continue
+                owner_name = owner.get("fullName", owner_name)
+                owner_email = owner.get("email", owner_email)
+
+            e_type = e.get("entityType", "Startup")
+            if str(e_type).upper() == "STARTUP":
+                ui_type = "Startup"
+            elif str(e_type).upper() == "ESP":
+                ui_type = "ESP"
+            elif str(e_type).upper() == "INVESTOR":
+                ui_type = "Investor Organization"
+            else:
+                ui_type = e_type
+
+            results.append({
+                "id": e.get("id"),
+                "name": e.get("name") or e.get("startupName") or "Entity",
+                "legalName": e.get("name") or "Entity Legal",
+                "type": ui_type,
+                "domain": e.get("officialDomain") or e.get("website") or "",
+                "officialEmail": owner_email or e.get("officialEmail") or "",
+                "status": "Active" if e.get("isActive", True) else "Suspended",
+                "verificationStatus": "Verified" if str(e.get("verificationStatus", "")).upper() == "VERIFIED" else "Pending",
+                "primaryOwner": {
+                    "id": owner_id or "",
+                    "name": owner_name,
+                    "email": owner_email,
+                    "role": "Founder / Owner"
+                },
+                "totalMembers": 1,
+                "workspacesCount": 1,
+                "createdAt": e.get("createdAt", ""),
+                "createdDate": (e.get("createdAt") or "")[:10]
+            })
+
+        return api_success({"entities": results, "total": len(results)})
+
+
+class AdminEntityDeleteView(APIView):
+    """
+    Allows Master Admin to delete or remove an entity from MongoDB with audit logging.
+    """
+    def get_permissions(self):
+        return [IsXentroMasterAdmin()]
+
+    def delete(self, request, entity_id):
+        entities_col = get_collection("entities")
+        ent = entities_col.find_one({"id": entity_id})
+        if not ent:
+            return api_error("Entity not found.", status_code=404)
+
+        admin_id = getattr(request.user, "admin_employee_id", "SUPER_ADMIN")
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # Audit log before deletion
+        log_audit_event(
+            admin_id=admin_id,
+            action="ENTITY_ACCOUNT_DELETED",
+            object_type="ENTITY",
+            object_id=entity_id,
+            previous_state={"id": entity_id, "name": ent.get("name"), "type": ent.get("entityType")},
+            reason=request.data.get("reason", "Entity removed by Master Admin.")
+        )
+
+        # Mark as deleted in MongoDB
+        entities_col.update_one(
+            {"id": entity_id},
+            {"$set": {
+                "isActive": False,
+                "is_deleted": True,
+                "deleted": True,
+                "status": "DELETED",
+                "deletedAt": now_iso
+            }}
+        )
+
+        return api_success({"deletedEntityId": entity_id}, f"Entity '{ent.get('name')}' removed successfully.")

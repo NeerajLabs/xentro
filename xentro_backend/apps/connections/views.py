@@ -77,24 +77,31 @@ class ConnectionListView(APIView):
 
         for c in raw_conns:
             c.pop("_id", None)
+            is_sender = (normalize_id(c.get("senderId")) == user_id)
+            partner_id = c.get("recipientId") if is_sender else c.get("senderId")
+
+            # Check if partner user exists and is active in MongoDB
+            u_doc = users_col.find_one({
+                "id": partner_id,
+                "isActive": {"$ne": False},
+                "accountStatus": {"$nin": ["DELETED", "REJECTED", "SUSPENDED"]},
+                "deleted": {"$ne": True},
+                "is_deleted": {"$ne": True}
+            })
+            if not u_doc:
+                # Partner user was removed by admin; exclude this connection
+                continue
+
             clean_conns.append(c)
 
             if c.get("status") == "accepted":
                 total_connected += 1
-                is_sender = (normalize_id(c.get("senderId")) == user_id)
-                partner_id = c.get("recipientId") if is_sender else c.get("senderId")
-                partner_name = c.get("recipientName") if is_sender else c.get("senderName")
+                partner_name = u_doc.get("fullName") or (c.get("recipientName") if is_sender else c.get("senderName"))
+                partner_avatar = u_doc.get("avatar") or (c.get("recipientAvatar") if is_sender else c.get("senderAvatar"))
                 partner_role = c.get("recipientRole") if is_sender else c.get("senderRole")
-                partner_avatar = c.get("recipientAvatar") if is_sender else c.get("senderAvatar")
-
-                # Enrich with user details if available
-                u_doc = users_col.find_one({"id": partner_id})
-                if u_doc:
-                    partner_name = u_doc.get("fullName") or partner_name
-                    partner_avatar = u_doc.get("avatar") or partner_avatar
-                    roles = u_doc.get("activeRoles") or []
-                    if roles and not partner_role:
-                        partner_role = roles[0]
+                roles = u_doc.get("activeRoles") or []
+                if roles and not partner_role:
+                    partner_role = roles[0]
 
                 accepted_partners.append({
                     "id": partner_id,
@@ -111,7 +118,12 @@ class ConnectionListView(APIView):
                     pending_sent += 1
 
         # Real total active users count from MongoDB
-        total_active_users = users_col.count_documents({})
+        total_active_users = users_col.count_documents({
+            "isActive": {"$ne": False},
+            "accountStatus": {"$nin": ["DELETED", "REJECTED", "SUSPENDED"]},
+            "deleted": {"$ne": True},
+            "is_deleted": {"$ne": True}
+        })
 
         return api_success({
             "connections": clean_conns,

@@ -9,12 +9,16 @@ from .views import (
     AdminRolesListView,
     AdminSwitchRoleView,
     AdminUsersListView,
-    AdminUserDetailView
+    AdminUserDetailView,
+    AdminEntitiesListView,
+    AdminEntityDeleteView
 )
 
 urlpatterns = [
     path("admin/auth/login/", AdminLoginView.as_view(), name="admin_login"),
     path("admin/overview/", AdminOverviewView.as_view(), name="admin_overview"),
+    path("admin/entities/", AdminEntitiesListView.as_view(), name="admin_entities_list"),
+    path("admin/entities/<str:entity_id>/", AdminEntityDeleteView.as_view(), name="admin_entity_delete"),
     path("admin/entities/<str:entity_id>/verify/", AdminEntityVerifyView.as_view(), name="admin_entity_verify"),
     path("admin/audit-logs/", AdminAuditLogsView.as_view(), name="admin_audit_logs"),
     path("admin/users/", AdminUsersListView.as_view(), name="admin_users_list"),

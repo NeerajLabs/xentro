@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { AdminEntityAccount, EntityType } from '@/types/admin';
 import { adminDomainService, logAdminAudit } from '@/lib/adminDomainService';
+import { getBackendBaseUrl } from '@/lib/backendUrl';
+import { getAdminSession } from '@/lib/adminAuth';
 import {
   Building2,
   Building,
@@ -40,8 +42,48 @@ export const AdminEntityAccountsView: React.FC = () => {
   const [newOwnerEmail, setNewOwnerEmail] = useState('');
   const [transferReason, setTransferReason] = useState('');
 
-  const loadData = () => {
-    setEntities(adminDomainService.getEntityAccounts());
+  const loadData = async () => {
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/admin/entities/`);
+      if (resp.ok) {
+        const d = await resp.json();
+        const live = d?.data?.entities || [];
+        setEntities(live);
+        return;
+      }
+    } catch (e) {
+      console.warn('Could not fetch entities from backend:', e);
+    }
+    setEntities([]);
+  };
+
+  const handleDeleteEntity = async (entity: AdminEntityAccount) => {
+    if (!confirm(`Are you sure you want to permanently remove entity "${entity.name}"?`)) return;
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const session = getAdminSession();
+      const resp = await fetch(`${backendUrl}/admin/entities/${entity.id}/`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(session?.token ? { 'Authorization': `Bearer ${session.token}` } : {})
+        },
+        body: JSON.stringify({ reason: `Entity removed by Master Admin.` })
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        showToast(`Entity "${entity.name}" successfully removed.`);
+        if (drawerEntity?.id === entity.id) {
+          setDrawerEntity(null);
+        }
+        loadData();
+      } else {
+        showToast(data?.message || 'Failed to remove entity.');
+      }
+    } catch {
+      showToast('Network error while removing entity.');
+    }
   };
 
   useEffect(() => {
@@ -422,9 +464,15 @@ export const AdminEntityAccountsView: React.FC = () => {
               </button>
               <button
                 onClick={() => handleToggleSuspension(drawerEntity)}
-                className="flex-1 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-bold transition-all"
+                className="flex-1 py-2.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 text-xs font-bold transition-all"
               >
                 {drawerEntity.status === 'Suspended' ? 'Restore Entity' : 'Suspend Entity'}
+              </button>
+              <button
+                onClick={() => handleDeleteEntity(drawerEntity)}
+                className="py-2.5 px-4 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-bold transition-all"
+              >
+                Remove
               </button>
             </div>
           </div>

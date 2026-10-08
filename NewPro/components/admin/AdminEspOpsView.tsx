@@ -62,29 +62,23 @@ export const AdminEspOpsView: React.FC = () => {
         if (resp.ok) {
           const data = await resp.json();
           const liveRequests = data?.data?.requests || data?.data?.registrationRequests || [];
-          if (Array.isArray(liveRequests) && liveRequests.length > 0) {
-            const mapped: EspRequestQueueItem[] = liveRequests
-              .filter((lr: any) => lr.isEsp || lr.accountType === "ESP" || lr.requestedRole === "ESP")
-              .map((lr: any) => ({
-                requestId: lr.id || lr.userId || lr.entityId,
-                organization: lr.institutionName || lr.fullName || "ESP Partner",
-                organizationType: lr.espType || "Incubator",
-                applicantName: lr.fullName || "Applicant",
-                applicantDesignation: lr.designation || "Director / Representative",
-                officialEmail: lr.email,
-                domain: lr.officialDomain || (lr.email ? lr.email.split("@")[1] : "institution.edu"),
-                submittedDate: lr.requestedAt ? lr.requestedAt.split("T")[0] : new Date().toISOString().split("T")[0],
-                verificationState: lr.status === "ACTIVE" ? "Activated" : (lr.status === "REJECTED" ? "Rejected" : "Pending Review"),
-                status: lr.status === "ACTIVE" ? "Approved" : (lr.status === "REJECTED" ? "Declined" : "In Queue")
-              }));
-            if (mapped.length > 0) {
-              setRequests((prev) => {
-                const existingIds = new Set(prev.map(p => p.requestId));
-                const fresh = mapped.filter(m => !existingIds.has(m.requestId));
-                return [...fresh, ...prev];
-              });
-            }
-          }
+          const mapped: EspRequestQueueItem[] = liveRequests
+            .filter((lr: any) => lr.isEsp || lr.accountType === "ESP" || lr.requestedRole === "ESP")
+            .map((lr: any) => ({
+              requestId: lr.id || lr.userId || lr.entityId,
+              organization: lr.institutionName || lr.fullName || "ESP Partner",
+              organizationType: lr.espType || "Incubator",
+              applicantName: lr.fullName || "Applicant",
+              applicantDesignation: lr.designation || "Director / Representative",
+              officialEmail: lr.email,
+              domain: lr.officialDomain || (lr.email ? lr.email.split("@")[1] : "institution.edu"),
+              submittedDate: lr.requestedAt ? lr.requestedAt.split("T")[0] : new Date().toISOString().split("T")[0],
+              verificationState: lr.status === "ACTIVE" ? "Activated" : (lr.status === "REJECTED" ? "Rejected" : "Pending Review"),
+              status: lr.status === "ACTIVE" ? "Approved" : (lr.status === "REJECTED" ? "Declined" : "In Queue")
+            }));
+          setRequests(mapped);
+        } else {
+          setRequests([]);
         }
       } catch (err) {
         console.warn("Could not fetch live ESP requests:", err);

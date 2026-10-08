@@ -119,18 +119,15 @@ export const AdminPersonalAccountsView: React.FC = () => {
             bio: u.bio || 'Platform user'
           }));
 
-          const localAccounts = adminDomainService.getPersonalAccounts();
-          const existingEmails = new Set(backendUsers.map(b => b.email.toLowerCase()));
-          const filteredLocal = localAccounts.filter(l => !existingEmails.has(l.email.toLowerCase()));
-          setAccounts([...backendUsers, ...filteredLocal]);
+          setAccounts(backendUsers);
         } else {
-          setAccounts(adminDomainService.getPersonalAccounts());
+          setAccounts([]);
         }
       } else {
-        setAccounts(adminDomainService.getPersonalAccounts());
+        setAccounts([]);
       }
     } catch {
-      setAccounts(adminDomainService.getPersonalAccounts());
+      setAccounts([]);
     }
 
     fetchPendingRequests();
@@ -344,9 +341,21 @@ export const AdminPersonalAccountsView: React.FC = () => {
       if (resp.ok && data?.success) {
         showToast(`User account ${deleteUser.email} has been permanently deleted.`);
         setDeleteModalOpen(false);
+        const deletedId = deleteUser.id;
         setDeleteUser(null);
-        if (drawerAccount?.id === deleteUser.id) {
+        if (drawerAccount?.id === deletedId) {
           setDrawerAccount(null);
+        }
+        // Invalidate client caches
+        if (typeof window !== 'undefined') {
+          try {
+            const raw = localStorage.getItem('xentro_admin_domain_store_v2');
+            if (raw) {
+              const store = JSON.parse(raw);
+              store.personalAccounts = (store.personalAccounts || []).filter((a: any) => a.id !== deletedId);
+              localStorage.setItem('xentro_admin_domain_store_v2', JSON.stringify(store));
+            }
+          } catch {}
         }
         loadData();
       } else {
