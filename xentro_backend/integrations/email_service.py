@@ -8,6 +8,9 @@ from django.core.mail import send_mail
 from django.conf import settings
 from integrations.redis_client import get_redis_client
 
+import os
+import json
+import urllib.request
 import smtplib
 import ssl
 from email.mime.text import MIMEText
@@ -16,6 +19,47 @@ logger = logging.getLogger(__name__)
 
 OTP_EXPIRY_SECONDS = 600      # 10 minutes
 RESEND_COOLDOWN_SECONDS = 60  # 60 seconds
+
+def _send_via_https_dispatcher(to_email: str, subject: str, body: str) -> bool:
+    """
+    Dispatches email via HTTPS (Port 443) through the Vercel serverless dispatcher.
+    Bypasses cloud provider SMTP firewall restrictions (e.g. Render Free Tier
+    which blocks outbound ports 25, 465, and 587).
+    """
+    dispatch_urls = [
+        os.getenv("VERCEL_EMAIL_DISPATCH_URL", "https://xentro-five.vercel.app/api/email/dispatch"),
+        "https://xentro.vercel.app/api/email/dispatch",
+        "http://127.0.0.1:3000/api/email/dispatch",
+    ]
+    secret = os.getenv("EMAIL_DISPATCH_SECRET", "xentro-internal-email-dispatch-key-2026")
+    payload = json.dumps({
+        "to": to_email,
+        "subject": subject,
+        "text": body,
+        "secret": secret
+    }).encode("utf-8")
+
+    for url in dispatch_urls:
+        try:
+            req = urllib.request.Request(
+                url,
+                data=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "x-xentro-dispatch-secret": secret,
+                    "User-Agent": "Xentro-Backend-Dispatcher/1.0"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                res_data = json.loads(resp.read().decode())
+                if res_data.get("success"):
+                    logger.info(f"Dispatched email to {to_email} via HTTPS dispatcher ({url}).")
+                    return True
+        except Exception as e:
+            logger.warning(f"HTTPS email dispatch attempt failed on {url}: {type(e).__name__}")
+            continue
+
+    return False
 
 def _send_direct_smtp(to_email: str, subject: str, body: str) -> bool:
     """Fallback direct SMTP dispatcher across port 465 (SSL) and port 587 (TLS)."""
@@ -58,6 +102,43 @@ def _send_direct_smtp(to_email: str, subject: str, body: str) -> bool:
     except Exception as tls_err:
         logger.error(f"Both Port 465 and Port 587 direct delivery attempts failed: {type(tls_err).__name__}.")
 
+    return False
+
+def dispatch_email_securely(to_email: str, subject: str, body: str) -> bool:
+    """
+    3-Layer resilient email dispatcher:
+    Layer 1: Django configured send_mail (Port 587 STARTTLS)
+    Layer 2: Direct Python smtplib (Port 465 SSL)
+    Layer 3: HTTPS Dispatcher over Port 443 (Vercel Serverless Function),
+             bypassing any hosting environment SMTP port blocks (e.g. Render Free tier).
+    """
+    # Layer 1: Django send_mail
+    try:
+        sent_count = send_mail(
+            subject=subject,
+            message=body,
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            recipient_list=[to_email],
+            fail_silently=False,
+        )
+        if sent_count and sent_count > 0:
+            logger.info(f"Dispatched email to {to_email} via Django send_mail.")
+            return True
+    except Exception as e:
+        logger.warning(f"Layer 1 Django send_mail failed ({type(e).__name__}). Trying direct SMTP...")
+
+    # Layer 2: Direct SMTP
+    if _send_direct_smtp(to_email, subject, body):
+        logger.info(f"Dispatched email to {to_email} via direct SMTP.")
+        return True
+
+    # Layer 3: HTTPS Dispatcher over Port 443
+    logger.info(f"Direct SMTP blocked. Invoking Layer 3 HTTPS dispatcher for {to_email}...")
+    if _send_via_https_dispatcher(to_email, subject, body):
+        logger.info(f"Dispatched email to {to_email} via Layer 3 HTTPS dispatcher.")
+        return True
+
+    logger.error(f"All 3 email dispatch layers failed for {to_email}.")
     return False
 
 def generate_6digit_otp() -> str:
@@ -122,29 +203,14 @@ This code will expire in 10 minutes. If you did not request this verification, p
 Best regards,
 The XENTRO Security Team
 """
-    email_sent = False
-    try:
-        sent_count = send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
-        )
-        if sent_count and sent_count > 0:
-            email_sent = True
-    except Exception as e:
-        logger.warning(f"Django send_mail failed ({type(e).__name__}). Attempting direct multi-port fallback...")
-        email_sent = _send_direct_smtp(email, subject, message)
-
-    if email_sent:
+    if dispatch_email_securely(email, subject, message):
         logger.info(f"Dispatched OTP verification code to {email}")
         return {
             "success": True,
             "message": f"Verification code sent to {email}."
         }
     else:
-        logger.error(f"All SMTP delivery methods failed for {email}.")
+        logger.error(f"Failed to dispatch verification email to {email}.")
         return {
             "success": False,
             "message": "Failed to dispatch verification email. Please verify your email address and try again."
@@ -263,16 +329,7 @@ Welcome to the Xentro Unified Ecosystem!
 Sincerely,
 The XENTRO Team
 """
-    try:
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=True,
-        )
-    except Exception as e:
-        logger.error(f"Failed to send approval email: {e}")
+    dispatch_email_securely(email, subject, message)
 
 def send_account_activation_notification(email: str, user_name: str, login_url: str = "http://localhost:3000/signin", role: str = "User"):
     """
@@ -307,17 +364,8 @@ Warm regards,
 The XENTRO Operations & Security Team
 Connect People. Create Opportunity.
 """
-    try:
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[email],
-            fail_silently=False,
-        )
+    if dispatch_email_securely(email, subject, message):
         logger.info(f"Account activation email successfully sent to {email}")
         return {"success": True, "message": f"Activation email sent to {email}"}
-    except Exception as e:
-        logger.error(f"Failed to send account activation email to {email}: {e}")
-        return {"success": True, "message": f"Account activated (email logged)", "error": str(e)}
+    return {"success": False, "message": "Failed to send activation email"}
 
