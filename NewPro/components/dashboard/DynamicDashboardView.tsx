@@ -19,7 +19,7 @@ import { MentorDashboard } from './roles/MentorDashboard';
 import { InvestorDashboard } from './roles/InvestorDashboard';
 import { ESPDashboard } from './roles/ESPDashboard';
 import { ExplorerDashboard } from './roles/ExplorerDashboard';
-import { SignupModal } from '@/components/auth/SignupModal';
+import { RoleRequestModal } from './RoleRequestModal';
 import { useToast } from '@/components/ui/Toast';
 
 interface DynamicDashboardViewProps {
@@ -151,12 +151,12 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
         )}
       </div>
 
-      {/* Signup & Onboarding Modal */}
-      <SignupModal
+      {/* Role Request & Status Modal */}
+      <RoleRequestModal
         isOpen={isSignupOpen}
         onClose={() => setIsSignupOpen(false)}
-        initialRole={profile.role}
-        onComplete={(newRole) => {
+        currentUserProfile={profile}
+        onRequestSubmitted={() => {
           setProfile(getUserProfile());
         }}
       />

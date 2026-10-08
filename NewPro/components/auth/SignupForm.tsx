@@ -14,6 +14,7 @@ import { validateSignUpForm, validateField } from "@/lib/auth/validation";
 import { authService } from "@/lib/auth/authService";
 import { getBackendBaseUrl } from "@/lib/backendUrl";
 import { getNewProUrl } from "@/lib/auth/xentroHandoff";
+import { ProgressIndicator } from "@/components/onboarding/ProgressIndicator";
 
 export const SignupForm: React.FC = () => {
   // Step state: "form" for initial details, "otp" for email code verification
@@ -276,13 +277,22 @@ export const SignupForm: React.FC = () => {
   }
 
   if (isSuccess) {
-    return <SuccessState userName={formData.fullName} redirectTo="/onboarding" />;
+    return <SuccessState userName={formData.fullName} redirectTo="/onboarding/profile" />;
   }
 
   return (
     <div className="w-full max-w-md mx-auto">
+      {/* Onboarding Progress Indicator */}
+      <div className="mb-6">
+        <ProgressIndicator currentStep={step === "otp" ? 2 : 1} />
+      </div>
+
       {/* Form Title & Subtitle */}
       <div className="mb-6 text-left">
+        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D9FF3F]/15 text-xs font-inter font-semibold text-[#101212] dark:text-[#D9FF3F] mb-3">
+          <ShieldCheck className="w-3.5 h-3.5" />
+          <span>{step === "otp" ? "Step 2 • Email OTP" : "Step 1 • Account Details"}</span>
+        </div>
         <h1 className="font-manrope font-bold text-2xl sm:text-3xl lg:text-[34px] tracking-tight text-[#101212] dark:text-white leading-[1.2] mb-2">
           {step === "otp" ? "Verify your email" : "Create your Xentro account"}
         </h1>

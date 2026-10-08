@@ -67,7 +67,9 @@ export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
 
   const badge = getRoleBadge();
 
-  const handleUploadImageClick = () => {
+  const handleUploadImageClick = (e?: React.MouseEvent) => {
+    e?.preventDefault();
+    e?.stopPropagation();
     fileInputRef.current?.click();
   };
 

@@ -450,20 +450,20 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
       role="dialog"
       aria-modal="true"
     >
-      {/* Hidden file input for modal uploads */}
-      <input
-        type="file"
-        ref={modalFileInputRef}
-        accept="image/*"
-        onChange={handleFileChange}
-        className="hidden"
-        aria-hidden="true"
-      />
-
       <div
         className="bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-2xl sm:rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh] sm:max-h-[88vh] relative"
         onClick={(e) => e.stopPropagation()}
       >
+        {/* Hidden file input for modal uploads */}
+        <input
+          type="file"
+          ref={modalFileInputRef}
+          accept="image/*"
+          onChange={handleFileChange}
+          className="hidden"
+          aria-hidden="true"
+        />
+
         {/* Modal Header: Pinned */}
         <div className="flex-shrink-0 px-5 sm:px-6 py-3.5 border-b border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between bg-white dark:bg-[#181B1A] z-20">
           <div className="flex items-center gap-2.5">
@@ -627,7 +627,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => modalFileInputRef.current?.click()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      modalFileInputRef.current?.click();
+                    }}
                     className="text-xs font-semibold text-[#101212] dark:text-[#D9FF3F] hover:underline cursor-pointer"
                   >
                     Change Image
@@ -635,7 +639,9 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                   <span className="text-gray-300 dark:text-gray-700">•</span>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
                       setMediaUrl('');
                       setMediaCaption('');
                     }}
@@ -684,7 +690,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                onClick={() => modalFileInputRef.current?.click()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  modalFileInputRef.current?.click();
+                }}
                 className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition-all ${
                   isDraggingOver
                     ? 'border-[#D9FF3F] bg-[#D9FF3F]/10'
@@ -749,7 +759,11 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => modalFileInputRef.current?.click()}
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  modalFileInputRef.current?.click();
+                }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-gray-200 dark:border-[#262A29] bg-gray-50 hover:bg-gray-100 dark:bg-[#101212] dark:hover:bg-[#181B1A] text-xs font-semibold text-[#101212] dark:text-white transition-all cursor-pointer"
               >
                 <Upload className="w-3.5 h-3.5 text-emerald-500" />

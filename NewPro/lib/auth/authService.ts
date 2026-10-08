@@ -124,18 +124,32 @@ async function syncBackendAccountType(accountType: string, extraData?: any) {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const backendUrl = getBackendBaseUrl();
-    await fetch(`${backendUrl}/auth/account-type/`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({
-        userId: user.id,
-        email: user.email,
-        accountType,
-        userType: accountType,
-        ...extraData,
-      }),
-    });
+    const payload = {
+      userId: user.id,
+      email: user.email,
+      accountType,
+      userType: accountType,
+      ...extraData,
+    };
+
+    // 1. Direct Next.js API route (MongoDB Atlas fallback)
+    try {
+      await fetch("/api/auth/account-type", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+    } catch (_) {}
+
+    // 2. Django Backend proxy
+    try {
+      const backendUrl = getBackendBaseUrl();
+      await fetch(`${backendUrl}/auth/account-type/`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+    } catch (_) {}
   } catch (err) {
     console.warn("Failed to sync backend account type:", err);
   }
@@ -465,6 +479,19 @@ export const authService = {
         avatar: profile.photoUrl,
       };
 
+      // 1. Direct Next.js API route (MongoDB Atlas fallback)
+      try {
+        await fetch("/api/profile", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-User-Id": userId,
+          },
+          body: JSON.stringify(payload),
+        });
+      } catch (_) {}
+
+      // 2. Django Backend proxy
       const backendUrl = getBackendBaseUrl();
       const res = await fetch(`${backendUrl}/auth/profile/`, {
         method: "POST",
@@ -493,6 +520,42 @@ export const authService = {
     try {
       const user = this.getCurrentUser();
       if (!user) return null;
+
+      // 1. Check Next.js API first (MongoDB Atlas direct fallback)
+      try {
+        const localRes = await fetch(`/api/profile?userId=${encodeURIComponent(user.id)}&email=${encodeURIComponent(user.email)}`);
+        if (localRes.ok) {
+          const localData = await localRes.json();
+          const serverUser = localData?.data?.user || localData?.user;
+          if (serverUser) {
+            const pProfile = serverUser.personalProfile || {};
+            const p: PersonalProfile = {
+              photoUrl: serverUser.avatar || serverUser.photoUrl,
+              fullName: serverUser.fullName || pProfile.fullName || user.fullName,
+              headline: serverUser.headline || pProfile.headline || "",
+              location: serverUser.location || pProfile.location || "",
+              bio: serverUser.bio || pProfile.bio || "",
+              currentRole: serverUser.currentRole || pProfile.currentRole || "",
+              currentOrganization: serverUser.currentOrganization || serverUser.organization || pProfile.currentOrganization || "",
+              education: serverUser.education || pProfile.education || "",
+              professionalExperience: serverUser.professionalExperience || serverUser.experienceSummary || pProfile.professionalExperience || "",
+              skills: serverUser.skills || serverUser.areasOfExpertise || pProfile.skills || [],
+              areasOfExpertise: serverUser.areasOfExpertise || serverUser.skills || pProfile.areasOfExpertise || [],
+              industries: serverUser.industries || serverUser.industriesOfFocus || pProfile.industries || [],
+              startupInterests: serverUser.startupInterests || serverUser.entrepreneurshipInterests || pProfile.startupInterests || [],
+              entrepreneurshipInterests: serverUser.entrepreneurshipInterests || serverUser.startupInterests || pProfile.entrepreneurshipInterests || [],
+              linkedin: serverUser.linkedin || serverUser.linkedinUrl || pProfile.linkedin || "",
+              website: serverUser.website || serverUser.websiteUrl || pProfile.website || "",
+              otherLinks: serverUser.otherLinks || (serverUser.otherLink ? [serverUser.otherLink] : []) || pProfile.otherLinks || [],
+            };
+            setStorageItem(PERSONAL_PROFILE_KEY, JSON.stringify(p));
+            setStorageItem(SESSION_USER_KEY, JSON.stringify({ ...user, ...serverUser }));
+            return p;
+          }
+        }
+      } catch (_) {}
+
+      // 2. Django Backend proxy
       const backendUrl = getBackendBaseUrl();
       const res = await fetch(`${backendUrl}/auth/me/`, {
         headers: {

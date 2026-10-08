@@ -23,6 +23,7 @@ import { connectionService, ConnectionRecord } from '@/lib/connectionService';
 import { messagingService } from '@/lib/messagingService';
 import { resolveAvatarUrl } from '@/lib/auth/authService';
 import { useToast } from '@/components/ui/Toast';
+import { RoleRequestModal } from '../RoleRequestModal';
 
 export type ExplorerTab = 'overview' | 'explore' | 'connections' | 'upgrade';
 
@@ -39,11 +40,32 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
   const [recommendations, setRecommendations] = useState<any[]>([]);
   const [metrics, setMetrics] = useState({ activeConnections: 0, pendingReceived: 0, pendingSent: 0, activeUsers: 0 });
   const [isLoading, setIsLoading] = useState(false);
+  const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+  const [roleRequests, setRoleRequests] = useState<any[]>([]);
+
+  const loadRoleRequests = async () => {
+    try {
+      const myId = profile.id || '';
+      const params = new URLSearchParams();
+      if (myId) params.set('userId', myId);
+      if (profile.email) params.set('email', profile.email);
+      const res = await fetch(`/api/roles/request?${params.toString()}`);
+      if (res.ok) {
+        const json = await res.json();
+        setRoleRequests(json?.data?.requests || json?.requests || []);
+      }
+    } catch (_) {}
+  };
 
   useEffect(() => {
     loadConnections();
     loadRecommendations();
-  }, [profile.id]);
+    loadRoleRequests();
+
+    const handleReqUpdated = () => loadRoleRequests();
+    window.addEventListener('xentro-role-requests-updated', handleReqUpdated);
+    return () => window.removeEventListener('xentro-role-requests-updated', handleReqUpdated);
+  }, [profile.id, profile.email]);
 
   const loadRecommendations = async () => {
     try {
@@ -458,14 +480,52 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
       {/* UPGRADE ROLE TAB */}
       {activeTab === 'upgrade' && (
         <div className="space-y-6 animate-fade-slide">
+          {/* Active Pending Role Request Banner */}
+          {roleRequests.some((r) => r.status === 'PENDING') && (
+            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 flex items-start gap-3">
+              <Clock className="w-5 h-5 flex-shrink-0 mt-0.5 animate-pulse text-amber-600 dark:text-amber-400" />
+              <div className="flex-1 text-xs">
+                <div className="flex items-center gap-2 mb-0.5">
+                  <span className="font-bold text-sm">Role Application Under Review</span>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-amber-500/20 text-amber-700 dark:text-amber-300">
+                    Pending Admin Review
+                  </span>
+                </div>
+                <p>
+                  You submitted a request for{' '}
+                  <strong>{roleRequests.find((r) => r.status === 'PENDING')?.requestedRole}</strong>.
+                  Our operations team is reviewing your profile and credentials. You will be notified by email upon review.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setIsRoleModalOpen(true)}
+                  className="mt-2 text-xs font-bold underline cursor-pointer hover:text-amber-900 dark:hover:text-amber-100"
+                >
+                  View Application Details &bull; #
+                  {roleRequests.find((r) => r.status === 'PENDING')?.requestId ||
+                    roleRequests.find((r) => r.status === 'PENDING')?.id}
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="p-5 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-4">
-            <div>
-              <h3 className="text-base font-bold font-sora text-[#101212] dark:text-white">
-                Upgrade or Activate Additional Roles
-              </h3>
-              <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                Your personal account can register startup entities, activate advisory mentorship, or submit institutional enabler applications.
-              </p>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-bold font-sora text-[#101212] dark:text-white">
+                  Upgrade or Activate Additional Roles
+                </h3>
+                <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                  Your personal account can register startup entities, activate advisory mentorship, or submit institutional enabler applications.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRoleModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-[#D9FF3F] text-[#101212] text-xs font-bold hover:bg-[#C7F020] transition-colors cursor-pointer shrink-0"
+              >
+                Request Role
+              </button>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -481,13 +541,14 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
                 <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
                   Create a dedicated startup identity with Diligence Locker, Cap Table logs, Pitch Deck showcase, and investor deal-rooms.
                 </p>
-                <a
-                  href="/onboarding"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-500 hover:text-blue-600 transition-colors"
+                <button
+                  type="button"
+                  onClick={() => setIsRoleModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-500 hover:text-blue-600 transition-colors cursor-pointer"
                 >
-                  <span>Launch Startup Onboarding</span>
+                  <span>Request Startup Founder Role</span>
                   <ArrowRight className="w-3.5 h-3.5" />
-                </a>
+                </button>
               </div>
 
               <div className="p-5 rounded-xl border border-gray-200 dark:border-[#262A29] space-y-3">
@@ -502,13 +563,14 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
                 <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
                   Offer office hours, advisory packages, and review founder pitch decks with verified credentials.
                 </p>
-                <a
-                  href="/onboarding"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-500 hover:text-purple-600 transition-colors"
+                <button
+                  type="button"
+                  onClick={() => setIsRoleModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-500 hover:text-purple-600 transition-colors cursor-pointer"
                 >
-                  <span>Set Up Mentor Profile</span>
+                  <span>Request Advisory Mentor Role</span>
                   <ArrowRight className="w-3.5 h-3.5" />
-                </a>
+                </button>
               </div>
 
               <div className="p-5 rounded-xl border border-gray-200 dark:border-[#262A29] space-y-3">
@@ -523,13 +585,14 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
                 <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
                   Access confidential diligence lockers, review startup financials, and syndicate deals with verified accreditation.
                 </p>
-                <a
-                  href="/onboarding"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-500 hover:text-emerald-600 transition-colors"
+                <button
+                  type="button"
+                  onClick={() => setIsRoleModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-500 hover:text-emerald-600 transition-colors cursor-pointer"
                 >
-                  <span>Activate Investor Track</span>
+                  <span>Request Investor Role</span>
                   <ArrowRight className="w-3.5 h-3.5" />
-                </a>
+                </button>
               </div>
 
               <div className="p-5 rounded-xl border border-gray-200 dark:border-[#262A29] space-y-3">
@@ -544,18 +607,27 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
                 <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
                   Submit an institutional application for universities, incubators, or government innovation hubs.
                 </p>
-                <a
-                  href="/onboarding"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-500 hover:text-amber-600 transition-colors"
+                <button
+                  type="button"
+                  onClick={() => setIsRoleModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-amber-500 hover:text-amber-600 transition-colors cursor-pointer"
                 >
                   <span>Submit ESP Request</span>
                   <ArrowRight className="w-3.5 h-3.5" />
-                </a>
+                </button>
               </div>
             </div>
           </div>
         </div>
       )}
+
+      {/* Role Request Modal */}
+      <RoleRequestModal
+        isOpen={isRoleModalOpen}
+        onClose={() => setIsRoleModalOpen(false)}
+        currentUserProfile={profile}
+        onRequestSubmitted={loadRoleRequests}
+      />
     </div>
   );
 };

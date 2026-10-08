@@ -29,7 +29,7 @@ import { getStartupProfileById } from '@/data/startupProfilesData';
 import { getInvestorProfileById } from '@/data/investorProfilesData';
 import { DashboardWorkspace } from './workspace/DashboardWorkspace';
 import { DynamicDashboardView } from './DynamicDashboardView';
-import { SignupModal } from '@/components/auth/SignupModal';
+import { RoleRequestModal } from './RoleRequestModal';
 import { SupportPageView } from './SupportPageView';
 
 export const DashboardLayout: React.FC = () => {
@@ -98,6 +98,47 @@ export const DashboardLayout: React.FC = () => {
       }
     };
 
+    // Resilient background sync from MongoDB Atlas on refresh
+    const syncProfileFromDatabase = async () => {
+      try {
+        const current = getUserProfile();
+        const userRaw = localStorage.getItem('xentro_current_user');
+        const userObj = userRaw ? JSON.parse(userRaw) : null;
+        const targetId = current?.id || userObj?.id || '';
+        const targetEmail = current?.email || userObj?.email || '';
+        if (targetId || targetEmail) {
+          const res = await fetch(`/api/profile?userId=${encodeURIComponent(targetId)}&email=${encodeURIComponent(targetEmail)}`);
+          if (res.ok) {
+            const data = await res.json();
+            const serverUser = data?.data?.user || data?.user;
+            if (serverUser && serverUser.personalProfile) {
+              const p = serverUser.personalProfile;
+              const merged = {
+                ...current,
+                headline: p.headline || current.headline,
+                bio: p.bio || current.bio,
+                location: p.location || current.location,
+                currentRole: p.currentRole || current.currentRole,
+                currentOrganization: p.currentOrganization || current.currentOrganization,
+                education: p.education || current.education,
+                professionalExperience: p.professionalExperience || current.professionalExperience,
+                skills: (p.skills && p.skills.length > 0) ? p.skills : current.skills,
+                industries: (p.industries && p.industries.length > 0) ? p.industries : current.industries,
+                startupInterests: (p.startupInterests && p.startupInterests.length > 0) ? p.startupInterests : current.startupInterests,
+                linkedin: p.linkedin || current.linkedin,
+                website: p.website || current.website,
+                otherLinks: p.otherLinks || current.otherLinks,
+                avatar: p.photoUrl || current.avatar,
+              };
+              localStorage.setItem('xentro_user_profile', JSON.stringify(merged));
+              setUserProfile(merged);
+            }
+          }
+        }
+      } catch (_) {}
+    };
+    syncProfileFromDatabase();
+
     const handleOpenProfileEvent = (e: Event) => {
       const customEvent = e as CustomEvent<{
         type: 'startup' | 'mentor' | 'investor' | 'esp' | 'explorer';
@@ -140,11 +181,11 @@ export const DashboardLayout: React.FC = () => {
           onPreviewProfile={() => handleSelectNavTab('profile')}
           onSignupNewRole={() => setIsSignupOpen(true)}
         />
-        <SignupModal
+        <RoleRequestModal
           isOpen={isSignupOpen}
           onClose={() => setIsSignupOpen(false)}
-          initialRole={userProfile.role}
-          onComplete={() => setUserProfile(getUserProfile())}
+          currentUserProfile={userProfile}
+          onRequestSubmitted={() => setUserProfile(getUserProfile())}
         />
       </ToastProvider>
     );
@@ -358,12 +399,12 @@ export const DashboardLayout: React.FC = () => {
           onToggleMessages={() => setIsMessagesOpen(!isMessagesOpen)}
         />
 
-        {/* Global Signup Modal */}
-        <SignupModal
+        {/* Global Role Request Modal */}
+        <RoleRequestModal
           isOpen={isSignupOpen}
           onClose={() => setIsSignupOpen(false)}
-          initialRole={userProfile.role}
-          onComplete={() => setUserProfile(getUserProfile())}
+          currentUserProfile={userProfile}
+          onRequestSubmitted={() => setUserProfile(getUserProfile())}
         />
       </div>
     </ToastProvider>

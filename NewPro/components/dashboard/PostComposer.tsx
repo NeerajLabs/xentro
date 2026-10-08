@@ -18,11 +18,32 @@ interface PostComposerProps {
 export const PostComposer: React.FC<PostComposerProps> = ({ onAddPost }) => {
   const [content, setContent] = useState('');
   const [activeType, setActiveType] = useState<string | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [imageFileName, setImageFileName] = useState<string>('');
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (!file.type.startsWith('image/')) {
+        showToast('Please select a valid image file', 'error');
+        return;
+      }
+      setImageFileName(file.name);
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        setImagePreview(event.target?.result as string);
+        showToast('Image attached to post');
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
+  };
+
   const handlePost = () => {
-    if (!content.trim()) {
-      showToast('Please type your thoughts before posting', 'info');
+    if (!content.trim() && !imagePreview) {
+      showToast('Please type your thoughts or attach an image before posting', 'info');
       return;
     }
 
@@ -33,6 +54,14 @@ export const PostComposer: React.FC<PostComposerProps> = ({ onAddPost }) => {
       category: activeType === 'Opportunity' ? 'opportunities' : 'all',
       content: content.trim(),
       tags: activeType ? [activeType, 'Innovation'] : ['Innovation', 'Tech'],
+      media: imagePreview
+        ? {
+            type: 'image',
+            url: imagePreview,
+            alt: imageFileName || 'Post image',
+            caption: imageFileName.replace(/\.[^/.]+$/, '') || undefined,
+          }
+        : undefined,
       metrics: {
         likes: 0,
         comments: 0,
@@ -47,10 +76,16 @@ export const PostComposer: React.FC<PostComposerProps> = ({ onAddPost }) => {
     onAddPost(newPost);
     setContent('');
     setActiveType(null);
+    setImagePreview(null);
+    setImageFileName('');
     showToast('Post published successfully!');
   };
 
   const handleActionClick = (type: string) => {
+    if (type === 'Photo/Video' || type === 'Upload Image') {
+      fileInputRef.current?.click();
+      return;
+    }
     if (activeType === type) {
       setActiveType(null);
     } else {
@@ -87,6 +122,45 @@ export const PostComposer: React.FC<PostComposerProps> = ({ onAddPost }) => {
         </div>
       </div>
 
+      {/* Hidden native file input */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        accept="image/*"
+        onChange={handleFileSelect}
+        className="hidden"
+        aria-hidden="true"
+      />
+
+      {/* Image Preview Card */}
+      {imagePreview && (
+        <div className="mt-3 relative rounded-xl overflow-hidden border border-gray-200 dark:border-[#262A29] bg-gray-50 dark:bg-[#101212] p-2.5 animate-fade-slide">
+          <div className="relative max-h-56 rounded-lg overflow-hidden bg-black/5">
+            <img
+              src={imagePreview}
+              alt="Attachment preview"
+              className="w-full h-44 object-cover rounded-lg"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                setImagePreview(null);
+                setImageFileName('');
+              }}
+              className="absolute top-2 right-2 p-1.5 rounded-full bg-black/70 hover:bg-black text-white text-xs cursor-pointer shadow-md transition-all"
+              title="Remove image"
+            >
+              ✕
+            </button>
+          </div>
+          {imageFileName && (
+            <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] mt-1.5 px-1 truncate">
+              {imageFileName}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Active Type Indicator Badge (if any) */}
       {activeType && (
         <div className="mt-2.5 px-1 flex items-center gap-2">
@@ -106,18 +180,18 @@ export const PostComposer: React.FC<PostComposerProps> = ({ onAddPost }) => {
       {/* Action Row */}
       <div className="mt-3.5 pt-3 border-t border-[#F1F5F9] dark:border-[#262A29] flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-1 sm:gap-2">
-          {/* Photo / Video */}
+          {/* Upload Image / Photo */}
           <button
             type="button"
-            onClick={() => handleActionClick('Photo/Video')}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-              activeType === 'Photo/Video'
+            onClick={() => handleActionClick('Upload Image')}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer ${
+              imagePreview
                 ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300'
                 : 'hover:bg-emerald-50 dark:hover:bg-emerald-950/30 text-emerald-600 dark:text-emerald-400'
             }`}
           >
             <ImageIcon className="w-4 h-4 text-emerald-500" />
-            <span className="hidden sm:inline">Photo/Video</span>
+            <span className="hidden sm:inline">Upload Image</span>
           </button>
 
           {/* Opportunity */}

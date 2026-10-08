@@ -244,7 +244,7 @@ export default function PersonalProfilePage() {
                 Profile Saved!
               </h2>
               <p className="font-inter text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                Advancing to Step 05: Participation Path Selection...
+                Advancing to Step 04: Choose Path...
               </p>
             </div>
           ) : (

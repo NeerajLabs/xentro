@@ -347,7 +347,20 @@ export default function SignInPage() {
         console.warn("Backend auth fetch failed, falling back to local auth:", backendErr);
       }
 
-      // 2. Fallback to authService if backend didn't return user
+      // 2. Fallback to MongoDB Atlas via /api/profile if backend proxy didn't return user
+      if (!signedInUser) {
+        try {
+          const profRes = await fetch(`/api/profile?email=${encodeURIComponent(normEmail)}`);
+          if (profRes.ok) {
+            const profData = await profRes.json();
+            if (profData?.data?.user || profData?.user) {
+              signedInUser = profData.data?.user || profData.user;
+            }
+          }
+        } catch (_) {}
+      }
+
+      // 3. Fallback to authService
       if (!signedInUser) {
         const res = await authService.signInWithEmail(email, password);
         if (res.success && res.user) {

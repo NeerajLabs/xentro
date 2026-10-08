@@ -30,6 +30,7 @@ import {
   FileCheck,
   ExternalLink,
   Clock,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -153,9 +154,9 @@ export default function OnboardingPage() {
   const [espAuthorized, setEspAuthorized] = useState<"yes" | "no">("yes");
   const [isSubmittingEsp, setIsSubmittingEsp] = useState(false);
   const [espSubmittedRequest, setEspSubmittedRequest] = useState<EspRequest | null>(null);
+  const [personalProfile, setPersonalProfile] = useState<any>(null);
 
   useEffect(() => {
-
     const active = authService.getCurrentUser();
     if (!active) {
       router.push("/signup");
@@ -165,7 +166,14 @@ export default function OnboardingPage() {
     setEspApplicantName(active.fullName);
     setStartupOfficialEmail(`team@${active.email.split("@")[1] || "company.com"}`);
     setInvestorOrgOfficialEmail(`partner@${active.email.split("@")[1] || "vcfirm.com"}`);
-    setCompletedPaths(active.activeRoles || []);
+
+    const prof = authService.getPersonalProfile();
+    setPersonalProfile(prof);
+
+    const specificRoles = (active.activeRoles || []).filter(
+      (r) => r !== "Personal Account" && r !== "Personal Role"
+    );
+    setCompletedPaths(specificRoles);
   }, [router]);
 
   const handleGoToFeed = () => {
@@ -360,9 +368,8 @@ export default function OnboardingPage() {
   // 5. Explorer Logic
   const handleActivateExplorer = async () => {
     await authService.activateExplorerAccess();
-    setCompletedPaths((p) => [...p, "Explorer"]);
-    // Explorer = guest access: never handed off as a startup identity
-    handleLaunchHubWithRole("explorer");
+    setCompletedPaths(["Explorer"]);
+    setActiveModal(null);
   };
 
   const handleLaunchHubWithRole = (
@@ -456,120 +463,189 @@ export default function OnboardingPage() {
         </div>
 
         {/* Content Box */}
-        <div className="bg-white dark:bg-[#181B1A] p-6 sm:p-10 lg:p-12 rounded-2xl border border-[#CDD1CE] dark:border-[#262928] shadow-xentro-card transition-colors">
-          {/* Header */}
-          <div className="text-center max-w-2xl mx-auto mb-8">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D9FF3F]/15 text-xs font-inter font-semibold text-[#101212] dark:text-[#D9FF3F] mb-3">
-              <ShieldCheck className="w-3.5 h-3.5" />
-              <span>{completedPaths.length > 0 ? "Step 5 • Profile Ready & Launch" : "Step 4 • Choose Your Path"}</span>
-            </span>
-            <h1 className="font-manrope font-bold text-2xl sm:text-3xl lg:text-4xl text-[#101212] dark:text-white mb-3">
-              What would you like to do on Xentro?
-            </h1>
-            <p className="font-inter text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
-              Select your primary participation path. Because your verified <strong>Personal Account</strong> is established, you can add further entities, advisory roles, or institutional ties at any time.
-            </p>
-          </div>
-
-          {/* Active Roles Summary Bar */}
-          {completedPaths.length > 0 && (
-            <div className="p-3.5 mb-8 rounded-xl bg-[#F7F8F6] dark:bg-[#0D0F0F] border border-[#E3E5E3] dark:border-[#262928] flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-[#D9FF3F]" />
-                <span className="text-xs font-inter font-semibold text-[#101212] dark:text-white">
-                  Active Ecosystem Roles:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {completedPaths.map((role) => (
-                    <span
-                      key={role}
-                      className="px-2.5 py-0.5 rounded-full text-[11px] font-inter font-bold bg-[#D9FF3F] text-[#101212]"
-                    >
-                      {role}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              <Link
-                href="/profile"
-                className="inline-flex items-center gap-1 text-xs font-inter font-semibold text-[#101212] dark:text-[#D9FF3F] underline underline-offset-2"
-              >
-                <span>View Full Profile</span>
-                <ArrowRight className="w-3 h-3" />
-              </Link>
+        {completedPaths.length > 0 ? (
+          /* Step 5: Launch View */
+          <div className="bg-white dark:bg-[#181B1A] p-6 sm:p-10 lg:p-12 rounded-2xl border border-[#CDD1CE] dark:border-[#262928] shadow-xentro-card transition-colors animate-fade-slide">
+            {/* Header */}
+            <div className="text-center max-w-2xl mx-auto mb-8">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D9FF3F]/15 text-xs font-inter font-semibold text-[#101212] dark:text-[#D9FF3F] mb-3">
+                <Rocket className="w-3.5 h-3.5" />
+                <span>Step 5 • Launch</span>
+              </span>
+              <h1 className="font-manrope font-bold text-2xl sm:text-3xl lg:text-4xl text-[#101212] dark:text-white mb-3">
+                You're ready to launch Xentro Hub
+              </h1>
+              <p className="font-inter text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
+                Your account details, verified email, personal profile, and participation path are confirmed and persisted to the ecosystem.
+              </p>
             </div>
-          )}
 
-          {/* 5 Participation Path Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
-            {PARTICIPATION_PATHS.map((path) => {
-              const Icon = path.icon;
-              const isActivated = completedPaths.some((r) => r.toLowerCase().includes(path.id));
-
-              return (
-                <button
-                  key={path.id}
-                  type="button"
-                  onClick={() => setActiveModal(path.id)}
-                  className={cn(
-                    "text-left p-6 rounded-2xl border transition-all duration-200 flex flex-col justify-between group hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#D9FF3F]",
-                    isActivated
-                      ? "border-[#D9FF3F] bg-[#D9FF3F]/5"
-                      : "border-[#E3E5E3] dark:border-[#262928] bg-white dark:bg-[#181B1A] hover:border-[#D9FF3F]"
+            {/* Profile & Role Summary Card */}
+            <div className="max-w-2xl mx-auto bg-[#F7F8F6] dark:bg-[#0D0F0F] rounded-2xl border border-[#E3E5E3] dark:border-[#262928] p-6 sm:p-7 mb-8">
+              <div className="flex flex-col sm:flex-row items-center sm:items-start gap-5">
+                <div className="relative w-20 h-20 rounded-full overflow-hidden border-2 border-[#D9FF3F] bg-gray-100 dark:bg-gray-800 flex-shrink-0 flex items-center justify-center">
+                  {personalProfile?.photoUrl ? (
+                    <img
+                      src={personalProfile.photoUrl}
+                      alt={user?.fullName || "User avatar"}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-2xl font-bold font-manrope text-[#101212] dark:text-white">
+                      {(user?.fullName || "U").charAt(0).toUpperCase()}
+                    </span>
                   )}
-                >
-                  <div>
-                    {/* Top Row: Icon + Type Badge */}
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="w-12 h-12 rounded-xl bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center group-hover:bg-[#D9FF3F] group-hover:text-[#101212] transition-colors">
-                        <Icon className="w-6 h-6 stroke-[2.2]" />
-                      </div>
-                      <span className="text-[10px] font-inter font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#F7F8F6] dark:bg-[#0D0F0F] text-[#565B59] dark:text-[#B6B8B7] border border-[#E3E5E3] dark:border-[#262928]">
-                        {path.typeBadge}
-                      </span>
+                  <span className="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-[#D9FF3F] text-[#101212] flex items-center justify-center text-[10px] font-black border-2 border-white dark:border-[#0D0F0F]">
+                    ✓
+                  </span>
+                </div>
+
+                <div className="flex-1 text-center sm:text-left min-w-0">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <h2 className="text-lg font-bold font-manrope text-[#101212] dark:text-white truncate">
+                        {user?.fullName || "Verified User"}
+                      </h2>
+                      <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] truncate">
+                        {user?.email} • <span className="text-emerald-500 font-semibold">Verified</span>
+                      </p>
                     </div>
 
-                    {/* Title */}
-                    <h3 className="font-manrope font-bold text-lg text-[#101212] dark:text-white mb-1.5 group-hover:text-[#101212] dark:group-hover:text-[#D9FF3F] transition-colors">
-                      {path.title}
-                    </h3>
+                    <div className="flex sm:justify-end">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-inter font-bold bg-[#D9FF3F] text-[#101212] shadow-2xs">
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>{completedPaths[0] || "Explorer"}</span>
+                      </span>
+                    </div>
+                  </div>
 
-                    {/* Description */}
-                    <p className="font-inter text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed mb-4">
-                      {path.description}
+                  {personalProfile?.headline && (
+                    <p className="text-xs font-inter text-[#101212] dark:text-white/90 font-medium mt-2">
+                      {personalProfile.headline}
                     </p>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3 pt-3 border-t border-[#E3E5E3] dark:border-[#262928] text-xs font-inter text-[#565B59] dark:text-[#B6B8B7]">
+                    {personalProfile?.currentRole && (
+                      <div>
+                        <span className="font-semibold text-[#101212] dark:text-white">Role: </span>
+                        {personalProfile.currentRole}
+                      </div>
+                    )}
+                    {personalProfile?.currentOrganization && (
+                      <div>
+                        <span className="font-semibold text-[#101212] dark:text-white">Org: </span>
+                        {personalProfile.currentOrganization}
+                      </div>
+                    )}
+                    {personalProfile?.location && (
+                      <div>
+                        <span className="font-semibold text-[#101212] dark:text-white">Location: </span>
+                        {personalProfile.location}
+                      </div>
+                    )}
+                    {user?.id && (
+                      <div>
+                        <span className="font-semibold text-[#101212] dark:text-white">ID: </span>
+                        {user.id}
+                      </div>
+                    )}
                   </div>
+                </div>
+              </div>
+            </div>
 
-                  {/* Bottom Action Pill */}
-                  <div className="flex items-center gap-1 text-xs font-inter font-bold text-[#101212] dark:text-[#D9FF3F] pt-3 border-t border-[#E3E5E3] dark:border-[#262928]">
-                    <span>{isActivated ? "Configured &bull; Manage" : "Select Path"}</span>
-                    <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
-                  </div>
-                </button>
-              );
-            })}
+            {/* Launch Action Buttons */}
+            <div className="pt-6 border-t border-[#E3E5E3] dark:border-[#262928] flex flex-col sm:flex-row items-center justify-between gap-4">
+              <button
+                type="button"
+                onClick={() => setCompletedPaths([])}
+                className="text-xs font-inter text-[#565B59] dark:text-[#B6B8B7] hover:text-[#101212] dark:hover:text-white cursor-pointer"
+              >
+                ← Change Participation Path
+              </button>
+
+              <button
+                type="button"
+                onClick={handleLaunchHub}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl font-inter font-semibold text-sm bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] active:bg-[#9EBE12] shadow-sm transition-all cursor-pointer group"
+              >
+                <span>Launch XENTRO Hub</span>
+                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+              </button>
+            </div>
           </div>
+        ) : (
+          /* Step 4: Choose Path View */
+          <div className="bg-white dark:bg-[#181B1A] p-6 sm:p-10 lg:p-12 rounded-2xl border border-[#CDD1CE] dark:border-[#262928] shadow-xentro-card transition-colors animate-fade-slide">
+            {/* Header */}
+            <div className="text-center max-w-2xl mx-auto mb-8">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#D9FF3F]/15 text-xs font-inter font-semibold text-[#101212] dark:text-[#D9FF3F] mb-3">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Step 4 • Choose Your Path</span>
+              </span>
+              <h1 className="font-manrope font-bold text-2xl sm:text-3xl lg:text-4xl text-[#101212] dark:text-white mb-3">
+                What would you like to do on Xentro?
+              </h1>
+              <p className="font-inter text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
+                Select your primary participation path. Because your verified <strong>Personal Account</strong> is established, you can add further entities, advisory roles, or institutional ties at any time.
+              </p>
+            </div>
 
-          {/* Action Row */}
-          <div className="pt-6 border-t border-[#E3E5E3] dark:border-[#262928] flex flex-col sm:flex-row items-center justify-between gap-4">
-            <Link
-              href="/onboarding/profile"
-              className="text-xs font-inter text-[#565B59] dark:text-[#B6B8B7] hover:text-[#101212] dark:hover:text-white"
-            >
-              &larr; Back to Step 03: Personal Profile
-            </Link>
+            {/* 5 Participation Path Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-8">
+              {PARTICIPATION_PATHS.map((path) => {
+                const Icon = path.icon;
+                return (
+                  <button
+                    key={path.id}
+                    type="button"
+                    onClick={() => setActiveModal(path.id)}
+                    className="text-left p-6 rounded-2xl border transition-all duration-200 flex flex-col justify-between group hover:-translate-y-1 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#D9FF3F] border-[#E3E5E3] dark:border-[#262928] bg-white dark:bg-[#181B1A] hover:border-[#D9FF3F]"
+                  >
+                    <div>
+                      {/* Top Row: Icon + Type Badge */}
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="w-12 h-12 rounded-xl bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center group-hover:bg-[#D9FF3F] group-hover:text-[#101212] transition-colors">
+                          <Icon className="w-6 h-6 stroke-[2.2]" />
+                        </div>
+                        <span className="text-[10px] font-inter font-bold uppercase tracking-wider px-2 py-0.5 rounded-md bg-[#F7F8F6] dark:bg-[#0D0F0F] text-[#565B59] dark:text-[#B6B8B7] border border-[#E3E5E3] dark:border-[#262928]">
+                          {path.typeBadge}
+                        </span>
+                      </div>
 
-            <button
-              type="button"
-              onClick={handleLaunchHub}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-8 py-3.5 rounded-xl font-inter font-semibold text-sm bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] active:bg-[#9EBE12] shadow-sm transition-all cursor-pointer"
-            >
-              <span>Launch XENTRO Hub</span>
-              <ArrowRight className="w-4 h-4" />
-            </button>
+                      {/* Title */}
+                      <h3 className="font-manrope font-bold text-lg text-[#101212] dark:text-white mb-1.5 group-hover:text-[#101212] dark:group-hover:text-[#D9FF3F] transition-colors">
+                        {path.title}
+                      </h3>
+
+                      {/* Description */}
+                      <p className="font-inter text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed mb-4">
+                        {path.description}
+                      </p>
+                    </div>
+
+                    {/* Bottom Action Pill */}
+                    <div className="flex items-center gap-1 text-xs font-inter font-bold text-[#101212] dark:text-[#D9FF3F] pt-3 border-t border-[#E3E5E3] dark:border-[#262928]">
+                      <span>Select Path</span>
+                      <ArrowRight className="w-3.5 h-3.5 group-hover:translate-x-1 transition-transform" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Action Row */}
+            <div className="pt-6 border-t border-[#E3E5E3] dark:border-[#262928] flex flex-col sm:flex-row items-center justify-between gap-4">
+              <Link
+                href="/onboarding/profile"
+                className="text-xs font-inter text-[#565B59] dark:text-[#B6B8B7] hover:text-[#101212] dark:hover:text-white"
+              >
+                &larr; Back to Step 03: Personal Profile
+              </Link>
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* =========================================================================
