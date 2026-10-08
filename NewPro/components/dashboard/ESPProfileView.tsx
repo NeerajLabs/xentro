@@ -173,15 +173,21 @@ export const ESPProfileView: React.FC<ESPProfileViewProps> = ({
   }, [esp.id]);
 
   // Interactive connection state
+  const isOwn = Boolean(isOwnProfile) || (!espId && esp.id === 'esp_own');
+  const targetCountId = isOwn ? undefined : ((espData as any)?.userId || (esp as any).userId || espId || esp.id);
   const [connStatus, setConnStatus] = useState<'none' | 'pending' | 'received' | 'connected'>(() =>
     connectionService.getConnectionStatus(esp.id)
   );
   const isConnected = connStatus === 'connected';
+  const [liveConnectionsCount, setLiveConnectionsCount] = useState<number>(() =>
+    connectionService.getConnectedCount(targetCountId)
+  );
   const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
     const handleConnectionsChange = () => {
       setConnStatus(connectionService.getConnectionStatus(esp.id));
+      setLiveConnectionsCount(connectionService.getConnectedCount(targetCountId));
     };
     handleConnectionsChange();
     connectionService.syncFromServer().then(() => handleConnectionsChange()).catch(() => {});
@@ -191,7 +197,7 @@ export const ESPProfileView: React.FC<ESPProfileViewProps> = ({
       window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
       window.removeEventListener('xentro-connection-event', handleConnectionsChange);
     };
-  }, [esp.id]);
+  }, [esp.id, targetCountId]);
 
   // Sub-filters
   const [programCategory, setProgramCategory] = useState<"all" | "active" | "upcoming" | "past">("all");
@@ -403,6 +409,14 @@ export const ESPProfileView: React.FC<ESPProfileViewProps> = ({
                 <p className="text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7] font-medium max-w-2xl leading-snug">
                   {esp.identity.tagline}
                 </p>
+
+                {/* Connections Counter */}
+                <div className="flex items-center gap-2 pt-1 text-xs">
+                  <div className="flex items-center gap-1 font-semibold text-[#565B59] dark:text-[#B6B8B7]">
+                    <Users className="w-3.5 h-3.5 text-purple-500" />
+                    <span>{liveConnectionsCount} Connections</span>
+                  </div>
+                </div>
               </div>
             </div>
 

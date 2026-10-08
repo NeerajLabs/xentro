@@ -8,12 +8,10 @@ import { BrandLogo } from "@/components/ui/BrandLogo";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { AuthInput } from "@/components/auth/AuthInput";
 import { PasswordInput } from "@/components/auth/PasswordInput";
-import { GoogleAuthButton } from "@/components/auth/GoogleAuthButton";
-import { AuthDivider } from "@/components/auth/AuthDivider";
 import { AuthError } from "@/components/auth/AuthError";
 import { authService } from "@/lib/auth/authService";
 import { getBackendBaseUrl } from "@/lib/backendUrl";
-import { Loader2, ArrowRight, ShieldCheck, User, Lock, KeyRound } from "lucide-react";
+import { Loader2, ArrowRight, ShieldCheck, User, Lock, KeyRound, Mail, RefreshCw, CheckCircle2 } from "lucide-react";
 
 export default function SignInPage() {
   const router = useRouter();
@@ -21,7 +19,6 @@ export default function SignInPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
 
   const [loginMode, setLoginMode] = useState<"user" | "admin">("user");
   const [employeeId, setEmployeeId] = useState("");
@@ -86,6 +83,12 @@ export default function SignInPage() {
         return;
       }
 
+      if (resp.status === 404) {
+        setError("No account found with this email address. Please create an account first.");
+        setOtpLoading(false);
+        return;
+      }
+
       if (resp.ok && data?.success) {
         setOtpSent(true);
         setOtpCountdown(60);
@@ -93,9 +96,7 @@ export default function SignInPage() {
         setError(data?.message || "Failed to dispatch verification code. Please check your email.");
       }
     } catch {
-      // Offline fallback simulation
-      setOtpSent(true);
-      setOtpCountdown(60);
+      setError("Unable to connect to authentication server. Please check your internet connection.");
     } finally {
       setOtpLoading(false);
     }
@@ -103,7 +104,7 @@ export default function SignInPage() {
 
   const handleVerifyOtp = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!otpCode || otpCode.length < 6) {
+    if (!otpCode || otpCode.trim().length !== 6) {
       setError("Please enter the complete 6-digit verification code.");
       return;
     }
@@ -111,45 +112,29 @@ export default function SignInPage() {
     setIsLoading(true);
 
     try {
-      let signedInUser: any = null;
-      try {
-        const backendUrl = getBackendBaseUrl();
-        const resp = await fetch(`${backendUrl}/auth/signin/otp/verify/`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ email: email.trim().toLowerCase(), otp: otpCode.trim() })
-        });
-        const data = await resp.json();
-        if (resp.ok && data?.success && data?.data) {
-          signedInUser = data.data.user;
-          const tokens = data.data.tokens;
-          if (tokens?.accessToken) {
-            localStorage.setItem("xentro_access_token", tokens.accessToken);
-            document.cookie = `xentro_session=${tokens.accessToken}; path=/; max-age=86400; SameSite=Lax`;
-          }
-        } else if (data?.message) {
-          setError(data.message);
-          setIsLoading(false);
-          return;
-        }
-      } catch (backendErr) {
-        console.warn("Backend OTP verify failed, falling back to local auth:", backendErr);
-      }
+      const backendUrl = getBackendBaseUrl();
+      const resp = await fetch(`${backendUrl}/auth/signin/otp/verify/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim().toLowerCase(), otp: otpCode.trim() })
+      });
+      const data = await resp.json();
 
-      if (!signedInUser) {
-        const res = await authService.signInWithEmail(email);
-        if (res.success && res.user) {
-          signedInUser = res.user;
-        } else {
-          setError("Verification failed. Please try again.");
-          setIsLoading(false);
-          return;
+      if (resp.ok && data?.success && data?.data?.user) {
+        const signedInUser = data.data.user;
+        const tokens = data.data.tokens;
+        if (tokens?.accessToken) {
+          localStorage.setItem("xentro_access_token", tokens.accessToken);
+          document.cookie = `xentro_session=${tokens.accessToken}; path=/; max-age=86400; SameSite=Lax`;
         }
+        finalizeLogin(signedInUser, email.trim().toLowerCase());
+        return;
+      } else {
+        setError(data?.message || "Invalid or expired verification code. Please request a new code.");
+        setIsLoading(false);
       }
-
-      finalizeLogin(signedInUser, email.trim().toLowerCase());
     } catch {
-      setError("An unexpected error occurred during OTP verification.");
+      setError("Unable to complete verification. Please check your internet connection and try again.");
       setIsLoading(false);
     }
   };
@@ -382,20 +367,6 @@ export default function SignInPage() {
     }
   };
 
-  const handleGoogle = async () => {
-    setIsGoogleLoading(true);
-    try {
-      const res = await authService.signInWithGoogle();
-      if (res.success && res.user) {
-        localStorage.setItem("xentro_onboarding_complete", "true");
-        localStorage.setItem("xentro_active_role", "startup");
-        window.location.href = "/";
-      }
-    } finally {
-      setIsGoogleLoading(false);
-    }
-  };
-
   return (
     <main className="min-h-screen w-full flex flex-col lg:flex-row bg-[#F7F8F6] dark:bg-[#0D0F0F] transition-colors duration-200">
       {/* LEFT SIDE: Brand Visual Panel (Desktop 40%, Tablet sticky) */}
@@ -541,27 +512,35 @@ export default function SignInPage() {
               <div className="space-y-4">
                 {!otpSent ? (
                   <form onSubmit={handleSendOtp} className="space-y-4">
+                    <div className="p-3.5 rounded-xl bg-[#121413] border border-[#262928] text-xs text-[#A0A5A2] flex items-start gap-3">
+                      <Mail className="w-4 h-4 text-[#D9FF3F] mt-0.5 shrink-0" />
+                      <div className="leading-relaxed">
+                        Enter your registered email address. We&apos;ll dispatch a secure, 6-digit one-time sign-in code directly to your inbox.
+                      </div>
+                    </div>
+
                     <AuthInput
                       label="Registered Email"
                       type="email"
-                      placeholder="Enter your registered email"
+                      placeholder="e.g. founder@company.com"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
                     />
+
                     <button
                       type="submit"
                       disabled={otpLoading || !email}
-                      className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-inter font-semibold text-sm transition-all bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
+                      className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-inter font-semibold text-sm transition-all bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] active:scale-[0.99] disabled:opacity-50 cursor-pointer shadow-sm"
                     >
                       {otpLoading ? (
                         <>
                           <Loader2 className="w-4 h-4 animate-spin" />
-                          <span>Sending Verification Code...</span>
+                          <span>Dispatching Security Code...</span>
                         </>
                       ) : (
                         <>
-                          <span>Send Sign-in OTP</span>
+                          <span>Send Sign-in Code</span>
                           <ArrowRight className="w-4 h-4" />
                         </>
                       )}
@@ -569,50 +548,75 @@ export default function SignInPage() {
                   </form>
                 ) : (
                   <form onSubmit={handleVerifyOtp} className="space-y-4">
-                    <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-800 dark:text-emerald-300">
-                      A 6-digit one-time sign-in code was sent to <strong className="font-mono">{email}</strong>.
+                    <div className="p-3.5 rounded-xl bg-[#121413] border border-[#D9FF3F]/30 text-xs text-[#E0E2E1] flex items-start gap-3">
+                      <div className="p-1 rounded-md bg-[#D9FF3F]/10 text-[#D9FF3F] shrink-0 mt-0.5">
+                        <Mail className="w-4 h-4" />
+                      </div>
+                      <div className="leading-relaxed flex-1">
+                        <div className="font-semibold text-white mb-0.5">Verification Code Dispatched</div>
+                        A 6-digit authentication code was sent to <strong className="font-mono text-[#D9FF3F] font-semibold">{email}</strong>. Valid for 10 minutes.
+                      </div>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-medium text-[#101212] dark:text-white mb-1.5">
-                        6-Digit Security OTP *
-                      </label>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="text-xs font-medium text-[#101212] dark:text-white flex items-center gap-1.5">
+                          <KeyRound className="w-3.5 h-3.5 text-[#D9FF3F]" />
+                          <span>6-Digit Verification Code *</span>
+                        </label>
+                        <span className="text-[10px] font-mono text-[#8E9290]">Valid for 10m</span>
+                      </div>
                       <input
                         type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        autoComplete="one-time-code"
                         maxLength={6}
-                        placeholder="e.g. 741289"
+                        placeholder="&bull; &bull; &bull; &bull; &bull; &bull;"
                         value={otpCode}
                         onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
-                        className="w-full text-center tracking-[0.5em] font-mono font-bold text-lg py-3 rounded-xl border border-[#CDD1CE] dark:border-[#262928] bg-white dark:bg-[#181B1A] text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
+                        className="w-full text-center tracking-[0.6em] font-mono font-bold text-2xl py-3 rounded-xl border border-[#CDD1CE] dark:border-[#262928] bg-white dark:bg-[#101212] text-[#101212] dark:text-[#D9FF3F] focus:outline-hidden focus:border-[#D9FF3F] focus:ring-1 focus:ring-[#D9FF3F]/30 transition-all placeholder:text-[#565B59] placeholder:tracking-widest"
                         required
+                        autoFocus
                       />
                     </div>
 
-                    <div className="flex items-center justify-between text-xs text-gray-500">
+                    <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
                       <button
                         type="button"
                         onClick={() => {
                           setOtpSent(false);
                           setOtpCode("");
+                          setError(null);
                         }}
-                        className="text-gray-500 hover:text-gray-900 dark:hover:text-white underline cursor-pointer"
+                        className="text-[#8E9290] hover:text-[#101212] dark:hover:text-white underline cursor-pointer"
                       >
                         Change Email
                       </button>
-                      <button
-                        type="button"
-                        disabled={otpCountdown > 0 || otpLoading}
-                        onClick={handleSendOtp}
-                        className="font-medium text-[#101212] dark:text-[#D9FF3F] disabled:opacity-40 cursor-pointer"
-                      >
-                        {otpCountdown > 0 ? `Resend code in ${otpCountdown}s` : "Resend OTP"}
-                      </button>
+                      <div>
+                        {otpCountdown > 0 ? (
+                          <span className="text-[11px] font-mono text-[#8E9290] flex items-center gap-1.5">
+                            <RefreshCw className="w-3 h-3 text-[#D9FF3F] animate-spin" />
+                            Resend in {otpCountdown}s
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={otpLoading}
+                            onClick={handleSendOtp}
+                            className="text-xs font-semibold text-[#D9FF3F] hover:underline flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                          >
+                            <RefreshCw className="w-3 h-3" />
+                            <span>Resend Code</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     <button
                       type="submit"
                       disabled={isLoading || otpCode.length < 6}
-                      className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-inter font-semibold text-sm transition-all bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] active:scale-[0.99] disabled:opacity-50 cursor-pointer"
+                      className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-inter font-semibold text-sm transition-all bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-sm font-bold"
                     >
                       {isLoading ? (
                         <>
@@ -621,11 +625,18 @@ export default function SignInPage() {
                         </>
                       ) : (
                         <>
+                          <CheckCircle2 className="w-4 h-4" />
                           <span>Verify & Sign In</span>
-                          <ArrowRight className="w-4 h-4" />
                         </>
                       )}
                     </button>
+
+                    <div className="text-center pt-1">
+                      <span className="text-[10px] text-[#6E7370] dark:text-[#8E9290] flex items-center justify-center gap-1">
+                        <ShieldCheck className="w-3 h-3 text-[#D9FF3F]" />
+                        Zero-Knowledge Verification &bull; Never share this code
+                      </span>
+                    </div>
                   </form>
                 )}
               </div>
@@ -739,44 +750,34 @@ export default function SignInPage() {
             )}
 
             {loginMode === "user" ? (
-              <>
-                <AuthDivider label="OR" />
+              <div className="mt-8 text-center">
+                <p className="text-xs sm:text-sm font-inter text-[#565B59] dark:text-[#B6B8B7]">
+                  Don&apos;t have an account?{" "}
+                  <Link
+                    href="/signup"
+                    className="font-semibold text-[#101212] dark:text-white underline underline-offset-4 hover:text-[#D9FF3F] transition-colors"
+                  >
+                    Create Account
+                  </Link>
+                </p>
 
-                <GoogleAuthButton
-                  onClick={handleGoogle}
-                  isLoading={isGoogleLoading}
-                  disabled={isLoading}
-                />
-
-                <div className="mt-8 text-center">
-                  <p className="text-xs sm:text-sm font-inter text-[#565B59] dark:text-[#B6B8B7]">
-                    Don&apos;t have an account?{" "}
-                    <Link
-                      href="/signup"
-                      className="font-semibold text-[#101212] dark:text-white underline underline-offset-4 hover:text-[#D9FF3F] transition-colors"
-                    >
-                      Create Account
-                    </Link>
-                  </p>
-
-                  <div className="mt-4 pt-3 border-t border-[#CDD1CE]/40 dark:border-[#262928]/40">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        authService.signOut();
-                        try {
-                          localStorage.clear();
-                          sessionStorage.clear();
-                        } catch (_) {}
-                        window.location.href = '/signin?reset=true';
-                      }}
-                      className="text-[11px] font-mono text-[#8E9290] hover:text-[#DC2626] transition-colors underline"
-                    >
-                      Reset Browser Storage (Clean Slate)
-                    </button>
-                  </div>
+                <div className="mt-4 pt-3 border-t border-[#CDD1CE]/40 dark:border-[#262928]/40">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      authService.signOut();
+                      try {
+                        localStorage.clear();
+                        sessionStorage.clear();
+                      } catch (_) {}
+                      window.location.href = '/signin?reset=true';
+                    }}
+                    className="text-[11px] font-mono text-[#8E9290] hover:text-[#DC2626] transition-colors underline"
+                  >
+                    Reset Browser Storage (Clean Slate)
+                  </button>
                 </div>
-              </>
+              </div>
             ) : (
               <div className="mt-6 pt-4 border-t border-[#CDD1CE] dark:border-[#262928] text-center">
                 <p className="text-xs text-[#565B59] dark:text-[#8E9290]">

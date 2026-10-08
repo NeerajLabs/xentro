@@ -100,19 +100,21 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
     };
   });
 
+  const isOwn = Boolean(isOwnProfile) || (!explorerId && getUserProfile().role === 'explorer');
   const partnerId = profile.id;
+  const targetCountId = isOwn ? undefined : (explorerData?.userId || (profile as any).userId || explorerId || profile.id);
 
   const [connStatus, setConnStatus] = useState<'none' | 'pending' | 'received' | 'connected'>(() =>
     connectionService.getConnectionStatus(partnerId)
   );
   const [liveConnectionsCount, setLiveConnectionsCount] = useState<number>(() =>
-    connectionService.getConnectedCount(partnerId)
+    connectionService.getConnectedCount(targetCountId)
   );
 
   useEffect(() => {
     const handleConnectionsChange = () => {
       setConnStatus(connectionService.getConnectionStatus(partnerId));
-      setLiveConnectionsCount(connectionService.getConnectedCount(partnerId));
+      setLiveConnectionsCount(connectionService.getConnectedCount(targetCountId));
     };
     handleConnectionsChange();
     connectionService.syncFromServer().then(() => handleConnectionsChange()).catch(() => {});
@@ -123,7 +125,7 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
       window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
       window.removeEventListener('xentro-connection-event', handleConnectionsChange);
     };
-  }, [partnerId]);
+  }, [partnerId, targetCountId]);
 
   // Handle connection request
   const handleConnect = async () => {

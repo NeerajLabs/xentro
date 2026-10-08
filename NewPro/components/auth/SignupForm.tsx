@@ -16,15 +16,8 @@ import { validateSignUpForm, validateField } from "@/lib/auth/validation";
 import { authService } from "@/lib/auth/authService";
 import { getBackendBaseUrl } from "@/lib/backendUrl";
 import { getNewProUrl } from "@/lib/auth/xentroHandoff";
-import { Building2, Sparkles } from "lucide-react";
 
 export const SignupForm: React.FC = () => {
-
-  // Primary Role Track
-  const [selectedRole, setSelectedRole] = useState<string>("Startup Founder");
-  const [institutionName, setInstitutionName] = useState("");
-  const [espType, setEspType] = useState("INCUBATOR");
-
   // Form values
   const [formData, setFormData] = useState<SignUpFormData>({
     fullName: "",
@@ -135,18 +128,16 @@ export const SignupForm: React.FC = () => {
             email: formData.email,
             phoneNumber: formData.phoneNumber,
             password: formData.password,
-            role: selectedRole,
-            accountType: selectedRole,
-            userType: selectedRole,
-            institutionName: selectedRole === "ESP" ? institutionName : "",
-            espType: selectedRole === "ESP" ? espType : "",
+            role: "Explorer",
+            accountType: "Explorer",
+            userType: "Explorer",
           })
         });
         const data = await resp.json();
         if (resp.ok && data?.success) {
           // Synchronize local fallback authService with real backend user ID & username
           await authService.signUpWithEmail(formData, data?.data?.user);
-          if (data.data?.requiresApproval || selectedRole === "ESP") {
+          if (data.data?.requiresApproval) {
             setIsPendingApproval(true);
           } else {
             setIsSuccess(true);
@@ -167,11 +158,7 @@ export const SignupForm: React.FC = () => {
       // 2. Local fallback registration
       const result = await authService.signUpWithEmail(formData);
       if (result.success) {
-        if (selectedRole === "ESP") {
-          setIsPendingApproval(true);
-        } else {
-          setIsSuccess(true);
-        }
+        setIsSuccess(true);
       } else if (result.error) {
         setGeneralError({
           message: result.error.message,
@@ -219,8 +206,8 @@ export const SignupForm: React.FC = () => {
       <RegistrationPendingState
         userName={formData.fullName || "User"}
         email={formData.email}
-        role={selectedRole}
-        institutionName={selectedRole === "ESP" ? institutionName : undefined}
+        role="Explorer"
+        institutionName={undefined}
       />
     );
   }
@@ -254,76 +241,6 @@ export const SignupForm: React.FC = () => {
 
       {/* Main Signup Form */}
       <form onSubmit={handleSubmit} noValidate className="space-y-4">
-        {/* Ecosystem Role / Track Selection */}
-        <div className="space-y-1.5">
-          <label className="block text-xs font-semibold text-[#101212] dark:text-white uppercase tracking-wider">
-            Primary Ecosystem Track
-          </label>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {[
-              { id: "Startup Founder", label: "Founder / Core" },
-              { id: "ESP", label: "ESP / Incubator" },
-              { id: "Investor", label: "Investor" },
-              { id: "Mentor", label: "Mentor / Advisor" },
-              { id: "Explorer", label: "General Explorer" },
-            ].map((track) => (
-              <button
-                key={track.id}
-                type="button"
-                onClick={() => setSelectedRole(track.id)}
-                className={`py-2 px-2.5 rounded-xl text-xs font-medium border text-center transition-all ${
-                  selectedRole === track.id
-                    ? "bg-[#D9FF3F] text-[#101212] border-[#D9FF3F] font-bold shadow-xs"
-                    : "bg-[#F7F8F6] dark:bg-[#1E2220] text-[#565B59] dark:text-[#A0A4A2] border-[#CDD1CE] dark:border-[#262928] hover:border-gray-400"
-                }`}
-              >
-                {track.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* ESP Specific Fields (when ESP track selected) */}
-        {selectedRole === "ESP" && (
-          <div className="p-3.5 rounded-xl bg-emerald-500/5 dark:bg-emerald-500/10 border border-emerald-500/20 space-y-3 animate-in fade-in duration-200">
-            <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700 dark:text-emerald-400">
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Ecosystem Enabler / Institution Details</span>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-[#101212] dark:text-white mb-1">
-                Institution / Incubator Name *
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. T-Hub, IIMB NSRCEL, IITM Pravartak"
-                value={institutionName}
-                onChange={(e) => setInstitutionName(e.target.value)}
-                required={selectedRole === "ESP"}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-[#CDD1CE] dark:border-[#262928] bg-white dark:bg-[#181B1A] text-[#101212] dark:text-white placeholder-gray-400 focus:outline-hidden focus:border-[#D9FF3F]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-[#101212] dark:text-white mb-1">
-                Institution Type
-              </label>
-              <select
-                value={espType}
-                onChange={(e) => setEspType(e.target.value)}
-                className="w-full px-3 py-2 text-xs rounded-lg border border-[#CDD1CE] dark:border-[#262928] bg-white dark:bg-[#181B1A] text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
-              >
-                <option value="INCUBATOR">Incubator (Academic / State / Private)</option>
-                <option value="ACCELERATOR">Startup Accelerator Cohort</option>
-                <option value="VENTURE_STUDIO">Venture Studio / Co-builder</option>
-                <option value="UNIVERSITY">University Innovation Cell</option>
-                <option value="GOVERNMENT">Government / State Innovation Mission</option>
-              </select>
-            </div>
-          </div>
-        )}
-
         {/* Full Name */}
         <AuthInput
           id="fullName"

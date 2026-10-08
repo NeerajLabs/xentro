@@ -103,41 +103,6 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
     };
   }, [mentorId, isOwnProfile, mentor.id]);
 
-  // Connection & Request state
-  const partnerId = mentorId || mentor.id || 'mentor_1';
-  const [connectionStatus, setConnectionStatus] = useState<'none' | 'pending' | 'received' | 'connected'>(() =>
-    connectionService.getConnectionStatus(partnerId)
-  );
-  const isConnected = connectionStatus === 'connected';
-  const [isMentorshipRequested, setIsMentorshipRequested] = useState(false);
-
-  const [liveConnectionsCount, setLiveConnectionsCount] = useState<number>(() =>
-    connectionService.getConnectedCount(partnerId)
-  );
-
-  // Sync connection status and count on events
-  React.useEffect(() => {
-    const handleConnectionsChange = () => {
-      setConnectionStatus(connectionService.getConnectionStatus(partnerId));
-      setLiveConnectionsCount(connectionService.getConnectedCount(partnerId));
-    };
-    handleConnectionsChange();
-    connectionService.syncFromServer().then(() => handleConnectionsChange()).catch(() => {});
-
-    window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
-    window.addEventListener('xentro-connection-event', handleConnectionsChange);
-    return () => {
-      window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
-      window.removeEventListener('xentro-connection-event', handleConnectionsChange);
-    };
-  }, [partnerId]);
-
-  // Structured Mentorship State
-  const [offerings, setOfferings] = useState<MENTORSHIP_OFFERING[]>([]);
-  const [isStructuredModalOpen, setIsStructuredModalOpen] = useState(false);
-  const [selectedOffering, setSelectedOffering] = useState<MENTORSHIP_OFFERING | null>(null);
-  const [requestStep, setRequestStep] = useState<1 | 2>(1);
-
   // Auto-populated Startup & Founder details
   const userProfile = getUserProfile();
   const effectiveOwnProfile =
@@ -149,6 +114,43 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
           Boolean(userProfile.name) &&
           Boolean(mentor.name) &&
           mentor.name?.toLowerCase().trim() === userProfile.name?.toLowerCase().trim());
+
+  // Connection & Request state
+  const isOwn = effectiveOwnProfile || (!mentorId && userProfile.role === 'mentor');
+  const partnerId = mentorId || mentor.id || 'mentor_1';
+  const targetCountId = isOwn ? undefined : ((mentorData as any)?.userId || (mentor as any).userId || mentorId || mentor.id);
+  const [connectionStatus, setConnectionStatus] = useState<'none' | 'pending' | 'received' | 'connected'>(() =>
+    connectionService.getConnectionStatus(partnerId)
+  );
+  const isConnected = connectionStatus === 'connected';
+  const [isMentorshipRequested, setIsMentorshipRequested] = useState(false);
+
+  const [liveConnectionsCount, setLiveConnectionsCount] = useState<number>(() =>
+    connectionService.getConnectedCount(targetCountId)
+  );
+
+  // Sync connection status and count on events
+  React.useEffect(() => {
+    const handleConnectionsChange = () => {
+      setConnectionStatus(connectionService.getConnectionStatus(partnerId));
+      setLiveConnectionsCount(connectionService.getConnectedCount(targetCountId));
+    };
+    handleConnectionsChange();
+    connectionService.syncFromServer().then(() => handleConnectionsChange()).catch(() => {});
+
+    window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
+    window.addEventListener('xentro-connection-event', handleConnectionsChange);
+    return () => {
+      window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
+      window.removeEventListener('xentro-connection-event', handleConnectionsChange);
+    };
+  }, [partnerId, targetCountId]);
+
+  // Structured Mentorship State
+  const [offerings, setOfferings] = useState<MENTORSHIP_OFFERING[]>([]);
+  const [isStructuredModalOpen, setIsStructuredModalOpen] = useState(false);
+  const [selectedOffering, setSelectedOffering] = useState<MENTORSHIP_OFFERING | null>(null);
+  const [requestStep, setRequestStep] = useState<1 | 2>(1);
 
   const [reqStartupName, setReqStartupName] = useState(userProfile.organization || '');
   const [reqStartupStage, setReqStartupStage] = useState(userProfile.stageOrFocus || '');

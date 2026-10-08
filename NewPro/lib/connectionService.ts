@@ -507,15 +507,41 @@ export const connectionService = {
 
   /** Number of established connections for current user (or specified target user) from MongoDB */
   getConnectedCount(userId?: string): number {
-    const targetNorm = userId ? normalizeUserId(userId).toLowerCase() : normalizeUserId(getCurrentUserId().id).toLowerCase();
+    const currentUser = getCurrentUserId();
+    const currentNorm = normalizeUserId(currentUser.id).toLowerCase();
+    const currentEmailNorm = (currentUser as any).email ? normalizeUserId((currentUser as any).email).toLowerCase() : '';
+    const targetNorm = userId ? normalizeUserId(userId).toLowerCase() : currentNorm;
     if (!targetNorm) return 0;
+    
     const all = this.getRawConnections();
-    return all.filter(
-      (c) =>
-        (normalizeUserId(c.senderId).toLowerCase() === targetNorm ||
-         normalizeUserId(c.recipientId).toLowerCase() === targetNorm) &&
-        c.status === 'accepted'
-    ).length;
+    const acceptedCount = all.filter((c) => {
+      if (c.status !== 'accepted') return false;
+      const s = normalizeUserId(c.senderId).toLowerCase();
+      const r = normalizeUserId(c.recipientId).toLowerCase();
+      if (!userId) {
+        return (
+          s === currentNorm ||
+          r === currentNorm ||
+          (currentEmailNorm && (s === currentEmailNorm || r === currentEmailNorm))
+        );
+      }
+      return s === targetNorm || r === targetNorm;
+    }).length;
+
+    // For current user, if acceptedCount in raw records is less than accepted partners cache, use the maximum
+    if (!userId && typeof window !== 'undefined') {
+      try {
+        const rawPartners = localStorage.getItem(CONNECTIONS_PARTNERS_KEY);
+        if (rawPartners) {
+          const parsed = JSON.parse(rawPartners);
+          if (Array.isArray(parsed) && parsed.length > acceptedCount) {
+            return parsed.length;
+          }
+        }
+      } catch {}
+    }
+
+    return acceptedCount;
   },
 
   /** Get all user profiles that current user (or specified target user) has an accepted connection with */

@@ -92,19 +92,21 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
   }, [investorData]);
 
   // Interactive connection states
+  const isOwn = Boolean(isOwnProfile) || investorId === 'inv_own';
+  const targetCountId = isOwn ? undefined : ((investorData as any)?.userId || (investor as any).userId || investor.id);
   const [connStatus, setConnStatus] = useState<'none' | 'pending' | 'received' | 'connected'>(() =>
     connectionService.getConnectionStatus(investor.id)
   );
   const isConnected = connStatus === 'connected';
   const [liveConnectionsCount, setLiveConnectionsCount] = useState<number>(() =>
-    connectionService.getConnectedCount(investor.id)
+    connectionService.getConnectedCount(targetCountId)
   );
   const [isSaved, setIsSaved] = useState(false);
 
   useEffect(() => {
     const handleConnUpdate = () => {
       setConnStatus(connectionService.getConnectionStatus(investor.id));
-      setLiveConnectionsCount(connectionService.getConnectedCount(investor.id));
+      setLiveConnectionsCount(connectionService.getConnectedCount(targetCountId));
     };
     handleConnUpdate();
     connectionService.syncFromServer().then(() => handleConnUpdate()).catch(() => {});
@@ -114,7 +116,7 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
       window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnUpdate);
       window.removeEventListener('xentro-connection-event', handleConnUpdate);
     };
-  }, [investor.id]);
+  }, [investor.id, targetCountId]);
 
   // Settings & Visibility live subscription
   const [liveSettings, setLiveSettings] = useState(() => investorDomainService.getSettings());
@@ -573,6 +575,14 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
             <p className="text-sm font-semibold text-[#101212] dark:text-[#D9FF3F]">
               {investor.currentRole} · {investor.organization}
             </p>
+
+            {/* Connections Counter */}
+            <div className="flex items-center gap-2 pt-0.5 text-xs">
+              <div className="flex items-center gap-1 font-semibold text-[#565B59] dark:text-[#B6B8B7]">
+                <Users className="w-3.5 h-3.5 text-purple-500" />
+                <span>{liveConnectionsCount} Connections</span>
+              </div>
+            </div>
 
             <div className="flex flex-wrap items-center gap-4 text-xs text-[#565B59] dark:text-[#B6B8B7] pt-1">
               <span className="inline-flex items-center gap-1.5">

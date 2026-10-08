@@ -424,7 +424,9 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
   };
 
   // Interactive local states
+  const isOwnerProfile = isOwnStartup || isOwner;
   const partnerId = startupId || startup.id || 'XU-902411';
+  const targetCountId = isOwnerProfile ? undefined : ((startupData as any)?.userId || (startup as any).userId || (startup as any).ownerId || startupId || startup.id);
   const [connectionStatus, setConnectionStatus] = useState<'none' | 'pending' | 'received' | 'connected'>(() =>
     connectionService.getConnectionStatus(partnerId)
   );
@@ -433,13 +435,13 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
   const [financePeriod, setFinancePeriod] = useState<"monthly" | "quarterly">("monthly");
 
   const [liveConnectionsCount, setLiveConnectionsCount] = useState<number>(() => {
-    return connectionService.getConnectedCount(partnerId);
+    return connectionService.getConnectedCount(targetCountId);
   });
 
   useEffect(() => {
     const handleConnectionsChange = () => {
       setConnectionStatus(connectionService.getConnectionStatus(partnerId));
-      setLiveConnectionsCount(connectionService.getConnectedCount(partnerId));
+      setLiveConnectionsCount(connectionService.getConnectedCount(targetCountId));
     };
     handleConnectionsChange();
     connectionService.syncFromServer().then(() => handleConnectionsChange()).catch(() => {});
@@ -450,7 +452,7 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
       window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsChange);
       window.removeEventListener('xentro-connection-event', handleConnectionsChange);
     };
-  }, [partnerId]);
+  }, [partnerId, targetCountId]);
 
   // Modals state
   const [isPitchVideoModalOpen, setIsPitchVideoModalOpen] = useState(false);
