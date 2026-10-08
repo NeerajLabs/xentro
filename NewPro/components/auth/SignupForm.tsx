@@ -5,8 +5,6 @@ import Link from "next/link";
 import { Loader2, ArrowRight, Mail, KeyRound, RefreshCw, CheckCircle2, ShieldCheck, ArrowLeft } from "lucide-react";
 import { AuthInput } from "./AuthInput";
 import { PasswordInput } from "./PasswordInput";
-import { GoogleAuthButton } from "./GoogleAuthButton";
-import { AuthDivider } from "./AuthDivider";
 import { AuthError } from "./AuthError";
 import { TermsModal } from "./TermsModal";
 import { SuccessState } from "./SuccessState";
@@ -55,7 +53,6 @@ export const SignupForm: React.FC = () => {
   } | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
   const [isPendingApproval, setIsPendingApproval] = useState(false);
 
@@ -264,32 +261,6 @@ export const SignupForm: React.FC = () => {
       });
     } finally {
       setIsSubmitting(false);
-    }
-  };
-
-  const handleGoogleSignIn = async () => {
-    setGeneralError(null);
-    setIsGoogleLoading(true);
-
-    try {
-      const result = await authService.signInWithGoogle();
-      if (result.success) {
-        setIsSuccess(true);
-      } else if (result.error) {
-        if (result.error.type !== "GOOGLE_CANCELLED") {
-          setGeneralError({
-            message: result.error.message,
-            type: result.error.type,
-          });
-        }
-      }
-    } catch {
-      setGeneralError({
-        message: "Something went wrong. Please try again.",
-        type: "UNKNOWN",
-      });
-    } finally {
-      setIsGoogleLoading(false);
     }
   };
 
@@ -602,7 +573,7 @@ export const SignupForm: React.FC = () => {
             {/* Primary CTA: Create Account */}
             <button
               type="submit"
-              disabled={isSubmitting || isGoogleLoading}
+              disabled={isSubmitting}
               className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl font-inter font-semibold text-sm transition-all duration-150 select-none bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] active:bg-[#9EBE12] active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed disabled:pointer-events-none focus:outline-none focus-visible:ring-2 focus-visible:ring-[#101212] shadow-sm hover:shadow cursor-pointer font-bold"
             >
               {isSubmitting ? (
@@ -618,16 +589,6 @@ export const SignupForm: React.FC = () => {
               )}
             </button>
           </form>
-
-          {/* Divider */}
-          <AuthDivider label="OR" />
-
-          {/* Google Authentication */}
-          <GoogleAuthButton
-            onClick={handleGoogleSignIn}
-            isLoading={isGoogleLoading}
-            disabled={isSubmitting}
-          />
         </>
       )}
 

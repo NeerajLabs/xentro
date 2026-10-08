@@ -8,10 +8,57 @@ from django.core.mail import send_mail
 from django.conf import settings
 from integrations.redis_client import get_redis_client
 
+import smtplib
+import ssl
+from email.mime.text import MIMEText
+
 logger = logging.getLogger(__name__)
 
 OTP_EXPIRY_SECONDS = 600      # 10 minutes
 RESEND_COOLDOWN_SECONDS = 60  # 60 seconds
+
+def _send_direct_smtp(to_email: str, subject: str, body: str) -> bool:
+    """Fallback direct SMTP dispatcher across port 465 (SSL) and port 587 (TLS)."""
+    host = getattr(settings, "EMAIL_HOST", "smtp.zoho.in")
+    user = getattr(settings, "EMAIL_HOST_USER", "no-reply@xentro.in")
+    password = getattr(settings, "EMAIL_HOST_PASSWORD", "")
+    from_addr = getattr(settings, "DEFAULT_FROM_EMAIL", user)
+    timeout = getattr(settings, "EMAIL_TIMEOUT", 15)
+
+    if not password or not user:
+        logger.error("SMTP credentials not configured.")
+        return False
+
+    msg = MIMEText(body)
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = to_email
+
+    # 1. Try Port 465 SSL
+    try:
+        ssl_ctx = ssl.create_default_context()
+        with smtplib.SMTP_SSL(host, 465, context=ssl_ctx, timeout=timeout) as server:
+            server.login(user, password)
+            server.sendmail(user, [to_email], msg.as_string())
+            logger.info(f"Direct SMTP delivery to {to_email} succeeded via Port 465 SSL.")
+            return True
+    except Exception as ssl_err:
+        logger.warning(f"Port 465 SSL attempt failed: {type(ssl_err).__name__}. Retrying Port 587 TLS...")
+
+    # 2. Try Port 587 STARTTLS
+    try:
+        with smtplib.SMTP(host, 587, timeout=timeout) as server:
+            server.ehlo()
+            server.starttls()
+            server.ehlo()
+            server.login(user, password)
+            server.sendmail(user, [to_email], msg.as_string())
+            logger.info(f"Direct SMTP delivery to {to_email} succeeded via Port 587 TLS.")
+            return True
+    except Exception as tls_err:
+        logger.error(f"Both Port 465 and Port 587 direct delivery attempts failed: {type(tls_err).__name__}.")
+
+    return False
 
 def generate_6digit_otp() -> str:
     return str(random.randint(100000, 999999))
@@ -75,21 +122,29 @@ This code will expire in 10 minutes. If you did not request this verification, p
 Best regards,
 The XENTRO Security Team
 """
+    email_sent = False
     try:
-        send_mail(
+        sent_count = send_mail(
             subject=subject,
             message=message,
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[email],
             fail_silently=False,
         )
+        if sent_count and sent_count > 0:
+            email_sent = True
+    except Exception as e:
+        logger.warning(f"Django send_mail failed ({type(e).__name__}). Attempting direct multi-port fallback...")
+        email_sent = _send_direct_smtp(email, subject, message)
+
+    if email_sent:
         logger.info(f"Dispatched OTP verification code to {email}")
         return {
             "success": True,
             "message": f"Verification code sent to {email}."
         }
-    except Exception as e:
-        logger.error(f"Email delivery via SMTP encountered issue: {e}")
+    else:
+        logger.error(f"All SMTP delivery methods failed for {email}.")
         return {
             "success": False,
             "message": "Failed to dispatch verification email. Please verify your email address and try again."

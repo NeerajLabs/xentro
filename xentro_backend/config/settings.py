@@ -103,11 +103,15 @@ REST_FRAMEWORK = {
 }
 
 # CORS Configuration
-CORS_ALLOW_ALL_ORIGINS = DEBUG
+CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
+]
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https:\/\/.*\.vercel\.app$",
+    r"^https:\/\/.*\.xentro\.in$",
 ]
 
 # Realtime Channels & Redis Layer
@@ -122,14 +126,15 @@ CHANNEL_LAYERS = {
 }
 
 # Email & Zoho Configuration
-EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend")
-EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.zoho.com")
+EMAIL_BACKEND = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST = os.getenv("EMAIL_HOST", "smtp.zoho.in")
 EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("true", "1")
-EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "noreply@xentro.io")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Xentro Ecosystem <noreply@xentro.io>")
-EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "5"))
+EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").lower() in ("true", "1")
+EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "no-reply@xentro.in")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "y0JVB2p9hKbE")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Xentro Security <no-reply@xentro.in>")
+EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "15"))
 
 # Password validation is handled by Xentro's own logic in apps.accounts — not Django auth.
 
