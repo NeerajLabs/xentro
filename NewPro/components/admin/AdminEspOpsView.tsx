@@ -25,6 +25,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { logAdminAudit } from '@/lib/adminDomainService';
+import { getAdminSession } from '@/lib/adminAuth';
 
 interface EspRequestQueueItem {
   requestId: string;
@@ -73,8 +74,8 @@ export const AdminEspOpsView: React.FC = () => {
                 officialEmail: lr.email,
                 domain: lr.officialDomain || (lr.email ? lr.email.split("@")[1] : "institution.edu"),
                 submittedDate: lr.requestedAt ? lr.requestedAt.split("T")[0] : new Date().toISOString().split("T")[0],
-                verificationState: "Pending Review",
-                status: lr.status === "ACTIVE" ? "Approved" : "In Queue"
+                verificationState: lr.status === "ACTIVE" ? "Activated" : (lr.status === "REJECTED" ? "Rejected" : "Pending Review"),
+                status: lr.status === "ACTIVE" ? "Approved" : (lr.status === "REJECTED" ? "Declined" : "In Queue")
               }));
             if (mapped.length > 0) {
               setRequests((prev) => {
@@ -100,13 +101,30 @@ export const AdminEspOpsView: React.FC = () => {
   const handleApproveRequest = async (req: EspRequestQueueItem) => {
     try {
       const backendUrl = getBackendBaseUrl();
-      await fetch(`${backendUrl}/admin/registration-requests/${req.requestId}/action/`, {
+      const session = getAdminSession();
+      const resp = await fetch(`${backendUrl}/admin/registration-requests/${req.requestId}/action/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { "Authorization": `Bearer ${session.token}` } : {})
+        },
         body: JSON.stringify({ action: "APPROVE", notes: "Approved by Xentro Administration" })
       });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        if (data?.data?.alreadySent) {
+          showToast(`ESP account for ${req.organization} was already active. Duplicate activation email skipped.`);
+        } else if (data?.data?.emailSent) {
+          showToast(`ESP Request for ${req.organization} approved & activated! Activation notification sent from no-reply@xentro.in.`);
+        } else {
+          showToast(`ESP Request for ${req.organization} approved & activated.`);
+        }
+      } else {
+        showToast(data?.message || "Failed to approve ESP request.");
+      }
     } catch (err) {
       console.warn("Backend approval call failed:", err);
+      showToast(`ESP Request for ${req.organization} approved.`);
     }
 
     setRequests((prev) =>
@@ -115,7 +133,39 @@ export const AdminEspOpsView: React.FC = () => {
       )
     );
     logAdminAudit('ESP_REQUEST_APPROVED', 'ESP Operations', `Approved institutional application for ${req.organization} submitted by ${req.applicantName}`, req.requestId);
-    showToast(`ESP Request for ${req.organization} approved & activated! Activation notification sent.`);
+  };
+
+  const handleRejectRequest = async (req: EspRequestQueueItem) => {
+    const reason = prompt(`Enter rejection reason for ${req.organization}:`, "Application does not meet accreditation criteria.");
+    if (reason === null) return;
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const session = getAdminSession();
+      const resp = await fetch(`${backendUrl}/admin/registration-requests/${req.requestId}/action/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(session?.token ? { "Authorization": `Bearer ${session.token}` } : {})
+        },
+        body: JSON.stringify({ action: "REJECT", notes: reason })
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        showToast(`ESP Request for ${req.organization} has been rejected.`);
+      } else {
+        showToast(data?.message || "Failed to reject ESP request.");
+      }
+    } catch (err) {
+      console.warn("Backend rejection call failed:", err);
+      showToast(`ESP Request for ${req.organization} rejected.`);
+    }
+
+    setRequests((prev) =>
+      prev.map((r) =>
+        r.requestId === req.requestId ? { ...r, verificationState: 'Rejected', status: 'Declined' } : r
+      )
+    );
+    logAdminAudit('ESP_REQUEST_REJECTED', 'ESP Operations', `Rejected institutional application for ${req.organization} (Reason: ${reason})`, req.requestId);
   };
 
   return (
@@ -224,13 +274,25 @@ export const AdminEspOpsView: React.FC = () => {
                         <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
                           <CheckCircle2 className="w-3.5 h-3.5" /> Activated
                         </span>
+                      ) : r.status === 'Declined' ? (
+                        <span className="inline-flex items-center gap-1 text-[11px] text-rose-600 dark:text-rose-400 font-bold">
+                          <X className="w-3.5 h-3.5" /> Rejected
+                        </span>
                       ) : (
-                        <button
-                          onClick={() => handleApproveRequest(r)}
-                          className="px-3 py-1.5 rounded-lg bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold transition-all shadow-xs"
-                        >
-                          Approve & Activate
-                        </button>
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => handleRejectRequest(r)}
+                            className="px-2.5 py-1.5 rounded-lg text-xs font-medium text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-all cursor-pointer"
+                          >
+                            Reject
+                          </button>
+                          <button
+                            onClick={() => handleApproveRequest(r)}
+                            className="px-3 py-1.5 rounded-lg bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold transition-all shadow-xs cursor-pointer"
+                          >
+                            Approve & Activate
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>

@@ -15,7 +15,7 @@ export function sendZohoEmail({ to, subject, text }: SendZohoEmailOptions): Prom
     const host = process.env.EMAIL_HOST || 'smtp.zoho.in';
     const port = parseInt(process.env.EMAIL_PORT || '465', 10);
     const user = process.env.EMAIL_HOST_USER || 'no-reply@xentro.in';
-    const pass = process.env.EMAIL_HOST_PASSWORD || 'y0JVB2p9hKbE';
+    const pass = process.env.EMAIL_HOST_PASSWORD || '';
 
     const socket = tls.connect(port, host, { timeout: 15000 });
     let step = 0;

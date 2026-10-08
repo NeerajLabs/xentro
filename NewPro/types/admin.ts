@@ -1,5 +1,6 @@
 export type AdminRole =
   | 'Super Admin'
+  | 'Master Admin'
   | 'Operations Admin'
   | 'Identity Verification Admin'
   | 'Entity Verification Admin'

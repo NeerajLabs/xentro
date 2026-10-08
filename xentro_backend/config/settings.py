@@ -132,8 +132,8 @@ EMAIL_PORT = int(os.getenv("EMAIL_PORT", "587"))
 EMAIL_USE_TLS = os.getenv("EMAIL_USE_TLS", "True").lower() in ("true", "1")
 EMAIL_USE_SSL = os.getenv("EMAIL_USE_SSL", "False").lower() in ("true", "1")
 EMAIL_HOST_USER = os.getenv("EMAIL_HOST_USER", "no-reply@xentro.in")
-EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "y0JVB2p9hKbE")
-DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "Xentro Security <no-reply@xentro.in>")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.getenv("DEFAULT_FROM_EMAIL", "no-reply@xentro.in")
 EMAIL_TIMEOUT = int(os.getenv("EMAIL_TIMEOUT", "15"))
 
 # Password validation is handled by Xentro's own logic in apps.accounts — not Django auth.

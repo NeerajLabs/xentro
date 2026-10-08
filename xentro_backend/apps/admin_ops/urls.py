@@ -8,7 +8,8 @@ from .views import (
     AdminRegistrationActionView,
     AdminRolesListView,
     AdminSwitchRoleView,
-    AdminUsersListView
+    AdminUsersListView,
+    AdminUserDetailView
 )
 
 urlpatterns = [
@@ -17,6 +18,7 @@ urlpatterns = [
     path("admin/entities/<str:entity_id>/verify/", AdminEntityVerifyView.as_view(), name="admin_entity_verify"),
     path("admin/audit-logs/", AdminAuditLogsView.as_view(), name="admin_audit_logs"),
     path("admin/users/", AdminUsersListView.as_view(), name="admin_users_list"),
+    path("admin/users/<str:user_id>/", AdminUserDetailView.as_view(), name="admin_user_detail"),
     path("admin/registration-requests/", AdminRegistrationRequestsView.as_view(), name="admin_registration_requests"),
     path("admin/registration-requests/<str:user_id>/action/", AdminRegistrationActionView.as_view(), name="admin_registration_action"),
     path("admin/roles/", AdminRolesListView.as_view(), name="admin_roles_list"),

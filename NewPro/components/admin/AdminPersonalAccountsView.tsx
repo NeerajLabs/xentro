@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { AdminPersonalAccount, ParticipationMode, IdentityVerificationStatus } from '@/types/admin';
+import { AdminPersonalAccount, ParticipationMode, IdentityVerificationStatus, AdminSession } from '@/types/admin';
 import { adminDomainService, logAdminAudit } from '@/lib/adminDomainService';
+import { getAdminSession } from '@/lib/adminAuth';
 import { getBackendBaseUrl } from '@/lib/backendUrl';
 import {
   Search,
@@ -30,6 +31,9 @@ import {
   CheckCircle2,
   Clock,
   Ban,
+  Edit3,
+  Trash2,
+  Key,
 } from 'lucide-react';
 
 export interface PendingRegistration {
@@ -60,6 +64,37 @@ export const AdminPersonalAccountsView: React.FC = () => {
   const [suspendReason, setSuspendReason] = useState('');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+
+  // Master Admin State & Permissions
+  const [adminSession, setAdminSession] = useState<AdminSession | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editUser, setEditUser] = useState<AdminPersonalAccount | null>(null);
+  const [editForm, setEditForm] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    role: 'Founder @ Startup',
+    accountStatus: 'Active',
+    reason: ''
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteUser, setDeleteUser] = useState<AdminPersonalAccount | null>(null);
+  const [confirmInput, setConfirmInput] = useState('');
+  const [deleteReason, setDeleteReason] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useEffect(() => {
+    setAdminSession(getAdminSession());
+    const onSessChange = (e: any) => {
+      if (e.detail) setAdminSession(e.detail);
+    };
+    window.addEventListener('xentro-admin-session-changed', onSessChange);
+    return () => window.removeEventListener('xentro-admin-session-changed', onSessChange);
+  }, []);
+
+  const isMasterAdmin = adminSession?.role === 'Super Admin' || adminSession?.role === 'Master Admin';
 
   const loadData = async () => {
     try {
@@ -121,14 +156,24 @@ export const AdminPersonalAccountsView: React.FC = () => {
     setProcessingId(id);
     try {
       const backendUrl = getBackendBaseUrl();
+      const token = adminSession?.token;
       const resp = await fetch(`${backendUrl}/admin/registration-requests/${id}/action/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+        },
         body: JSON.stringify({ action: "APPROVE", notes: "Approved by Platform Admin" })
       });
       const data = await resp.json();
       if (resp.ok && data?.success) {
-        showToast(`Account approved! Activation email dispatched to ${email}.`);
+        if (data?.data?.alreadySent) {
+          showToast(`Account is already active. Duplicate activation email skipped.`);
+        } else if (data?.data?.emailSent) {
+          showToast(`Account approved & activated! Activation email dispatched from no-reply@xentro.in to ${email}.`);
+        } else {
+          showToast(`Account approved! (Email status: ${data?.data?.emailOutcome || 'queued'})`);
+        }
         loadData();
       } else {
         showToast(data?.message || "Failed to approve registration.", "error");
@@ -144,18 +189,23 @@ export const AdminPersonalAccountsView: React.FC = () => {
   };
 
   const handleRejectRegistration = async (id: string, email: string) => {
-    if (!confirm(`Are you sure you want to reject the registration request for ${email}?`)) return;
+    const reason = prompt(`Enter rejection reason for ${email}:`, "Application does not meet onboarding criteria.");
+    if (reason === null) return;
     setProcessingId(id);
     try {
       const backendUrl = getBackendBaseUrl();
+      const token = adminSession?.token;
       const resp = await fetch(`${backendUrl}/admin/registration-requests/${id}/action/`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "REJECT", notes: "Rejected by Administrator" })
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { "Authorization": `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ action: "REJECT", notes: reason })
       });
       const data = await resp.json();
       if (resp.ok && data?.success) {
-        showToast(`Registration for ${email} was rejected.`);
+        showToast(`Registration request for ${email} has been rejected.`);
         fetchPendingRequests();
       } else {
         showToast(data?.message || "Failed to reject registration.", "error");
@@ -165,6 +215,147 @@ export const AdminPersonalAccountsView: React.FC = () => {
       showToast(`Registration for ${email} was rejected.`);
     } finally {
       setProcessingId(null);
+    }
+  };
+
+  const handleOpenEdit = (acc: AdminPersonalAccount) => {
+    setEditUser(acc);
+    setEditForm({
+      fullName: acc.name,
+      email: acc.email,
+      phone: acc.phone || '',
+      role: acc.participationModes[0] || 'Founder @ Startup',
+      accountStatus: acc.accountStatus,
+      reason: ''
+    });
+    setEditModalOpen(true);
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editUser) return;
+    if (!isMasterAdmin) {
+      showToast("Access Denied: Only the Master Admin is authorized to edit user accounts.", "error");
+      return;
+    }
+    setIsSavingEdit(true);
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const token = adminSession?.token;
+      const resp = await fetch(`${backendUrl}/admin/users/${editUser.id}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          fullName: editForm.fullName,
+          email: editForm.email,
+          phoneNumber: editForm.phone,
+          role: editForm.role,
+          accountStatus: editForm.accountStatus,
+          isActive: editForm.accountStatus === 'Active',
+          reason: editForm.reason || 'User account profile updated by Master Admin'
+        })
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        showToast(`User account ${editForm.email} updated successfully!`);
+        setEditModalOpen(false);
+        if (drawerAccount?.id === editUser.id) {
+          setDrawerAccount((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  name: editForm.fullName,
+                  email: editForm.email,
+                  phone: editForm.phone,
+                  accountStatus: editForm.accountStatus as any,
+                }
+              : null
+          );
+        }
+        loadData();
+      } else {
+        showToast(data?.message || 'Failed to update user account.', 'error');
+      }
+    } catch (err) {
+      showToast('Network error while saving user account.', 'error');
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleOpenDelete = (acc: AdminPersonalAccount) => {
+    setDeleteUser(acc);
+    setConfirmInput('');
+    setDeleteReason('');
+    setDeleteModalOpen(true);
+  };
+
+  const isSelfDeletion = Boolean(
+    adminSession &&
+      deleteUser &&
+      (deleteUser.id === adminSession.employeeId ||
+        (deleteUser.email && adminSession.employeeId && deleteUser.email.toLowerCase() === adminSession.employeeId.toLowerCase()) ||
+        (adminSession.employeeId === '9922953' && deleteUser.id === '9922953'))
+  );
+
+  const isConfirmationMatched = Boolean(
+    deleteUser &&
+      (confirmInput.trim().toLowerCase() === deleteUser.email.toLowerCase() ||
+        confirmInput.trim() === 'DELETE')
+  );
+
+  const handleConfirmDelete = async () => {
+    if (!deleteUser) return;
+    if (!isMasterAdmin) {
+      showToast("Access Denied: Only the Master Admin is authorized to delete user accounts.", "error");
+      return;
+    }
+    if (isSelfDeletion) {
+      showToast("Safeguard Triggered: Master Admin cannot delete their own active account.", "error");
+      return;
+    }
+    if (!isConfirmationMatched) {
+      showToast("Type the user's exact email address or 'DELETE' to confirm deletion.", "error");
+      return;
+    }
+    if (!deleteReason.trim()) {
+      showToast("Audit rationale is required to record this deletion.", "error");
+      return;
+    }
+    setIsDeleting(true);
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const token = adminSession?.token;
+      const resp = await fetch(`${backendUrl}/admin/users/${deleteUser.id}/`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({
+          confirmation: true,
+          confirm_email: confirmInput.trim(),
+          reason: deleteReason.trim(),
+        })
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        showToast(`User account ${deleteUser.email} has been permanently deleted.`);
+        setDeleteModalOpen(false);
+        setDeleteUser(null);
+        if (drawerAccount?.id === deleteUser.id) {
+          setDrawerAccount(null);
+        }
+        loadData();
+      } else {
+        showToast(data?.message || 'Failed to delete user account.', 'error');
+      }
+    } catch {
+      showToast('Network error while deleting user account.', 'error');
+    } finally {
+      setIsDeleting(false);
     }
   };
 
@@ -293,6 +484,21 @@ export const AdminPersonalAccountsView: React.FC = () => {
           <p className="text-xs text-[#565B59] dark:text-[#A0A4A2] mt-1 max-w-2xl">
             Independent human identities participating as Founders, Mentors, Investors, and ESP Members. Zero raw Aadhaar numbers exposed; protected by strict identity governance.
           </p>
+
+          {/* Master Admin Permissions Badge */}
+          <div className="mt-3 flex items-center gap-2">
+            {isMasterAdmin ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F] border border-[#D9FF3F]/40 shadow-xs">
+                <ShieldCheck className="w-3.5 h-3.5" />
+                Master Admin Privileges Active (View, Edit & Delete)
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/30">
+                <Lock className="w-3.5 h-3.5" />
+                Read-Only Access ({adminSession?.role || 'Admin'}): Only Master Admin is authorized to edit or delete accounts
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -541,13 +747,42 @@ export const AdminPersonalAccountsView: React.FC = () => {
                   <div className="text-[10px] text-[#6E7370] dark:text-[#8E9390]">Active: {acc.lastActive}</div>
                 </td>
                 <td className="py-3.5 px-4 text-right">
-                  <button
-                    onClick={() => handleOpenDrawer(acc)}
-                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-medium text-[#101212] dark:text-white transition-all cursor-pointer"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>Inspect</span>
-                  </button>
+                  <div className="flex items-center justify-end gap-1.5">
+                    <button
+                      onClick={() => handleOpenDrawer(acc)}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-medium text-[#101212] dark:text-white transition-all cursor-pointer"
+                      title="Inspect User Dossier"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Inspect</span>
+                    </button>
+                    <button
+                      onClick={() => (isMasterAdmin ? handleOpenEdit(acc) : showToast("Permission Denied: Only Master Admin can edit accounts.", "error"))}
+                      disabled={!isMasterAdmin}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        isMasterAdmin
+                          ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border border-emerald-500/30 cursor-pointer"
+                          : "bg-gray-100 dark:bg-[#202422] text-gray-400 dark:text-gray-500 cursor-not-allowed opacity-50"
+                      }`}
+                      title={isMasterAdmin ? "Edit User Account (Master Admin)" : "Only Master Admin is authorized to edit users"}
+                    >
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span>Edit</span>
+                    </button>
+                    <button
+                      onClick={() => (isMasterAdmin ? handleOpenDelete(acc) : showToast("Permission Denied: Only Master Admin can delete accounts.", "error"))}
+                      disabled={!isMasterAdmin}
+                      className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                        isMasterAdmin
+                          ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 cursor-pointer"
+                          : "bg-gray-100 dark:bg-[#202422] text-gray-400 dark:text-gray-500 cursor-not-allowed opacity-50"
+                      }`}
+                      title={isMasterAdmin ? "Delete User Account (Safeguarded)" : "Only Master Admin is authorized to delete users"}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -673,7 +908,48 @@ export const AdminPersonalAccountsView: React.FC = () => {
             </div>
 
             {/* Actions Bar */}
-            <div className="pt-4 border-t border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between gap-3">
+            <div className="pt-4 border-t border-[#E5E7EB] dark:border-[#262A29] space-y-2.5">
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={() => {
+                    if (isMasterAdmin) {
+                      handleOpenEdit(drawerAccount);
+                    } else {
+                      showToast("Permission Denied: Only Master Admin can edit accounts.", "error");
+                    }
+                  }}
+                  disabled={!isMasterAdmin}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border ${
+                    isMasterAdmin
+                      ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 cursor-pointer shadow-xs"
+                      : "bg-gray-100 dark:bg-[#202422] text-gray-400 border-transparent cursor-not-allowed opacity-50"
+                  }`}
+                  title={isMasterAdmin ? "Edit user details" : "Only Master Admin is authorized to edit users"}
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Account</span>
+                </button>
+                <button
+                  onClick={() => {
+                    if (isMasterAdmin) {
+                      handleOpenDelete(drawerAccount);
+                    } else {
+                      showToast("Permission Denied: Only Master Admin can delete accounts.", "error");
+                    }
+                  }}
+                  disabled={!isMasterAdmin}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 border ${
+                    isMasterAdmin
+                      ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/30 cursor-pointer shadow-xs"
+                      : "bg-gray-100 dark:bg-[#202422] text-gray-400 border-transparent cursor-not-allowed opacity-50"
+                  }`}
+                  title={isMasterAdmin ? "Permanently delete user account" : "Only Master Admin is authorized to delete users"}
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete Account</span>
+                </button>
+              </div>
+
               {drawerAccount.accountStatus === 'Suspended' ? (
                 <button
                   onClick={() => handleRestoreAccount(drawerAccount)}
@@ -684,7 +960,7 @@ export const AdminPersonalAccountsView: React.FC = () => {
               ) : (
                 <button
                   onClick={() => setSuspendModalOpen(true)}
-                  className="w-full py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-bold transition-all cursor-pointer"
+                  className="w-full py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-xs font-semibold transition-all cursor-pointer"
                 >
                   Suspend Personal Account
                 </button>
@@ -698,7 +974,7 @@ export const AdminPersonalAccountsView: React.FC = () => {
       {suspendModalOpen && drawerAccount && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-2xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center gap-2.5 text-rose-500">
+            <div className="flex items-center gap-2.5 text-amber-500">
               <Ban className="w-5 h-5" />
               <h3 className="font-sora font-bold text-base text-[#101212] dark:text-white">
                 Suspend Personal Account
@@ -714,22 +990,235 @@ export const AdminPersonalAccountsView: React.FC = () => {
                 onChange={(e) => setSuspendReason(e.target.value)}
                 placeholder="State the regulatory, fraud, or terms of service violation..."
                 rows={3}
-                className="w-full p-3 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-rose-500"
+                className="w-full p-3 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-amber-500"
               />
             </div>
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 onClick={() => setSuspendModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-medium text-[#6E7370] dark:text-[#8E9390] hover:text-[#101212] dark:hover:text-white"
+                className="px-4 py-2 rounded-xl text-xs font-medium text-[#6E7370] dark:text-[#8E9390] hover:text-[#101212] dark:hover:text-white cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleConfirmSuspend}
                 disabled={!suspendReason.trim()}
-                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs"
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
               >
                 Confirm Suspension
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Master Admin Edit User Modal */}
+      {editModalOpen && editUser && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-2xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-[#E5E7EB] dark:border-[#262A29]">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-[#D9FF3F]">
+                  <Edit3 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-sora font-bold text-base text-[#101212] dark:text-white">
+                    Master Admin: Edit User Account
+                  </h3>
+                  <p className="text-[11px] text-gray-500 font-mono">ID: {editUser.id}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setEditModalOpen(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-white hover:bg-gray-100 dark:hover:bg-[#202422]"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {!isMasterAdmin && (
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-800 dark:text-amber-300 text-xs flex items-center gap-2">
+                <Lock className="w-4 h-4 shrink-0" />
+                <span>Security Notice: You are in read-only mode ({adminSession?.role || 'Admin'}). Only the Master Admin can modify user accounts.</span>
+              </div>
+            )}
+
+            <div className="space-y-3 text-xs">
+              <div>
+                <label className="block font-medium text-[#565B59] dark:text-[#A0A4A2] mb-1">Full Legal Name</label>
+                <input
+                  type="text"
+                  value={editForm.fullName}
+                  disabled={!isMasterAdmin}
+                  onChange={(e) => setEditForm({ ...editForm, fullName: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F] disabled:opacity-60"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-[#565B59] dark:text-[#A0A4A2] mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    value={editForm.email}
+                    disabled={!isMasterAdmin}
+                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F] disabled:opacity-60"
+                  />
+                </div>
+                <div>
+                  <label className="block font-medium text-[#565B59] dark:text-[#A0A4A2] mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    value={editForm.phone}
+                    disabled={!isMasterAdmin}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                    placeholder="+91..."
+                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F] disabled:opacity-60"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block font-medium text-[#565B59] dark:text-[#A0A4A2] mb-1">Primary Role / Track</label>
+                  <select
+                    value={editForm.role}
+                    disabled={!isMasterAdmin}
+                    onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F] disabled:opacity-60"
+                  >
+                    <option value="Founder @ Startup">Founder @ Startup</option>
+                    <option value="Mentor">Mentor</option>
+                    <option value="Individual Investor">Individual Investor</option>
+                    <option value="Partner @ VC">Partner @ VC</option>
+                    <option value="Member @ ESP">Member @ ESP</option>
+                    <option value="Explorer">Explorer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block font-medium text-[#565B59] dark:text-[#A0A4A2] mb-1">Account State</label>
+                  <select
+                    value={editForm.accountStatus}
+                    disabled={!isMasterAdmin}
+                    onChange={(e) => setEditForm({ ...editForm, accountStatus: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F] disabled:opacity-60"
+                  >
+                    <option value="Active">Active (Full Access)</option>
+                    <option value="Pending Verification">Pending Verification</option>
+                    <option value="Restricted">Restricted</option>
+                    <option value="Suspended">Suspended</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-medium text-[#565B59] dark:text-[#A0A4A2] mb-1">Administrative Audit Reason (Mandatory)</label>
+                <input
+                  type="text"
+                  value={editForm.reason}
+                  disabled={!isMasterAdmin}
+                  onChange={(e) => setEditForm({ ...editForm, reason: e.target.value })}
+                  placeholder="Reason for modifying account record..."
+                  className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F] disabled:opacity-60"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#E5E7EB] dark:border-[#262A29]">
+              <button
+                onClick={() => setEditModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-[#6E7370] dark:text-[#8E9390] hover:text-[#101212] dark:hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveEdit}
+                disabled={!isMasterAdmin || isSavingEdit || !editForm.fullName.trim() || !editForm.email.trim()}
+                className="px-4 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-50"
+              >
+                {isSavingEdit ? 'Saving Changes...' : 'Save Account Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Master Admin Delete User Safeguard Modal */}
+      {deleteModalOpen && deleteUser && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white dark:bg-[#181B1A] border border-rose-500/30 rounded-2xl p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-2.5 text-rose-500">
+              <div className="p-2 rounded-xl bg-rose-500/10 border border-rose-500/20">
+                <Trash2 className="w-5 h-5 text-rose-500" />
+              </div>
+              <div>
+                <h3 className="font-sora font-bold text-base text-[#101212] dark:text-white">
+                  Delete User Account
+                </h3>
+                <span className="text-[11px] text-rose-500 font-semibold">Master Admin Safeguarded Action</span>
+              </div>
+            </div>
+
+            {/* Self-Deletion Safeguard Check */}
+            {isSelfDeletion ? (
+              <div className="p-4 rounded-xl bg-rose-500/10 border border-rose-500/40 text-xs text-rose-700 dark:text-rose-300 space-y-1">
+                <strong className="block font-bold">🛡️ Critical Safeguard Triggered</strong>
+                <p>
+                  You cannot delete your own active administrative account (<span className="font-mono">{deleteUser.email}</span>). Platform governance forbids self-deletion by active Master Admins.
+                </p>
+              </div>
+            ) : (
+              <>
+                <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-800 dark:text-rose-300">
+                  <p className="leading-relaxed">
+                    This action is <strong>permanent and irreversible</strong>. It will remove the personal identity for <strong className="text-white font-mono">{deleteUser.email}</strong>, revoke all active sessions, invalidate OTP records, and unlink organizational memberships.
+                  </p>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block font-medium text-[#565B59] dark:text-[#A0A4A2] mb-1">
+                      Confirmation Safeguard: Type <span className="font-mono font-bold text-rose-600 dark:text-rose-400">{deleteUser.email}</span> or <span className="font-mono font-bold text-rose-600 dark:text-rose-400">DELETE</span> to confirm:
+                    </label>
+                    <input
+                      type="text"
+                      value={confirmInput}
+                      onChange={(e) => setConfirmInput(e.target.value)}
+                      placeholder={deleteUser.email}
+                      className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-rose-500 font-mono"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-medium text-[#565B59] dark:text-[#A0A4A2] mb-1">
+                      Administrative Audit Rationale (Mandatory)
+                    </label>
+                    <textarea
+                      value={deleteReason}
+                      onChange={(e) => setDeleteReason(e.target.value)}
+                      placeholder="Specify the reason for permanent account deletion..."
+                      rows={2}
+                      className="w-full p-3 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-rose-500"
+                    />
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-[#E5E7EB] dark:border-[#262A29]">
+              <button
+                onClick={() => setDeleteModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-medium text-[#6E7370] dark:text-[#8E9390] hover:text-[#101212] dark:hover:text-white cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={!isMasterAdmin || isSelfDeletion || !isConfirmationMatched || !deleteReason.trim() || isDeleting}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {isDeleting ? 'Deleting Account...' : 'Permanently Delete User'}
               </button>
             </div>
           </div>

@@ -2,6 +2,7 @@
 XENTRO Admin Operations Control Plane API
 Implements Admin Authentication, Command Centre Overview, Entity Approval, and Audit Logging.
 """
+import os
 import datetime
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
@@ -9,7 +10,7 @@ from integrations.mongodb import get_collection
 from integrations.email_service import send_approval_notification, send_account_activation_notification
 from common.jwt_auth import create_access_token, create_refresh_token
 from common.response import api_success, api_error
-from common.permissions import IsXentroAdmin
+from common.permissions import IsXentroAdmin, IsXentroMasterAdmin
 from common.audit import log_audit_event
 
 DEFAULT_ADMINS = [
@@ -345,10 +346,11 @@ class AdminRegistrationActionView(APIView):
     """
     Approves or rejects a user/ESP registration request.
     On approval:
-      1. Activates user account (accountStatus: ACTIVE, isActive: True).
-      2. Activates any associated ESP / entity.
-      3. Dispatches official Xentro activation confirmation email with login details.
-      4. Writes audit log.
+      1. Idempotency: Checks if already active & activation email was already sent to avoid duplicate emails.
+      2. Activates user account (accountStatus: ACTIVE, isActive: True).
+      3. Activates any associated ESP / entity (verificationStatus: VERIFIED, isActive: True).
+      4. Dispatches official Xentro activation confirmation email from no-reply@xentro.in.
+      5. Writes audit log.
     """
     permission_classes = [AllowAny]
 
@@ -375,8 +377,41 @@ class AdminRegistrationActionView(APIView):
         admin_id = getattr(request.user, "admin_employee_id", "SUPER_ADMIN")
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
+        user_email = user.get("email") if user else (esp_entity.get("officialEmail") if esp_entity else None)
+        user_name = user.get("fullName") if user else (esp_entity.get("name") if esp_entity else "Partner")
+        requested_role = user.get("registrationRequest", {}).get("requestedRole", "ESP" if esp_entity else "User") if user else "ESP"
+
         if action == "APPROVE":
-            # 1. Activate User
+            # Check Idempotency: Has this approval already been executed and email dispatched?
+            is_already_active = bool(
+                (user and user.get("accountStatus") == "ACTIVE") or
+                (esp_entity and esp_entity.get("verificationStatus") == "VERIFIED" and esp_entity.get("isActive") is True)
+            )
+            is_already_emailed = bool(
+                (user and user.get("activationEmailSent")) or
+                (esp_entity and esp_entity.get("activationEmailSent"))
+            )
+
+            if is_already_active and is_already_emailed:
+                # Avoid sending duplicate activation emails on approval retry
+                log_audit_event(
+                    admin_id=admin_id,
+                    action="REGISTRATION_APPROVAL_RETRY_SKIPPED",
+                    object_type="USER_REGISTRATION",
+                    object_id=user["id"] if user else user_id,
+                    reason="Approval retry detected; duplicate email dispatch prevented."
+                )
+                return api_success({
+                    "userId": user["id"] if user else user_id,
+                    "status": "ACTIVE",
+                    "emailSent": False,
+                    "alreadySent": True,
+                    "alreadyActive": True,
+                    "emailOutcome": "ALREADY_SENT",
+                    "message": f"Account is already active. Activation email was previously dispatched to {user_email}; duplicate email skipped."
+                }, f"Account is already active. Activation email was previously dispatched to {user_email}.")
+
+            # 1. Activate User in Database
             if user:
                 users_col.update_one(
                     {"id": user["id"]},
@@ -386,6 +421,8 @@ class AdminRegistrationActionView(APIView):
                         "registrationRequest.status": "APPROVED",
                         "approvedAt": now_iso,
                         "approvedBy": admin_id,
+                        "activationEmailSent": True,
+                        "activationEmailSentAt": now_iso,
                         "updatedAt": now_iso
                     }}
                 )
@@ -399,23 +436,24 @@ class AdminRegistrationActionView(APIView):
                         "verificationStatus": "VERIFIED",
                         "isActive": True,
                         "verifiedAt": now_iso,
-                        "verifiedBy": admin_id
+                        "verifiedBy": admin_id,
+                        "activationEmailSent": True,
+                        "activationEmailSentAt": now_iso
                     }}
                 )
 
-            # 3. Dispatch Email Activation Confirmation
-            user_email = user.get("email") if user else (esp_entity.get("officialEmail") if esp_entity else None)
-            user_name = user.get("fullName") if user else (esp_entity.get("name") if esp_entity else "Partner")
-            requested_role = user.get("registrationRequest", {}).get("requestedRole", "User") if user else "ESP"
-
+            # 3. Dispatch Email Activation Confirmation from no-reply@xentro.in
+            frontend_url = os.getenv("FRONTEND_URL", "https://xentro-five.vercel.app/signin")
             email_result = None
             if user_email:
                 email_result = send_account_activation_notification(
                     email=user_email,
                     user_name=user_name,
-                    login_url="http://localhost:3000/signin",
+                    login_url=frontend_url,
                     role=requested_role
                 )
+
+            email_success = bool(email_result and email_result.get("success"))
 
             # 4. Audit Log
             log_audit_event(
@@ -424,15 +462,17 @@ class AdminRegistrationActionView(APIView):
                 object_type="USER_REGISTRATION",
                 object_id=user["id"] if user else user_id,
                 reason=notes or f"Approved {requested_role} account for {user_email}",
-                new_state={"accountStatus": "ACTIVE", "isActive": True}
+                new_state={"accountStatus": "ACTIVE", "isActive": True, "activationEmailSent": email_success}
             )
 
             return api_success({
                 "userId": user["id"] if user else user_id,
                 "status": "ACTIVE",
-                "emailSent": bool(email_result and email_result.get("success")),
+                "emailSent": email_success,
+                "alreadySent": False,
+                "emailOutcome": "DELIVERED" if email_success else "FAILED",
                 "emailDetails": email_result
-            }, f"Account registration approved and activation email dispatched to {user_email}.")
+            }, f"Account registration approved and activation email dispatched from no-reply@xentro.in to {user_email}.")
 
         elif action == "REJECT":
             if user:
@@ -453,6 +493,7 @@ class AdminRegistrationActionView(APIView):
                     {"$or": [{"id": user_id}, {"primaryOwnerId": owner_id}]},
                     {"$set": {
                         "verificationStatus": "REJECTED",
+                        "isActive": False,
                         "rejectionReason": notes
                     }}
                 )
@@ -468,10 +509,192 @@ class AdminRegistrationActionView(APIView):
 
             return api_success({
                 "userId": user["id"] if user else user_id,
-                "status": "REJECTED"
+                "status": "REJECTED",
+                "rejectionReason": notes
             }, "Registration request has been rejected.")
         else:
             return api_error("Invalid action. Must be APPROVE or REJECT.")
+
+
+class AdminUserDetailView(APIView):
+    """
+    Master Admin User Management:
+    - GET: View single user account details. (Requires IsXentroAdmin)
+    - PATCH / PUT: Update user account details (fullName, email, phone, role, accountStatus, isActive, bio).
+      CRITICAL: Strictly restricted to Master Admin (Super Admin).
+      Enforced on backend API (returns 403 Forbidden for non-master admins).
+    - DELETE: Permanently delete user account with safeguards and audit logging.
+      CRITICAL: Strictly restricted to Master Admin (Super Admin).
+      Safeguards:
+        1. Cannot delete self (prevents locking admin out).
+        2. Requires explicit confirmation parameter / matching email confirmation.
+        3. Comprehensive audit logging recorded before deletion.
+    """
+    def get_permissions(self):
+        if self.request.method in ("PATCH", "PUT", "DELETE"):
+            return [IsXentroMasterAdmin()]
+        return [IsXentroAdmin()]
+
+    def get(self, request, user_id):
+        users_col = get_collection("users")
+        user = users_col.find_one({"id": user_id})
+        if not user:
+            return api_error("User account not found.", status_code=404)
+
+        user_data = dict(user)
+        user_data.pop("_id", None)
+        user_data.pop("password", None)
+        user_data.pop("password_hash", None)
+        return api_success({"user": user_data})
+
+    def patch(self, request, user_id):
+        return self.put(request, user_id)
+
+    def put(self, request, user_id):
+        # Strict backend permission check (defense-in-depth)
+        admin_role = getattr(request.user, "admin_role", None) or getattr(request.user, "role", None)
+        if admin_role not in ("Super Admin", "Master Admin"):
+            return api_error("Forbidden: Only the Master Admin is authorized to edit user accounts.", status_code=403)
+
+        users_col = get_collection("users")
+        user = users_col.find_one({"id": user_id})
+        if not user:
+            return api_error("User account not found.", status_code=404)
+
+        data = request.data
+        prev_state = {
+            "fullName": user.get("fullName"),
+            "email": user.get("email"),
+            "phoneNumber": user.get("phoneNumber"),
+            "accountStatus": user.get("accountStatus"),
+            "isActive": user.get("isActive"),
+            "identityStatus": user.get("identityStatus"),
+            "activeRoles": user.get("activeRoles")
+        }
+
+        updates = {}
+        if "fullName" in data or "name" in data:
+            updates["fullName"] = str(data.get("fullName") or data.get("name")).strip()
+        if "email" in data:
+            new_email = str(data["email"]).strip().lower()
+            if new_email and new_email != user.get("email", "").lower():
+                existing = users_col.find_one({"email": new_email, "id": {"$ne": user_id}})
+                if existing:
+                    return api_error("Another account already exists with this email address.", status_code=400)
+                updates["email"] = new_email
+        if "phoneNumber" in data or "phone" in data:
+            updates["phoneNumber"] = str(data.get("phoneNumber") or data.get("phone")).strip()
+        if "accountStatus" in data:
+            updates["accountStatus"] = str(data["accountStatus"]).strip().upper()
+        if "isActive" in data:
+            updates["isActive"] = bool(data["isActive"])
+        if "identityStatus" in data:
+            updates["identityStatus"] = str(data["identityStatus"]).strip().upper()
+        if "role" in data or "accountType" in data or "requestedRole" in data:
+            new_role = str(data.get("role") or data.get("accountType") or data.get("requestedRole")).strip()
+            updates["activeRoles"] = [new_role]
+            updates["registrationRequest.requestedRole"] = new_role
+        if "bio" in data:
+            updates["bio"] = str(data["bio"]).strip()
+
+        if not updates:
+            return api_error("No valid fields provided for update.", status_code=400)
+
+        admin_id = getattr(request.user, "admin_employee_id", "SUPER_ADMIN")
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        updates["updatedAt"] = now_iso
+        updates["updatedBy"] = admin_id
+
+        users_col.update_one({"id": user_id}, {"$set": updates})
+        updated_user = users_col.find_one({"id": user_id})
+        updated_user.pop("_id", None)
+        updated_user.pop("password", None)
+        updated_user.pop("password_hash", None)
+
+        log_audit_event(
+            admin_id=admin_id,
+            action="USER_ACCOUNT_UPDATED",
+            object_type="USER",
+            object_id=user_id,
+            previous_state=prev_state,
+            new_state=updates,
+            reason=data.get("reason") or "User account updated by Master Admin"
+        )
+
+        return api_success({"user": updated_user}, "User account updated successfully.")
+
+    def delete(self, request, user_id):
+        # Strict backend permission check (defense-in-depth)
+        admin_role = getattr(request.user, "admin_role", None) or getattr(request.user, "role", None)
+        if admin_role not in ("Super Admin", "Master Admin"):
+            return api_error("Forbidden: Only the Master Admin is authorized to delete user accounts.", status_code=403)
+
+        users_col = get_collection("users")
+        user = users_col.find_one({"id": user_id})
+        if not user:
+            return api_error("User account not found.", status_code=404)
+
+        # Safeguard 1: Master Admin cannot delete self
+        admin_id = getattr(request.user, "admin_employee_id", "SUPER_ADMIN")
+        req_user_id = getattr(request.user, "id", None)
+        req_email = getattr(request.user, "email", "")
+        if user_id in (str(admin_id), str(req_user_id)) or (req_email and user.get("email", "").lower() == req_email.lower()):
+            return api_error("Safeguard triggered: Master Admin cannot delete their own active administrative account.", status_code=400)
+
+        # Safeguard 2: Confirmation required
+        confirmation = request.data.get("confirmation") or request.data.get("confirm") or request.query_params.get("confirm")
+        confirm_email = request.data.get("confirm_email") or request.data.get("email")
+        is_confirmed = (confirmation in (True, "true", "True", "DELETE", "delete")) or (confirm_email and confirm_email.lower() == user.get("email", "").lower())
+
+        if not is_confirmed:
+            return api_error(
+                "Safeguard triggered: Explicit confirmation is required to delete an account. Provide 'confirmation': true or match the target user email in 'confirm_email'.",
+                status_code=400
+            )
+
+        # Safeguard 3: Audit logging before permanent purge
+        reason = request.data.get("reason", "Account permanently deleted by Master Admin with confirmation safeguard.")
+        prev_state = {
+            "id": user_id,
+            "email": user.get("email"),
+            "fullName": user.get("fullName"),
+            "accountStatus": user.get("accountStatus"),
+            "createdAt": user.get("createdAt")
+        }
+        log_audit_event(
+            admin_id=admin_id,
+            action="USER_ACCOUNT_DELETED",
+            object_type="USER",
+            object_id=user_id,
+            previous_state=prev_state,
+            reason=reason
+        )
+
+        # Perform deletion from MongoDB
+        users_col.delete_one({"id": user_id})
+
+        # Clean up pending OTPs
+        try:
+            get_collection("otp_codes").delete_many({"email": user.get("email", "").lower()})
+        except Exception:
+            pass
+
+        # Clean up / orphan owned entities
+        try:
+            entities_col = get_collection("entities")
+            entities_col.update_many(
+                {"primaryOwnerId": user_id},
+                {"$set": {
+                    "isActive": False,
+                    "status": "ORPHANED_DELETED",
+                    "orphanedAt": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                }}
+            )
+        except Exception:
+            pass
+
+        return api_success({"deletedUserId": user_id}, f"User account for {user.get('email')} permanently deleted.")
+
 
 class AdminRolesListView(APIView):
     """Returns all supported Admin roles and their respective permissions."""

@@ -16,6 +16,22 @@ class IsXentroAdmin(permissions.BasePermission):
             return False
         return bool(request.user.is_staff or request.user.admin_employee_id)
 
+class IsXentroMasterAdmin(permissions.BasePermission):
+    """
+    CRITICAL SECURITY ENFORCEMENT:
+    Only Master Admin (Super Admin) can edit or delete user accounts.
+    Non-master admins (Operations Admin, Support Admin, etc.) receive 403 Forbidden.
+    """
+    message = "Only the Master Admin (Super Admin) is authorized to perform this operation."
+
+    def has_permission(self, request, view):
+        if not (request.user and request.user.is_authenticated):
+            return False
+        if not (request.user.is_staff or getattr(request.user, "admin_employee_id", None)):
+            return False
+        admin_role = getattr(request.user, "admin_role", None) or getattr(request.user, "role", None)
+        return admin_role in ("Super Admin", "Master Admin")
+
 class HasAdminPermission:
     """Factory creating a permission class for a specific administrative capability."""
     def __init__(self, required_permission: str):

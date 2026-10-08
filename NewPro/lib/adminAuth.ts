@@ -50,6 +50,7 @@ export const ALL_ADMIN_PERMISSIONS: AdminPermission[] = [
 
 export const ADMIN_ROLE_PERMISSIONS: Record<AdminRole, AdminPermission[]> = {
   'Super Admin': ALL_ADMIN_PERMISSIONS,
+  'Master Admin': ALL_ADMIN_PERMISSIONS,
 
   'Operations Admin': [
     'accounts.read',
@@ -300,11 +301,40 @@ export async function verifyAdminCredentials(
   employeeId: string,
   password: string
 ): Promise<AdminSession | null> {
-  // Simulate network round-trip delay
-  await new Promise((resolve) => setTimeout(resolve, 500));
-
   const trimmedId = employeeId.trim();
   const trimmedPass = password.trim();
+
+  // 1. Try real authentication against backend API
+  try {
+    const { getBackendBaseUrl } = await import('@/lib/backendUrl');
+    const backendUrl = getBackendBaseUrl();
+    const resp = await fetch(`${backendUrl}/admin/auth/login/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId: trimmedId, password: trimmedPass })
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data?.success && data?.data?.session) {
+        const s = data.data.session;
+        const session: AdminSession = {
+          employeeId: s.employeeId,
+          name: s.name,
+          role: s.role,
+          department: s.department,
+          permissions: s.permissions || getPermissionsForRole(s.role),
+          token: s.token || data.data.tokens?.accessToken,
+          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        };
+        return session;
+      }
+    }
+  } catch (err) {
+    console.warn('Backend admin auth unreachable, checking credentials directly:', err);
+  }
+
+  // Simulate network round-trip delay for fallback
+  await new Promise((resolve) => setTimeout(resolve, 300));
 
   // Primary Super Admin Credential
   // Employee ID: 9922953 | Password: Kar04052003
@@ -359,6 +389,30 @@ export async function verifyAdminCredentials(
 export function switchAdminRole(newRole: AdminRole): AdminSession | null {
   const current = getAdminSession();
   if (!current) return null;
+
+  // Asynchronously request role switch token from backend
+  if (typeof window !== 'undefined' && current.token) {
+    import('@/lib/backendUrl').then(({ getBackendBaseUrl }) => {
+      const backendUrl = getBackendBaseUrl();
+      fetch(`${backendUrl}/admin/switch-role/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${current.token}`
+        },
+        body: JSON.stringify({ role: newRole })
+      }).then(r => r.json()).then(data => {
+        if (data?.data?.token) {
+          const sess = getAdminSession();
+          if (sess && sess.role === newRole) {
+            sess.token = data.data.token;
+            setAdminSession(sess);
+          }
+        }
+      }).catch(() => {});
+    });
+  }
+
   const updated: AdminSession = {
     ...current,
     role: newRole,
