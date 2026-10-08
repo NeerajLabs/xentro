@@ -67,7 +67,7 @@ def _send_direct_smtp(to_email: str, subject: str, body: str) -> bool:
     user = getattr(settings, "EMAIL_HOST_USER", "no-reply@xentro.in")
     password = getattr(settings, "EMAIL_HOST_PASSWORD", "")
     from_addr = getattr(settings, "DEFAULT_FROM_EMAIL", user)
-    timeout = getattr(settings, "EMAIL_TIMEOUT", 15)
+    timeout = 3  # Short 3-second timeout to avoid holding requests if port is blocked
 
     if not password or not user:
         logger.error("SMTP credentials not configured.")
@@ -107,12 +107,26 @@ def _send_direct_smtp(to_email: str, subject: str, body: str) -> bool:
 def dispatch_email_securely(to_email: str, subject: str, body: str) -> bool:
     """
     3-Layer resilient email dispatcher:
-    Layer 1: Django configured send_mail (Port 587 STARTTLS)
-    Layer 2: Direct Python smtplib (Port 465 SSL)
-    Layer 3: HTTPS Dispatcher over Port 443 (Vercel Serverless Function),
-             bypassing any hosting environment SMTP port blocks (e.g. Render Free tier).
+    - On Render / Cloud containers where outbound SMTP ports (25, 465, 587) are firewall-blocked,
+      invokes the Vercel HTTPS Dispatcher over Port 443 first (guaranteed open and responds in <2s).
+    - Falls back to Direct SMTP and Django send_mail.
     """
-    # Layer 1: Django send_mail
+    is_render = bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
+
+    # When on Render or cloud container, use HTTPS Port 443 dispatcher first to eliminate SMTP timeouts
+    if is_render or os.getenv("USE_HTTPS_EMAIL", "True").lower() in ("true", "1"):
+        logger.info(f"Invoking HTTPS email dispatcher for {to_email}...")
+        if _send_via_https_dispatcher(to_email, subject, body):
+            logger.info(f"Dispatched email to {to_email} via HTTPS dispatcher.")
+            return True
+        logger.warning("HTTPS dispatcher attempt failed, trying direct SMTP...")
+
+    # Direct SMTP attempt (3-second timeout)
+    if _send_direct_smtp(to_email, subject, body):
+        logger.info(f"Dispatched email to {to_email} via direct SMTP.")
+        return True
+
+    # Django send_mail attempt
     try:
         sent_count = send_mail(
             subject=subject,
@@ -125,20 +139,15 @@ def dispatch_email_securely(to_email: str, subject: str, body: str) -> bool:
             logger.info(f"Dispatched email to {to_email} via Django send_mail.")
             return True
     except Exception as e:
-        logger.warning(f"Layer 1 Django send_mail failed ({type(e).__name__}). Trying direct SMTP...")
+        logger.warning(f"Django send_mail failed ({type(e).__name__}).")
 
-    # Layer 2: Direct SMTP
-    if _send_direct_smtp(to_email, subject, body):
-        logger.info(f"Dispatched email to {to_email} via direct SMTP.")
-        return True
+    # Fallback retry with HTTPS dispatcher if not tried first
+    if not is_render:
+        if _send_via_https_dispatcher(to_email, subject, body):
+            logger.info(f"Dispatched email to {to_email} via HTTPS dispatcher fallback.")
+            return True
 
-    # Layer 3: HTTPS Dispatcher over Port 443
-    logger.info(f"Direct SMTP blocked. Invoking Layer 3 HTTPS dispatcher for {to_email}...")
-    if _send_via_https_dispatcher(to_email, subject, body):
-        logger.info(f"Dispatched email to {to_email} via Layer 3 HTTPS dispatcher.")
-        return True
-
-    logger.error(f"All 3 email dispatch layers failed for {to_email}.")
+    logger.error(f"All email dispatch layers failed for {to_email}.")
     return False
 
 def generate_6digit_otp() -> str:
