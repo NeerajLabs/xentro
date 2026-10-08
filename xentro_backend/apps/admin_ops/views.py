@@ -941,3 +941,221 @@ class AdminEntityDeleteView(APIView):
         )
 
         return api_success({"deletedEntityId": entity_id}, f"Entity '{ent.get('name')}' removed successfully.")
+
+
+class AdminComplaintsListView(APIView):
+    """
+    GET /api/v1/admin/complaints/
+    Lists all user complaints and support submissions from MongoDB for administrative review.
+    Enforces internal administrative permissions.
+    """
+    def get_permissions(self):
+        return [IsXentroAdmin()]
+
+    def get(self, request):
+        tickets_col = get_collection("support_tickets")
+        status_filter = request.query_params.get("status")
+        search = (request.query_params.get("search") or "").strip().lower()
+
+        query = {}
+        if status_filter and status_filter.upper() != "ALL":
+            query["status"] = status_filter.upper()
+
+        raw_tickets = list(tickets_col.find(query, sort=[("createdAt", -1)]))
+        results = []
+
+        total_pending = tickets_col.count_documents({"status": "PENDING"})
+        total_in_review = tickets_col.count_documents({"status": "IN_REVIEW"})
+        total_resolved = tickets_col.count_documents({"status": "RESOLVED"})
+        total_dismissed = tickets_col.count_documents({"status": "DISMISSED"})
+        total_all = tickets_col.count_documents({})
+
+        for t in raw_tickets:
+            t.pop("_id", None)
+            if search:
+                haystack = f"{t.get('id', '')} {t.get('subject', '')} {t.get('message', '')} {t.get('userName', '')} {t.get('userEmail', '')} {t.get('accountId', '')}".lower()
+                if search not in haystack:
+                    continue
+            results.append(t)
+
+        return api_success({
+            "complaints": results,
+            "total": len(results),
+            "counts": {
+                "all": total_all,
+                "pending": total_pending,
+                "inReview": total_in_review,
+                "resolved": total_resolved,
+                "dismissed": total_dismissed
+            }
+        })
+
+
+class AdminComplaintDetailView(APIView):
+    """
+    GET   /api/v1/admin/complaints/<str:ticket_id>/
+    PATCH /api/v1/admin/complaints/<str:ticket_id>/
+    Retrieves or updates complaint status and administrative notes with audit logging.
+    """
+    def get_permissions(self):
+        return [IsXentroAdmin()]
+
+    def get(self, request, ticket_id):
+        tickets_col = get_collection("support_tickets")
+        ticket = tickets_col.find_one({"id": ticket_id})
+        if not ticket:
+            return api_error("Complaint ticket not found.", status_code=404)
+        ticket.pop("_id", None)
+        return api_success({"complaint": ticket})
+
+    def patch(self, request, ticket_id):
+        tickets_col = get_collection("support_tickets")
+        ticket = tickets_col.find_one({"id": ticket_id})
+        if not ticket:
+            return api_error("Complaint ticket not found.", status_code=404)
+
+        admin_id = getattr(request.user, "admin_employee_id", "ADMIN")
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        new_status = request.data.get("status")
+        admin_notes = request.data.get("adminNotes")
+        resolution_comment = request.data.get("resolutionComment")
+        priority = request.data.get("priority")
+
+        updates = {"updatedAt": now_iso}
+        if new_status:
+            clean_status = str(new_status).strip().upper()
+            if clean_status in ["PENDING", "IN_REVIEW", "RESOLVED", "DISMISSED"]:
+                updates["status"] = clean_status
+                if clean_status in ["RESOLVED", "DISMISSED"]:
+                    updates["resolvedAt"] = now_iso
+                    updates["resolvedBy"] = admin_id
+        if admin_notes is not None:
+            updates["adminNotes"] = str(admin_notes).strip()
+        if resolution_comment is not None:
+            updates["resolutionComment"] = str(resolution_comment).strip()
+        if priority:
+            updates["priority"] = str(priority).strip().upper()
+
+        log_audit_event(
+            admin_id=admin_id,
+            action="COMPLAINT_STATUS_UPDATED",
+            object_type="SUPPORT_TICKET",
+            object_id=ticket_id,
+            previous_state={"status": ticket.get("status"), "adminNotes": ticket.get("adminNotes")},
+            reason=f"Status changed to {updates.get('status', ticket.get('status'))}"
+        )
+
+        tickets_col.update_one({"id": ticket_id}, {"$set": updates})
+        updated = tickets_col.find_one({"id": ticket_id})
+        updated.pop("_id", None)
+
+        return api_success({"complaint": updated}, "Complaint status updated successfully.")
+
+    def put(self, request, ticket_id):
+        return self.patch(request, ticket_id)
+
+
+class AdminFeedListView(APIView):
+    """
+    GET /api/v1/admin/feed/
+    Enables authorized administrators to review all ecosystem feed posts and post metadata.
+    """
+    def get_permissions(self):
+        return [IsXentroAdmin()]
+
+    def get(self, request):
+        feed_col = get_collection("feed_posts")
+        likes_col = get_collection("post_likes")
+        comments_col = get_collection("post_comments")
+        users_col = get_collection("users")
+
+        search = (request.query_params.get("search") or "").strip().lower()
+
+        posts = list(feed_col.find(
+            {"is_deleted": {"$ne": True}, "deleted": {"$ne": True}, "status": {"$nin": ["DELETED", "ARCHIVED"]}},
+            sort=[("createdAt", -1)],
+            limit=100
+        ))
+
+        clean = []
+        for p in posts:
+            p.pop("_id", None)
+            post_id = p.get("id")
+
+            # Enrich author info
+            author_id = p.get("authorId")
+            u_doc = None
+            if author_id:
+                u_doc = users_col.find_one({"id": author_id})
+
+            author_name = (u_doc.get("fullName") or u_doc.get("username") if u_doc else p.get("authorName")) or "Ecosystem Member"
+            author_role = (u_doc.get("role") or u_doc.get("accountType") if u_doc else p.get("authorRole")) or "Ecosystem Member"
+            author_company = (u_doc.get("startupName") or u_doc.get("organization") if u_doc else p.get("authorCompany")) or ""
+            author_avatar = (u_doc.get("avatar") if u_doc else p.get("authorAvatar")) or f"https://api.dicebear.com/7.x/initials/svg?seed={author_name}"
+
+            p["authorName"] = author_name
+            p["authorRole"] = author_role
+            p["authorCompany"] = author_company
+            p["authorAvatar"] = author_avatar
+            p["authorId"] = author_id or p.get("authorId", "")
+            p["likesCount"] = likes_col.count_documents({"postId": post_id})
+            comments = list(comments_col.find({"postId": post_id}, sort=[("createdAt", 1)]))
+            for c in comments:
+                c.pop("_id", None)
+            p["commentsList"] = comments
+            p["commentsCount"] = len(comments)
+
+            if search:
+                haystack = f"{p.get('id', '')} {p.get('content', '')} {author_name} {author_role} {' '.join(p.get('tags', []))}".lower()
+                if search not in haystack:
+                    continue
+
+            clean.append(p)
+
+        return api_success({
+            "posts": clean,
+            "total": len(clean),
+            "totalPlatformPosts": feed_col.count_documents({"is_deleted": {"$ne": True}})
+        })
+
+
+class AdminFeedPostDeleteView(APIView):
+    """
+    DELETE /api/v1/admin/feed/<str:post_id>/
+    Allows authorized administrators to moderate and delete feed posts.
+    """
+    def get_permissions(self):
+        return [IsXentroAdmin()]
+
+    def delete(self, request, post_id):
+        feed_col = get_collection("feed_posts")
+        post = feed_col.find_one({"id": post_id})
+        if not post:
+            return api_error("Post not found.", status_code=404)
+
+        admin_id = getattr(request.user, "admin_employee_id", "ADMIN")
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        log_audit_event(
+            admin_id=admin_id,
+            action="FEED_POST_DELETED",
+            object_type="FEED_POST",
+            object_id=post_id,
+            previous_state={"id": post_id, "authorId": post.get("authorId"), "contentSnippet": str(post.get("content", ""))[:80]},
+            reason=request.data.get("reason", "Inappropriate content or policy violation.")
+        )
+
+        feed_col.update_one(
+            {"id": post_id},
+            {"$set": {
+                "is_deleted": True,
+                "deleted": True,
+                "status": "DELETED",
+                "deletedAt": now_iso,
+                "deletedBy": admin_id
+            }}
+        )
+
+        return api_success({"deletedPostId": post_id}, "Post moderated and removed successfully.")
+

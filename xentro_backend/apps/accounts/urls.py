@@ -15,6 +15,7 @@ from .views import (
     UserRecommendationsView,
     UserProfileDetailView,
     UpdateUserProfileView,
+    UserSupportComplaintView,
 )
 
 urlpatterns = [
@@ -36,4 +37,6 @@ urlpatterns = [
     path("users/recommendations/", UserRecommendationsView.as_view(), name="user_recommendations"),
     path("users/<str:user_id>/profile/", UserProfileDetailView.as_view(), name="user_profile_detail"),
     path("users/<str:user_id>/", UserProfileDetailView.as_view(), name="user_detail"),
+    path("support/complaints/", UserSupportComplaintView.as_view(), name="user_support_complaints"),
+    path("support/tickets/", UserSupportComplaintView.as_view(), name="user_support_tickets"),
 ]

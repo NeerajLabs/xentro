@@ -1588,3 +1588,94 @@ class UpdateUserProfileView(APIView):
         return self.post(request)
 
 
+class UserSupportComplaintView(APIView):
+    """
+    POST /api/v1/support/complaints/
+    GET  /api/v1/support/complaints/
+    Handles user complaint and support requests submission and personal retrieval.
+    Users can only access their own submissions.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        user_id = (
+            request.headers.get("X-User-Id")
+            or request.data.get("userId")
+            or request.data.get("accountId")
+            or (getattr(request.user, "id", None) if getattr(request.user, "is_authenticated", False) else None)
+        )
+        if not user_id:
+            return api_error("Authenticated user identification is required to submit a complaint.", status_code=401)
+
+        user_id = str(user_id).strip()
+        users_col = get_collection("users")
+        u_doc = users_col.find_one({"id": user_id})
+
+        subject = str(request.data.get("subject", "")).strip()
+        message = str(request.data.get("message", "")).strip()
+        category = str(request.data.get("category", "General Support")).strip()
+        priority = str(request.data.get("priority", "NORMAL")).strip().upper()
+
+        if not subject or not message:
+            return api_error("Both subject and message are required to file a complaint/support request.", status_code=400)
+
+        user_name = (u_doc.get("fullName") or u_doc.get("username") if u_doc else request.data.get("userName")) or "Ecosystem Member"
+        user_email = (u_doc.get("email") if u_doc else request.data.get("userEmail")) or ""
+        user_role = (u_doc.get("role") or u_doc.get("accountType") if u_doc else request.data.get("userRole")) or "Explorer"
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        ticket_id = generate_xentro_id("complaint")
+
+        ticket_doc = {
+            "id": ticket_id,
+            "accountId": user_id,
+            "userId": user_id,
+            "userName": user_name,
+            "userEmail": user_email,
+            "userRole": user_role,
+            "subject": subject,
+            "category": category,
+            "priority": priority if priority in ["LOW", "NORMAL", "HIGH", "URGENT"] else "NORMAL",
+            "message": message,
+            "status": "PENDING",  # PENDING | IN_REVIEW | RESOLVED | DISMISSED
+            "adminNotes": "",
+            "resolutionComment": "",
+            "submittedAt": now_iso,
+            "createdAt": now_iso,
+            "updatedAt": now_iso,
+        }
+
+        tickets_col = get_collection("support_tickets")
+        tickets_col.insert_one(ticket_doc)
+        ticket_doc.pop("_id", None)
+
+        return api_success({
+            "ticket": ticket_doc,
+            "referenceId": ticket_id,
+            "status": "PENDING"
+        }, f"Support request #{ticket_id} submitted successfully. Our team will review your case shortly.", status_code=201)
+
+    def get(self, request):
+        user_id = (
+            request.headers.get("X-User-Id")
+            or request.query_params.get("userId")
+            or request.query_params.get("accountId")
+            or (getattr(request.user, "id", None) if getattr(request.user, "is_authenticated", False) else None)
+        )
+        if not user_id:
+            return api_error("User identification is required.", status_code=401)
+
+        user_id = str(user_id).strip()
+        tickets_col = get_collection("support_tickets")
+        # Enforce strict user isolation: only fetch submissions belonging to this accountId
+        user_tickets = list(tickets_col.find({"accountId": user_id}, sort=[("createdAt", -1)]))
+        for t in user_tickets:
+            t.pop("_id", None)
+
+        return api_success({
+            "tickets": user_tickets,
+            "count": len(user_tickets)
+        })
+
+
+

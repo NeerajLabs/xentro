@@ -11,7 +11,11 @@ from .views import (
     AdminUsersListView,
     AdminUserDetailView,
     AdminEntitiesListView,
-    AdminEntityDeleteView
+    AdminEntityDeleteView,
+    AdminComplaintsListView,
+    AdminComplaintDetailView,
+    AdminFeedListView,
+    AdminFeedPostDeleteView,
 )
 
 urlpatterns = [
@@ -27,4 +31,8 @@ urlpatterns = [
     path("admin/registration-requests/<str:user_id>/action/", AdminRegistrationActionView.as_view(), name="admin_registration_action"),
     path("admin/roles/", AdminRolesListView.as_view(), name="admin_roles_list"),
     path("admin/switch-role/", AdminSwitchRoleView.as_view(), name="admin_switch_role"),
+    path("admin/complaints/", AdminComplaintsListView.as_view(), name="admin_complaints_list"),
+    path("admin/complaints/<str:ticket_id>/", AdminComplaintDetailView.as_view(), name="admin_complaint_detail"),
+    path("admin/feed/", AdminFeedListView.as_view(), name="admin_feed_list"),
+    path("admin/feed/<str:post_id>/", AdminFeedPostDeleteView.as_view(), name="admin_feed_post_delete"),
 ]

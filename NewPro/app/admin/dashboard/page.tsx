@@ -14,6 +14,8 @@ import { AdminVerificationView } from '@/components/admin/AdminVerificationView'
 import { AdminMembershipsView } from '@/components/admin/AdminMembershipsView';
 import { AdminRelationshipsView } from '@/components/admin/AdminRelationshipsView';
 import { AdminOpportunitiesView } from '@/components/admin/AdminOpportunitiesView';
+import { AdminComplaintsView } from '@/components/admin/AdminComplaintsView';
+import { AdminFeedView } from '@/components/admin/AdminFeedView';
 import { AdminModerationSafetyView } from '@/components/admin/AdminModerationSafetyView';
 import { AdminFinanceBillingView } from '@/components/admin/AdminFinanceBillingView';
 import { AdminDocumentsView } from '@/components/admin/AdminDocumentsView';
@@ -41,6 +43,8 @@ export default function AdminDashboardPage() {
       {currentTab === 'memberships' && <AdminMembershipsView />}
       {currentTab === 'relationships' && <AdminRelationshipsView />}
       {currentTab === 'opportunities' && <AdminOpportunitiesView />}
+      {currentTab === 'complaints' && <AdminComplaintsView />}
+      {currentTab === 'feed' && <AdminFeedView />}
       {currentTab === 'moderation' && <AdminModerationSafetyView />}
       {currentTab === 'finance' && <AdminFinanceBillingView />}
       {currentTab === 'documents' && <AdminDocumentsView />}

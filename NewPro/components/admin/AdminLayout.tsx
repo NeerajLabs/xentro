@@ -25,6 +25,7 @@ import {
   Lock,
   User,
   Building,
+  MessageSquare,
 } from 'lucide-react';
 import { AdminSession } from '@/types/admin';
 import { clearAdminSession, getAdminSession, createDefaultAdminSession } from '@/lib/adminAuth';
@@ -42,6 +43,8 @@ export type AdminTab =
   | 'memberships'
   | 'relationships'
   | 'opportunities'
+  | 'complaints'
+  | 'feed'
   | 'moderation'
   | 'finance'
   | 'documents'
@@ -162,6 +165,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     {
       group: 'Content & Communication',
       items: [
+        { id: 'complaints' as AdminTab, label: 'Complaints & Support', icon: LifeBuoy, badge: null },
+        { id: 'feed' as AdminTab, label: 'Ecosystem Feed Ops', icon: MessageSquare, badge: null },
         { id: 'moderation' as AdminTab, label: 'Moderation & Safety', icon: AlertTriangle, badge: null },
       ],
     },
@@ -218,6 +223,10 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         return { title: 'Relationships, Mentorships & Endorsements', subtitle: '11 granular relationship types, structured contracts, and endorsement broker' };
       case 'opportunities':
         return { title: 'Opportunities & AI Hub', subtitle: 'Grants, incubation cohorts, accelerators, and automated discovery pipeline' };
+      case 'complaints':
+        return { title: 'User Complaints & Support Centre', subtitle: 'Review user grievance submissions, account complaints, and issue status progression' };
+      case 'feed':
+        return { title: 'Ecosystem Feed Operations', subtitle: 'Authoritative post inspection, engagement metrics, media content, and moderation control' };
       case 'moderation':
         return { title: 'Trust, Safety & Moderation', subtitle: 'Feed report queues, imposter defense, harassment cases, and support tickets' };
       case 'finance':

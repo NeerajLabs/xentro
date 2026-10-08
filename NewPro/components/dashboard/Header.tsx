@@ -1,13 +1,14 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Search, Bell, X, Eye, Sun, Moon, LogOut, User as UserIcon, Sparkles, Rocket, TrendingUp, GraduationCap, Grid2X2, RotateCcw, Trash2 } from 'lucide-react';
+import { Search, Bell, X, Eye, Sun, Moon, LogOut, User as UserIcon, Sparkles, Rocket, TrendingUp, GraduationCap, Grid2X2, RotateCcw, Trash2, LifeBuoy } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { getUserProfile, UserProfile, UserRole, setActiveRole, GUEST_AVATAR, resetDemoData, getUserRegisteredRoles } from '@/lib/userProfile';
 import { logoutFromNewPro } from '@/lib/authGuard';
 import { isDevToolsEnabled } from '@/lib/devTools';
 import { notificationService, NOTIFICATIONS_UPDATED_EVENT, NotificationItem } from '@/lib/notificationService';
 import { CONVERSATIONS_UPDATED_EVENT } from '@/lib/messagingService';
+import { SupportModal } from './SupportModal';
 
 interface HeaderProps {
   searchQuery: string;
@@ -29,6 +30,7 @@ export const Header: React.FC<HeaderProps> = ({
   onViewPublicProfile,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showSupportModal, setShowSupportModal] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile>(getUserProfile());
   const [isDark, setIsDark] = useState(false);
@@ -201,6 +203,17 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Controls */}
       <div className="flex items-center gap-2 sm:gap-3">
+        {/* Support & Complaints Button (Blue-circled area beside theme toggle) */}
+        <button
+          onClick={() => setShowSupportModal(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#262A29] bg-white dark:bg-[#202422] text-[#101212] dark:text-[#D9FF3F] hover:bg-[#D9FF3F]/15 dark:hover:bg-[#D9FF3F]/20 hover:border-emerald-600 dark:hover:border-[#D9FF3F]/50 text-xs font-semibold transition-all duration-200 active:scale-95 shadow-2xs cursor-pointer group"
+          aria-label="Support & Complaints"
+          title="Open Support & Complaints Form"
+        >
+          <LifeBuoy className="w-4 h-4 text-emerald-700 dark:text-[#D9FF3F] transition-transform duration-200 group-hover:rotate-12" />
+          <span className="hidden sm:inline font-medium">Support</span>
+        </button>
+
         {/* Dark / Light Theme Toggle Button */}
         <button
           onClick={toggleTheme}
@@ -490,6 +503,9 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
       </div>
+
+      {/* Support & Complaints Modal */}
+      <SupportModal isOpen={showSupportModal} onClose={() => setShowSupportModal(false)} />
     </header>
   );
 };
