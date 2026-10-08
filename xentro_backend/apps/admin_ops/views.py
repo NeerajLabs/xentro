@@ -954,18 +954,23 @@ class AdminComplaintsListView(APIView):
 
     def get(self, request):
         tickets_col = get_collection("support_tickets")
-        status_filter = request.query_params.get("status")
+        status_filter = (request.query_params.get("status") or "").strip().upper()
         search = (request.query_params.get("search") or "").strip().lower()
 
         query = {}
-        if status_filter and status_filter.upper() != "ALL":
-            query["status"] = status_filter.upper()
+        if status_filter and status_filter != "ALL":
+            if status_filter in ["COMPLAINT_RECEIVED", "PENDING"]:
+                query["status"] = {"$in": ["COMPLAINT_RECEIVED", "PENDING"]}
+            elif status_filter in ["UNDER_INVESTIGATION", "IN_REVIEW"]:
+                query["status"] = {"$in": ["UNDER_INVESTIGATION", "IN_REVIEW"]}
+            elif status_filter in ["RESOLVED", "DISMISSED"]:
+                query["status"] = status_filter
 
         raw_tickets = list(tickets_col.find(query, sort=[("createdAt", -1)]))
         results = []
 
-        total_pending = tickets_col.count_documents({"status": "PENDING"})
-        total_in_review = tickets_col.count_documents({"status": "IN_REVIEW"})
+        total_pending = tickets_col.count_documents({"status": {"$in": ["COMPLAINT_RECEIVED", "PENDING"]}})
+        total_in_review = tickets_col.count_documents({"status": {"$in": ["UNDER_INVESTIGATION", "IN_REVIEW"]}})
         total_resolved = tickets_col.count_documents({"status": "RESOLVED"})
         total_dismissed = tickets_col.count_documents({"status": "DISMISSED"})
         total_all = tickets_col.count_documents({})
@@ -984,7 +989,9 @@ class AdminComplaintsListView(APIView):
             "counts": {
                 "all": total_all,
                 "pending": total_pending,
+                "complaintReceived": total_pending,
                 "inReview": total_in_review,
+                "underInvestigation": total_in_review,
                 "resolved": total_resolved,
                 "dismissed": total_dismissed
             }
@@ -1022,14 +1029,28 @@ class AdminComplaintDetailView(APIView):
         resolution_comment = request.data.get("resolutionComment")
         priority = request.data.get("priority")
 
-        updates = {"updatedAt": now_iso}
+        updates = {
+            "updatedAt": now_iso,
+            "updatedBy": admin_id
+        }
+
         if new_status:
             clean_status = str(new_status).strip().upper()
-            if clean_status in ["PENDING", "IN_REVIEW", "RESOLVED", "DISMISSED"]:
-                updates["status"] = clean_status
-                if clean_status in ["RESOLVED", "DISMISSED"]:
+            status_map = {
+                "PENDING": "COMPLAINT_RECEIVED",
+                "COMPLAINT_RECEIVED": "COMPLAINT_RECEIVED",
+                "IN_REVIEW": "UNDER_INVESTIGATION",
+                "UNDER_INVESTIGATION": "UNDER_INVESTIGATION",
+                "RESOLVED": "RESOLVED",
+                "DISMISSED": "DISMISSED",
+            }
+            if clean_status in status_map:
+                canonical = status_map[clean_status]
+                updates["status"] = canonical
+                if canonical in ["RESOLVED", "DISMISSED"]:
                     updates["resolvedAt"] = now_iso
                     updates["resolvedBy"] = admin_id
+
         if admin_notes is not None:
             updates["adminNotes"] = str(admin_notes).strip()
         if resolution_comment is not None:
@@ -1043,7 +1064,7 @@ class AdminComplaintDetailView(APIView):
             object_type="SUPPORT_TICKET",
             object_id=ticket_id,
             previous_state={"status": ticket.get("status"), "adminNotes": ticket.get("adminNotes")},
-            reason=f"Status changed to {updates.get('status', ticket.get('status'))}"
+            reason=f"Status changed to {updates.get('status', ticket.get('status'))} by {admin_id}"
         )
 
         tickets_col.update_one({"id": ticket_id}, {"$set": updates})

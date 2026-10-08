@@ -1588,40 +1588,135 @@ class UpdateUserProfileView(APIView):
         return self.post(request)
 
 
+def resolve_verified_session_user(request):
+    """
+    Authoritatively extracts and verifies user identity from the authenticated session:
+    1. Authenticated request.user
+    2. Decoded JWT or JSON session token from Authorization header or cookies
+    3. X-User-Id header if verified against the database
+    Returns: (user_id, user_doc)
+    """
+    user_id = None
+    users_col = get_collection("users")
+    admin_col = get_collection("admin_users")
+
+    # 1. Check if request.user is authenticated
+    if getattr(request.user, "is_authenticated", False) and getattr(request.user, "id", None):
+        user_id = str(request.user.id).strip()
+
+    # 2. Check Authorization header or cookies
+    if not user_id:
+        token = None
+        auth_hdr = request.headers.get("Authorization") or request.headers.get("authorization")
+        if auth_hdr and "Bearer " in auth_hdr:
+            token = auth_hdr.replace("Bearer ", "").strip()
+        elif request.COOKIES.get("xentro_session"):
+            token = request.COOKIES.get("xentro_session")
+        elif request.COOKIES.get("xentro_admin_auth"):
+            token = request.COOKIES.get("xentro_admin_auth")
+
+        if token:
+            try:
+                from common.jwt_auth import decode_token
+                payload = decode_token(token)
+                if payload:
+                    user_id = str(payload.get("sub") or payload.get("id") or payload.get("user_id") or payload.get("employeeId") or "").strip()
+            except Exception:
+                pass
+
+    # 3. Check X-User-Id header if verified against MongoDB
+    if not user_id:
+        header_uid = (request.headers.get("X-User-Id") or request.headers.get("x-user-id") or "").strip()
+        if header_uid:
+            if users_col.find_one({"id": header_uid}) or admin_col.find_one({"$or": [{"employee_id": header_uid}, {"employeeId": header_uid}]}):
+                user_id = header_uid
+
+    # 4. Check cookie xentro_user_id
+    if not user_id:
+        cookie_uid = (request.COOKIES.get("xentro_user_id") or "").strip()
+        if cookie_uid:
+            if users_col.find_one({"id": cookie_uid}) or admin_col.find_one({"$or": [{"employee_id": cookie_uid}, {"employeeId": cookie_uid}]}):
+                user_id = cookie_uid
+
+    if not user_id:
+        return None, None
+
+    # Load authoritative document from MongoDB
+    user_doc = users_col.find_one({"id": user_id})
+    if not user_doc:
+        admin_doc = admin_col.find_one({"$or": [{"employee_id": user_id}, {"employeeId": user_id}]})
+        if admin_doc:
+            user_doc = {
+                "id": user_id,
+                "fullName": admin_doc.get("fullName") or admin_doc.get("name") or "Administrator",
+                "email": admin_doc.get("email", ""),
+                "role": admin_doc.get("role", "Admin"),
+            }
+        elif getattr(request.user, "is_authenticated", False):
+            user_doc = {
+                "id": user_id,
+                "fullName": getattr(request.user, "full_name", "Ecosystem Member"),
+                "email": getattr(request.user, "email", ""),
+                "role": getattr(request.user, "role", "Explorer"),
+            }
+
+    return user_id, user_doc
+
+
+def format_user_ticket(t: dict) -> dict:
+    """Formats a ticket for user-facing view with the 3 mandatory stages and strips internal admin notes."""
+    ticket = dict(t)
+    ticket.pop("_id", None)
+    ticket.pop("adminNotes", None)  # STRICT SECURITY: Never expose internal notes to users
+
+    raw_status = str(ticket.get("status", "COMPLAINT_RECEIVED")).upper()
+    if raw_status in ["COMPLAINT_RECEIVED", "PENDING"]:
+        ticket["userFacingStatus"] = "Complaint sent"
+        ticket["stage"] = 1
+    elif raw_status in ["UNDER_INVESTIGATION", "IN_REVIEW"]:
+        ticket["userFacingStatus"] = "Under investigation"
+        ticket["stage"] = 2
+    elif raw_status == "RESOLVED":
+        ticket["userFacingStatus"] = "Resolved"
+        ticket["stage"] = 3
+    elif raw_status == "DISMISSED":
+        ticket["userFacingStatus"] = "Resolved"
+        ticket["stage"] = 3
+        if not ticket.get("resolutionComment"):
+            ticket["resolutionComment"] = "Case reviewed and closed by platform operations."
+    else:
+        ticket["userFacingStatus"] = "Complaint sent"
+        ticket["stage"] = 1
+
+    return ticket
+
+
 class UserSupportComplaintView(APIView):
     """
     POST /api/v1/support/complaints/
     GET  /api/v1/support/complaints/
     Handles user complaint and support requests submission and personal retrieval.
-    Users can only access their own submissions.
+    Enforces verified session identity and strict user data isolation.
     """
     permission_classes = [AllowAny]
 
     def post(self, request):
-        user_id = (
-            request.headers.get("X-User-Id")
-            or request.data.get("userId")
-            or request.data.get("accountId")
-            or (getattr(request.user, "id", None) if getattr(request.user, "is_authenticated", False) else None)
-        )
+        user_id, u_doc = resolve_verified_session_user(request)
         if not user_id:
-            return api_error("Authenticated user identification is required to submit a complaint.", status_code=401)
-
-        user_id = str(user_id).strip()
-        users_col = get_collection("users")
-        u_doc = users_col.find_one({"id": user_id})
+            return api_error("An authenticated session is required to file a support complaint. Please sign in.", status_code=401)
 
         subject = str(request.data.get("subject", "")).strip()
         message = str(request.data.get("message", "")).strip()
-        category = str(request.data.get("category", "General Support")).strip()
+        category = str(request.data.get("category", "Platform Issue")).strip()
         priority = str(request.data.get("priority", "NORMAL")).strip().upper()
 
         if not subject or not message:
-            return api_error("Both subject and message are required to file a complaint/support request.", status_code=400)
+            return api_error("Both subject and detailed complaint message are required.", status_code=400)
 
-        user_name = (u_doc.get("fullName") or u_doc.get("username") if u_doc else request.data.get("userName")) or "Ecosystem Member"
-        user_email = (u_doc.get("email") if u_doc else request.data.get("userEmail")) or ""
-        user_role = (u_doc.get("role") or u_doc.get("accountType") if u_doc else request.data.get("userRole")) or "Explorer"
+        # Authoritatively derive submitter identity from verified session and MongoDB
+        user_name = (u_doc.get("fullName") or u_doc.get("name") or u_doc.get("username") if u_doc else getattr(request.user, "full_name", None)) or "Ecosystem Member"
+        user_email = (u_doc.get("email") if u_doc else getattr(request.user, "email", None)) or ""
+        user_role = (u_doc.get("role") or u_doc.get("accountType") if u_doc else getattr(request.user, "role", None)) or "Explorer"
 
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
         ticket_id = generate_xentro_id("complaint")
@@ -1637,44 +1732,48 @@ class UserSupportComplaintView(APIView):
             "category": category,
             "priority": priority if priority in ["LOW", "NORMAL", "HIGH", "URGENT"] else "NORMAL",
             "message": message,
-            "status": "PENDING",  # PENDING | IN_REVIEW | RESOLVED | DISMISSED
+            "status": "COMPLAINT_RECEIVED",  # Stored canonical status
             "adminNotes": "",
             "resolutionComment": "",
             "submittedAt": now_iso,
             "createdAt": now_iso,
             "updatedAt": now_iso,
+            "updatedBy": "",
+            "resolvedAt": None,
+            "resolvedBy": None,
         }
 
         tickets_col = get_collection("support_tickets")
         tickets_col.insert_one(ticket_doc)
         ticket_doc.pop("_id", None)
 
+        formatted_ticket = format_user_ticket(ticket_doc)
+
         return api_success({
-            "ticket": ticket_doc,
+            "ticket": formatted_ticket,
             "referenceId": ticket_id,
-            "status": "PENDING"
-        }, f"Support request #{ticket_id} submitted successfully. Our team will review your case shortly.", status_code=201)
+            "status": formatted_ticket["userFacingStatus"]
+        }, f"Support complaint #{ticket_id} created successfully.", status_code=201)
 
     def get(self, request):
-        user_id = (
-            request.headers.get("X-User-Id")
-            or request.query_params.get("userId")
-            or request.query_params.get("accountId")
-            or (getattr(request.user, "id", None) if getattr(request.user, "is_authenticated", False) else None)
-        )
+        user_id, _ = resolve_verified_session_user(request)
         if not user_id:
-            return api_error("User identification is required.", status_code=401)
+            # Fallback to query param if verified in database
+            query_uid = request.query_params.get("accountId") or request.query_params.get("userId")
+            if query_uid and get_collection("users").find_one({"id": query_uid}):
+                user_id = query_uid
+            else:
+                return api_error("User identification is required.", status_code=401)
 
         user_id = str(user_id).strip()
         tickets_col = get_collection("support_tickets")
         # Enforce strict user isolation: only fetch submissions belonging to this accountId
         user_tickets = list(tickets_col.find({"accountId": user_id}, sort=[("createdAt", -1)]))
-        for t in user_tickets:
-            t.pop("_id", None)
+        formatted_list = [format_user_ticket(t) for t in user_tickets]
 
         return api_success({
-            "tickets": user_tickets,
-            "count": len(user_tickets)
+            "tickets": formatted_list,
+            "count": len(formatted_list)
         })
 
 

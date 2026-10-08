@@ -17,6 +17,9 @@ export async function POST(req: NextRequest) {
     const xUserId = req.headers.get('x-user-id');
     if (xUserId) headers['X-User-Id'] = xUserId;
 
+    const cookieHeader = req.headers.get('cookie');
+    if (cookieHeader) headers['Cookie'] = cookieHeader;
+
     const res = await fetch(`${backendBase}/support/complaints/`, {
       method: 'POST',
       headers,
@@ -41,6 +44,9 @@ export async function GET(req: NextRequest) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const xUserId = req.headers.get('x-user-id') || searchParams.get('userId') || searchParams.get('accountId');
     if (xUserId) headers['X-User-Id'] = xUserId;
+
+    const cookieHeader = req.headers.get('cookie');
+    if (cookieHeader) headers['Cookie'] = cookieHeader;
 
     const url = new URL(`${backendBase}/support/complaints/`);
     searchParams.forEach((val, key) => url.searchParams.set(key, val));
