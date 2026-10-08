@@ -133,7 +133,20 @@ class ConversationsListView(APIView):
         ))
         clean = []
 
+        seen_pair_keys = set()
+        deduped_convs = []
         for c in convs:
+            participants = c.get("participants", [])
+            if len(participants) >= 2:
+                pk = make_pair_key(participants[0], participants[1])
+            else:
+                pk = (c.get("pair_key") or c.get("id") or "").lower()
+            if pk in seen_pair_keys:
+                continue
+            seen_pair_keys.add(pk)
+            deduped_convs.append(c)
+
+        for c in deduped_convs:
             c.pop("_id", None)
             participants = c.get("participants", [])
 

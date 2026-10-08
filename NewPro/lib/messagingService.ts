@@ -654,7 +654,27 @@ export const messagingService = {
       });
     }
 
-    return result;
+    // Deduplicate conversations so the user never sees two threads for the same person
+    // Prioritize conversation threads that have actual messages over empty ones
+    result.sort((a, b) => {
+      const aHasMsgs = (a.messages?.length || 0) > 0;
+      const bHasMsgs = (b.messages?.length || 0) > 0;
+      if (aHasMsgs !== bHasMsgs) return aHasMsgs ? -1 : 1;
+      return 0;
+    });
+
+    const dedupedResult: Conversation[] = [];
+    const seenPartners = new Set<string>();
+    for (const conv of result) {
+      const partnerKey = (conv.user?.name || conv.user?.id || '').toLowerCase().trim();
+      if (!partnerKey || seenPartners.has(partnerKey)) {
+        continue;
+      }
+      seenPartners.add(partnerKey);
+      dedupedResult.push(conv);
+    }
+
+    return dedupedResult;
   },
 
   getUnreadCount(): number {
@@ -682,8 +702,8 @@ export const messagingService = {
       return '';
     }
 
-    // Standardized pair key: sorted by ID
-    const sortedPair = [currentNorm, partnerNorm].sort();
+    // Standardized pair key: sorted by ID in lowercase
+    const sortedPair = [currentNorm.toLowerCase(), partnerNorm.toLowerCase()].sort();
     const convId = `conv_${sortedPair[0]}_${sortedPair[1]}`;
 
     const partnerAvatar = resolveAvatarUrl(partner.avatar, partner.name);
