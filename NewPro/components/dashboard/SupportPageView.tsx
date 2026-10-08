@@ -376,8 +376,8 @@ export const SupportPageView: React.FC<SupportPageViewProps> = ({
         data = { success: res.ok, message: text || res.statusText };
       }
 
-      if (res.ok && (data?.success || Array.isArray(data?.data?.tickets))) {
-        const tickets: SupportTicket[] = data?.data?.tickets || [];
+      if (res.ok && (data?.success || Array.isArray(data?.data?.tickets) || Array.isArray(data?.tickets))) {
+        const tickets: SupportTicket[] = data?.data?.tickets || data?.tickets || [];
         setHistoryError(null);
         setHistory((prev) => {
           // Check if any ticket's status was updated to notify user smoothly
