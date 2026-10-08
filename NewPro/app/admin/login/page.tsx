@@ -81,26 +81,6 @@ export default function AdminLoginPage() {
     }
   };
 
-  const handleQuickLogin = async (empId: string, pass: string) => {
-    setEmployeeId(empId);
-    setPassword(pass);
-    setErrorMsg(null);
-    setLoading(true);
-    try {
-      const session = await verifyAdminCredentials(empId, pass);
-      if (session) {
-        setAdminSession(session);
-        router.push('/admin/dashboard');
-      } else {
-        setErrorMsg('Invalid Employee ID or Security Passphrase.');
-      }
-    } catch {
-      setErrorMsg('An authentication error occurred.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   return (
     <div className="min-h-screen bg-[#F7F8F6] dark:bg-[#0D0F0F] flex flex-col justify-between p-4 sm:p-6 transition-colors duration-200">
       {/* Top Header Bar */}
@@ -184,7 +164,7 @@ export default function AdminLoginPage() {
                       required
                       value={employeeId}
                       onChange={(e) => setEmployeeId(e.target.value)}
-                      placeholder="e.g. 9922953"
+                      placeholder="Enter administrative ID"
                       className="w-full h-11 pl-10 pr-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] focus:border-[#D9FF3F] text-xs font-mono text-[#101212] dark:text-white placeholder-[#8E9390] outline-hidden transition-all"
                     />
                   </div>
@@ -228,40 +208,6 @@ export default function AdminLoginPage() {
                     </>
                   )}
                 </button>
-
-                {/* Instant 1-Click Login for Fast Review */}
-                <div className="pt-3 border-t border-gray-100 dark:border-[#262A29] space-y-2">
-                  <span className="text-[10px] font-mono uppercase tracking-wider text-[#6E7370] dark:text-[#8E9390] block text-center">
-                    Instant Demo Login (1-Click)
-                  </span>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => handleQuickLogin('9922953', 'Kar04052003')}
-                      className="p-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-[#202422] dark:hover:bg-[#262A29] border border-gray-200 dark:border-[#262A29] text-left transition-all group cursor-pointer"
-                    >
-                      <div className="text-[11px] font-bold text-[#101212] dark:text-white group-hover:text-emerald-600 dark:group-hover:text-[#D9FF3F]">
-                        Super Admin
-                      </div>
-                      <div className="text-[9px] font-mono text-[#6E7370] dark:text-[#8E9390]">
-                        Karunya (#9922953)
-                      </div>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => handleQuickLogin('8121417', 'Sra231206')}
-                      className="p-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-[#202422] dark:hover:bg-[#262A29] border border-gray-200 dark:border-[#262A29] text-left transition-all group cursor-pointer"
-                    >
-                      <div className="text-[11px] font-bold text-[#101212] dark:text-white group-hover:text-emerald-600 dark:group-hover:text-[#D9FF3F]">
-                        Security Admin
-                      </div>
-                      <div className="text-[9px] font-mono text-[#6E7370] dark:text-[#8E9390]">
-                        Sravan (#8121417)
-                      </div>
-                    </button>
-                  </div>
-                </div>
               </form>
 
               <div className="pt-2 text-center">

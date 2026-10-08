@@ -667,7 +667,7 @@ export default function SignInPage() {
                     <AuthInput
                       label="Employee ID or Admin Identifier"
                       type="text"
-                      placeholder="e.g. 9922953 or 8121417"
+                      placeholder="Enter administrative ID"
                       value={employeeId}
                       onChange={(e) => setEmployeeId(e.target.value)}
                       required
@@ -680,48 +680,6 @@ export default function SignInPage() {
                       onChange={(e) => setAdminPassword(e.target.value)}
                       required
                     />
-
-                    {/* Instant 1-Click Demo Buttons for Fast Testing */}
-                    <div className="pt-2">
-                      <span className="text-[10px] font-mono uppercase tracking-wider text-[#6E7370] dark:text-[#8E9390] block mb-2">
-                        Instant Admin Quick-Access (1-Click)
-                      </span>
-                      <div className="grid grid-cols-2 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEmployeeId("9922953");
-                            setAdminPassword("Kar04052003");
-                            executeAdminLogin("9922953", "Kar04052003");
-                          }}
-                          className="p-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-[#202422] dark:hover:bg-[#262A29] border border-gray-200 dark:border-[#262A29] text-left transition-all group cursor-pointer"
-                        >
-                          <div className="text-[11px] font-bold text-[#101212] dark:text-white group-hover:text-emerald-600 dark:group-hover:text-[#D9FF3F]">
-                            Super Admin
-                          </div>
-                          <div className="text-[9px] font-mono text-[#6E7370] dark:text-[#8E9390]">
-                            Karunya (#9922953)
-                          </div>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEmployeeId("8121417");
-                            setAdminPassword("Sra231206");
-                            executeAdminLogin("8121417", "Sra231206");
-                          }}
-                          className="p-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-[#202422] dark:hover:bg-[#262A29] border border-gray-200 dark:border-[#262A29] text-left transition-all group cursor-pointer"
-                        >
-                          <div className="text-[11px] font-bold text-[#101212] dark:text-white group-hover:text-emerald-600 dark:group-hover:text-[#D9FF3F]">
-                            Security Admin
-                          </div>
-                          <div className="text-[9px] font-mono text-[#6E7370] dark:text-[#8E9390]">
-                            Sravan (#8121417)
-                          </div>
-                        </button>
-                      </div>
-                    </div>
                   </>
                 )}
 
