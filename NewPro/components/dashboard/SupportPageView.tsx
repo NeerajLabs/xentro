@@ -288,6 +288,7 @@ export const SupportPageView: React.FC<SupportPageViewProps> = ({
   // Ticket History State
   const [history, setHistory] = useState<SupportTicket[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   useEffect(() => {
     const identity = getActiveSessionIdentity();
@@ -367,9 +368,17 @@ export const SupportPageView: React.FC<SupportPageViewProps> = ({
         cache: 'no-store'
       });
 
-      if (res.ok) {
-        const data = await res.json();
+      const text = await res.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { success: res.ok, message: text || res.statusText };
+      }
+
+      if (res.ok && (data?.success || Array.isArray(data?.data?.tickets))) {
         const tickets: SupportTicket[] = data?.data?.tickets || [];
+        setHistoryError(null);
         setHistory((prev) => {
           // Check if any ticket's status was updated to notify user smoothly
           if (silent && prev.length > 0) {
@@ -382,9 +391,16 @@ export const SupportPageView: React.FC<SupportPageViewProps> = ({
           }
           return tickets;
         });
+      } else {
+        if (!silent) {
+          setHistoryError(data?.message || data?.detail || 'Failed to retrieve support tickets from database.');
+        }
       }
-    } catch (e) {
-      if (!silent) console.warn('Failed to fetch support history:', e);
+    } catch (e: any) {
+      if (!silent) {
+        console.warn('Failed to fetch support history:', e);
+        setHistoryError(e?.message || 'Network error while retrieving support tickets.');
+      }
     } finally {
       if (!silent) setIsLoadingHistory(false);
     }
@@ -840,7 +856,22 @@ export const SupportPageView: React.FC<SupportPageViewProps> = ({
             </button>
           </div>
 
-          {history.length === 0 ? (
+          {historyError ? (
+            <div className="py-12 px-6 text-center text-xs text-[#8E9290] space-y-3 bg-red-500/5 dark:bg-red-500/10 border border-red-500/20 rounded-2xl shadow-subtle">
+              <AlertCircle className="w-10 h-10 mx-auto text-red-500" />
+              <p className="font-bold text-sm text-red-600 dark:text-red-400">Unable to Load Support Tickets</p>
+              <p className="text-xs text-[#565B59] dark:text-[#A0A4A2] max-w-sm mx-auto">
+                {historyError}
+              </p>
+              <button
+                onClick={() => fetchHistory(undefined, false)}
+                className="px-4 py-2 rounded-xl bg-white dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#2E3331] text-[#101212] dark:text-white text-xs font-bold transition-all shadow-xs cursor-pointer inline-flex items-center gap-1.5 hover:bg-gray-50 dark:hover:bg-[#282C2A]"
+              >
+                <RefreshCw className="w-4 h-4 text-emerald-800 dark:text-[#D9FF3F]" />
+                <span>Retry Connection</span>
+              </button>
+            </div>
+          ) : history.length === 0 ? (
             <div className="py-16 text-center text-xs text-[#8E9290] space-y-3 bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-2xl shadow-subtle">
               <FileText className="w-10 h-10 mx-auto text-[#8E9290]/40" />
               <p className="font-bold text-sm text-[#101212] dark:text-white">No tickets filed yet</p>

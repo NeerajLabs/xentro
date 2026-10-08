@@ -1,6 +1,8 @@
 """
 XENTRO Accounts & User Registration API
 """
+import os
+import re
 import bcrypt
 import datetime
 from rest_framework.views import APIView
@@ -1815,7 +1817,6 @@ class UserSupportComplaintView(APIView):
 
         if not user_id and query_uid:
             user_id = str(query_uid).strip()
-            u_doc = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
 
         if not user_id and query_email:
             query_email = str(query_email).strip().lower()
@@ -1829,14 +1830,36 @@ class UserSupportComplaintView(APIView):
             return api_error("User identification is required.", status_code=401)
 
         user_id = str(user_id).strip()
+        if not u_doc:
+            u_doc = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+            if not u_doc and query_email:
+                u_doc = users_col.find_one({"email": {"$regex": f"^{re.escape(str(query_email).strip())}$", "$options": "i"}})
+
         tickets_col = get_collection("support_tickets")
         
-        # Enforce strict user isolation: match by accountId, userId, or verified email
-        query_conditions = [{"accountId": user_id}, {"userId": user_id}]
-        email_to_match = (u_doc.get("email") if u_doc else None) or query_email
-        if email_to_match:
-            clean_email = str(email_to_match).strip()
-            query_conditions.append({"userEmail": {"$regex": f"^{re.escape(clean_email)}$", "$options": "i"}})
+        # Enforce strict user isolation: match by accountId, userId, stable account ID, or verified email
+        matched_ids = {user_id}
+        if query_uid:
+            matched_ids.add(str(query_uid).strip())
+        if u_doc:
+            if u_doc.get("id"):
+                matched_ids.add(str(u_doc["id"]).strip())
+            if u_doc.get("_id"):
+                matched_ids.add(str(u_doc["_id"]).strip())
+
+        query_conditions = []
+        for mid in matched_ids:
+            query_conditions.append({"accountId": mid})
+            query_conditions.append({"userId": mid})
+
+        matched_emails = set()
+        if u_doc and u_doc.get("email"):
+            matched_emails.add(str(u_doc["email"]).strip())
+        if query_email:
+            matched_emails.add(str(query_email).strip())
+
+        for memail in matched_emails:
+            query_conditions.append({"userEmail": {"$regex": f"^{re.escape(memail)}$", "$options": "i"}})
 
         user_tickets = list(tickets_col.find({"$or": query_conditions}, sort=[("createdAt", -1)]))
         formatted_list = [format_user_ticket(t) for t in user_tickets]
