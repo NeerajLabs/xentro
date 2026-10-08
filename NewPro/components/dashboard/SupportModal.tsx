@@ -288,16 +288,49 @@ export const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) =
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   useEffect(() => {
-    if (isOpen) {
-      const identity = getActiveSessionIdentity();
-      setSessionUser(identity);
-      fetchHistory(identity.id);
+    if (!isOpen) return;
+    const identity = getActiveSessionIdentity();
+    setSessionUser(identity);
+    fetchHistory(identity.id, false);
+
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        bc = new BroadcastChannel('xentro_support_channel');
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'TICKET_STATUS_UPDATED') {
+            fetchHistory(undefined, true);
+          }
+        };
+      } catch {}
     }
+
+    const handleTicketUpdated = () => fetchHistory(undefined, true);
+    const handleNotificationsUpdated = () => fetchHistory(undefined, true);
+    const handleStorageSync = (e: StorageEvent) => {
+      if (e.key === 'xentro_ticket_sync') fetchHistory(undefined, true);
+    };
+
+    window.addEventListener('xentro-ticket-updated', handleTicketUpdated);
+    window.addEventListener('xentro-notifications-updated', handleNotificationsUpdated);
+    window.addEventListener('storage', handleStorageSync);
+
+    const intervalId = setInterval(() => fetchHistory(undefined, true), 4000);
+
+    return () => {
+      if (bc) {
+        try { bc.close(); } catch {}
+      }
+      window.removeEventListener('xentro-ticket-updated', handleTicketUpdated);
+      window.removeEventListener('xentro-notifications-updated', handleNotificationsUpdated);
+      window.removeEventListener('storage', handleStorageSync);
+      clearInterval(intervalId);
+    };
   }, [isOpen]);
 
-  const fetchHistory = async (explicitUserId?: string) => {
+  const fetchHistory = async (explicitUserId?: string, silent: boolean = false) => {
     try {
-      setIsLoadingHistory(true);
+      if (!silent) setIsLoadingHistory(true);
       const identity = explicitUserId ? { ...sessionUser, id: explicitUserId } : getActiveSessionIdentity();
       const accessToken = typeof window !== 'undefined' ? localStorage.getItem('xentro_access_token') : null;
 
@@ -323,9 +356,9 @@ export const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) =
         setHistory(tickets);
       }
     } catch (e) {
-      console.warn('Failed to fetch support history:', e);
+      if (!silent) console.warn('Failed to fetch support history:', e);
     } finally {
-      setIsLoadingHistory(false);
+      if (!silent) setIsLoadingHistory(false);
     }
   };
 
@@ -347,7 +380,13 @@ export const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) =
 
     try {
       setIsSubmitting(true);
-      const identity = getActiveSessionIdentity();
+      let identity = getActiveSessionIdentity();
+      if (!identity.id) {
+        const storedId = typeof window !== 'undefined' ? localStorage.getItem('xentro_user_id') : null;
+        if (storedId) {
+          identity = { ...identity, id: storedId };
+        }
+      }
       const accessToken = typeof window !== 'undefined' ? localStorage.getItem('xentro_access_token') : null;
 
       const headers: Record<string, string> = {
@@ -380,12 +419,12 @@ export const SupportModal: React.FC<SupportModalProps> = ({ isOpen, onClose }) =
       if (res.ok && data?.success) {
         const ticket: SupportTicket = data?.data?.ticket;
         setSubmittedTicket(ticket);
-        showToast('Complaint ticket registered successfully in MongoDB!', 'success');
+        showToast(`Complaint ticket #${ticket.id} registered successfully in database!`, 'success');
         setSubject('');
         setMessage('');
-        fetchHistory(identity.id);
+        fetchHistory(identity.id, false);
       } else {
-        showToast(data?.message || 'Failed to submit the request.', 'error');
+        showToast(data?.message || data?.detail || 'Failed to submit the request.', 'error');
       }
     } catch {
       showToast('Network error while filing complaint. Please try again.', 'error');

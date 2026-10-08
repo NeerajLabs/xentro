@@ -292,12 +292,62 @@ export const SupportPageView: React.FC<SupportPageViewProps> = ({
   useEffect(() => {
     const identity = getActiveSessionIdentity();
     setSessionUser(identity);
-    fetchHistory(identity.id);
+    fetchHistory(identity.id, false);
+
+    // 1. Cross-tab real-time sync via BroadcastChannel
+    let bc: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      try {
+        bc = new BroadcastChannel('xentro_support_channel');
+        bc.onmessage = (event) => {
+          if (event.data?.type === 'TICKET_STATUS_UPDATED') {
+            fetchHistory(undefined, true);
+          }
+        };
+      } catch {}
+    }
+
+    // 2. Custom window events for same-window updates
+    const handleTicketUpdated = () => {
+      fetchHistory(undefined, true);
+    };
+    const handleNotificationsUpdated = () => {
+      fetchHistory(undefined, true);
+    };
+    const handleStorageSync = (e: StorageEvent) => {
+      if (e.key === 'xentro_ticket_sync' || e.key === 'xentro_notifications') {
+        fetchHistory(undefined, true);
+      }
+    };
+    const handleWindowFocus = () => {
+      fetchHistory(undefined, true);
+    };
+
+    window.addEventListener('xentro-ticket-updated', handleTicketUpdated);
+    window.addEventListener('xentro-notifications-updated', handleNotificationsUpdated);
+    window.addEventListener('storage', handleStorageSync);
+    window.addEventListener('focus', handleWindowFocus);
+
+    // 3. Periodic prompt background sync (every 4 seconds) to ensure status changes appear without reload
+    const intervalId = setInterval(() => {
+      fetchHistory(undefined, true);
+    }, 4000);
+
+    return () => {
+      if (bc) {
+        try { bc.close(); } catch {}
+      }
+      window.removeEventListener('xentro-ticket-updated', handleTicketUpdated);
+      window.removeEventListener('xentro-notifications-updated', handleNotificationsUpdated);
+      window.removeEventListener('storage', handleStorageSync);
+      window.removeEventListener('focus', handleWindowFocus);
+      clearInterval(intervalId);
+    };
   }, []);
 
-  const fetchHistory = async (explicitUserId?: string) => {
+  const fetchHistory = async (explicitUserId?: string, silent: boolean = false) => {
     try {
-      setIsLoadingHistory(true);
+      if (!silent) setIsLoadingHistory(true);
       const identity = explicitUserId ? { ...sessionUser, id: explicitUserId } : getActiveSessionIdentity();
       const accessToken = typeof window !== 'undefined' ? localStorage.getItem('xentro_access_token') : null;
 
@@ -320,12 +370,23 @@ export const SupportPageView: React.FC<SupportPageViewProps> = ({
       if (res.ok) {
         const data = await res.json();
         const tickets: SupportTicket[] = data?.data?.tickets || [];
-        setHistory(tickets);
+        setHistory((prev) => {
+          // Check if any ticket's status was updated to notify user smoothly
+          if (silent && prev.length > 0) {
+            tickets.forEach((newT) => {
+              const oldT = prev.find((o) => o.id === newT.id);
+              if (oldT && oldT.userFacingStatus !== newT.userFacingStatus) {
+                showToast(`Ticket #${newT.id} status updated to: ${newT.userFacingStatus}`, 'success');
+              }
+            });
+          }
+          return tickets;
+        });
       }
     } catch (e) {
-      console.warn('Failed to fetch support history:', e);
+      if (!silent) console.warn('Failed to fetch support history:', e);
     } finally {
-      setIsLoadingHistory(false);
+      if (!silent) setIsLoadingHistory(false);
     }
   };
 
@@ -347,7 +408,13 @@ export const SupportPageView: React.FC<SupportPageViewProps> = ({
 
     try {
       setIsSubmitting(true);
-      const identity = getActiveSessionIdentity();
+      let identity = getActiveSessionIdentity();
+      if (!identity.id) {
+        const storedId = typeof window !== 'undefined' ? localStorage.getItem('xentro_user_id') : null;
+        if (storedId) {
+          identity = { ...identity, id: storedId };
+        }
+      }
       const accessToken = typeof window !== 'undefined' ? localStorage.getItem('xentro_access_token') : null;
 
       const headers: Record<string, string> = {
@@ -380,12 +447,12 @@ export const SupportPageView: React.FC<SupportPageViewProps> = ({
       if (res.ok && data?.success) {
         const ticket: SupportTicket = data?.data?.ticket;
         setSubmittedTicket(ticket);
-        showToast('Complaint ticket registered successfully in MongoDB!', 'success');
+        showToast(`Complaint ticket #${ticket.id} registered successfully in database!`, 'success');
         setSubject('');
         setMessage('');
-        fetchHistory(identity.id);
+        fetchHistory(identity.id, false);
       } else {
-        showToast(data?.message || 'Failed to submit the request.', 'error');
+        showToast(data?.message || data?.detail || 'Failed to submit the request.', 'error');
       }
     } catch {
       showToast('Network error while filing complaint. Please try again.', 'error');

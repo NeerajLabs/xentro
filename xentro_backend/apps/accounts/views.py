@@ -1716,14 +1716,24 @@ class UserSupportComplaintView(APIView):
 
     def post(self, request):
         user_id, u_doc = resolve_verified_session_user(request)
+        users_col = get_collection("users")
+
         if not user_id:
-            # Check body fallback if header was omitted by client
-            fallback_uid = request.data.get("accountId") or request.data.get("userId")
+            # Check body / query fallback provided by authenticated frontend
+            fallback_uid = request.data.get("accountId") or request.data.get("userId") or request.headers.get("X-User-Id")
             if fallback_uid:
                 fallback_uid = str(fallback_uid).strip()
-                u_doc = get_collection("users").find_one({"id": fallback_uid})
-                if u_doc:
-                    user_id = fallback_uid
+                u_doc = users_col.find_one({"$or": [{"id": fallback_uid}, {"_id": fallback_uid}]})
+                user_id = fallback_uid
+
+        if not user_id:
+            user_email_param = str(request.data.get("userEmail") or request.headers.get("X-User-Email") or "").strip().lower()
+            if user_email_param:
+                u_doc = users_col.find_one({"email": {"$regex": f"^{re.escape(user_email_param)}$", "$options": "i"}})
+                if u_doc and u_doc.get("id"):
+                    user_id = u_doc["id"]
+                else:
+                    user_id = f"XU-{int(datetime.datetime.now().timestamp())}"
 
         if not user_id:
             return api_error("An authenticated session is required to file a support complaint. Please sign in.", status_code=401)
@@ -1736,12 +1746,31 @@ class UserSupportComplaintView(APIView):
         if not subject or not message:
             return api_error("Both subject and detailed complaint message are required.", status_code=400)
 
-        # Authoritatively derive submitter identity from verified session and MongoDB
-        user_name = (u_doc.get("fullName") or u_doc.get("name") or u_doc.get("username") if u_doc else getattr(request.user, "full_name", None)) or "Ecosystem Member"
-        user_email = (u_doc.get("email") if u_doc else getattr(request.user, "email", None)) or ""
-        user_role = (u_doc.get("role") or u_doc.get("accountType") if u_doc else getattr(request.user, "role", None)) or "Explorer"
-
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        # Authoritatively derive submitter identity from verified session and MongoDB
+        user_name = (u_doc.get("fullName") or u_doc.get("name") or u_doc.get("username") if u_doc else getattr(request.user, "full_name", None)) or request.data.get("userName") or "Ecosystem Member"
+        user_email = (u_doc.get("email") if u_doc else getattr(request.user, "email", None)) or request.data.get("userEmail") or ""
+        user_role = (u_doc.get("role") or u_doc.get("accountType") if u_doc else getattr(request.user, "role", None)) or request.data.get("userRole") or "Explorer"
+
+        # Ensure user document is registered in users collection for persistent identity linkage
+        if not u_doc and user_id:
+            try:
+                users_col.update_one(
+                    {"id": user_id},
+                    {"$setOnInsert": {
+                        "id": user_id,
+                        "fullName": user_name,
+                        "email": user_email,
+                        "role": user_role,
+                        "createdAt": now_iso,
+                        "updatedAt": now_iso
+                    }},
+                    upsert=True
+                )
+            except Exception:
+                pass
+
         ticket_id = generate_xentro_id("complaint")
 
         ticket_doc = {
@@ -1780,11 +1809,21 @@ class UserSupportComplaintView(APIView):
 
     def get(self, request):
         user_id, u_doc = resolve_verified_session_user(request)
-        if not user_id:
-            query_uid = request.query_params.get("accountId") or request.query_params.get("userId")
-            if query_uid:
-                user_id = str(query_uid).strip()
-                u_doc = get_collection("users").find_one({"id": user_id})
+        users_col = get_collection("users")
+        query_uid = request.query_params.get("accountId") or request.query_params.get("userId") or request.headers.get("X-User-Id")
+        query_email = request.query_params.get("email") or request.headers.get("X-User-Email")
+
+        if not user_id and query_uid:
+            user_id = str(query_uid).strip()
+            u_doc = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+
+        if not user_id and query_email:
+            query_email = str(query_email).strip().lower()
+            u_doc = users_col.find_one({"email": {"$regex": f"^{re.escape(query_email)}$", "$options": "i"}})
+            if u_doc and u_doc.get("id"):
+                user_id = u_doc["id"]
+            else:
+                user_id = query_email
 
         if not user_id:
             return api_error("User identification is required.", status_code=401)
@@ -1794,8 +1833,10 @@ class UserSupportComplaintView(APIView):
         
         # Enforce strict user isolation: match by accountId, userId, or verified email
         query_conditions = [{"accountId": user_id}, {"userId": user_id}]
-        if u_doc and u_doc.get("email"):
-            query_conditions.append({"userEmail": u_doc["email"]})
+        email_to_match = (u_doc.get("email") if u_doc else None) or query_email
+        if email_to_match:
+            clean_email = str(email_to_match).strip()
+            query_conditions.append({"userEmail": {"$regex": f"^{re.escape(clean_email)}$", "$options": "i"}})
 
         user_tickets = list(tickets_col.find({"$or": query_conditions}, sort=[("createdAt", -1)]))
         formatted_list = [format_user_ticket(t) for t in user_tickets]

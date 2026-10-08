@@ -113,6 +113,19 @@ CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https:\/\/.*\.vercel\.app$",
     r"^https:\/\/.*\.xentro\.in$",
 ]
+from corsheaders.defaults import default_headers, default_methods
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    "x-user-id",
+    "x-user-email",
+    "x-user-name",
+    "x-admin-employee-id",
+    "x-admin-role",
+]
+CORS_ALLOW_METHODS = list(default_methods) + [
+    "PATCH",
+    "PUT",
+]
+
 
 # Realtime Channels & Redis Layer
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")

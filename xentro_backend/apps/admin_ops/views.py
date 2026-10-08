@@ -1137,6 +1137,9 @@ class AdminComplaintDetailView(APIView):
     def put(self, request, ticket_id):
         return self.patch(request, ticket_id)
 
+    def post(self, request, ticket_id):
+        return self.patch(request, ticket_id)
+
 
 class AdminFeedListView(APIView):
     """

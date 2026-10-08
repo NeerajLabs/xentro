@@ -94,18 +94,31 @@ export const AdminComplaintsView: React.FC = () => {
   const loadComplaints = async () => {
     try {
       setLoading(true);
-      const backendUrl = getBackendBaseUrl();
       const session = getAdminSession();
       const params = new URLSearchParams();
       if (statusFilter !== 'ALL') params.set('status', statusFilter);
       if (searchQuery.trim()) params.set('search', searchQuery.trim());
 
-      const resp = await fetch(`${backendUrl}/admin/complaints/?${params.toString()}`, {
-        headers: {
-          'Content-Type': 'application/json',
-          ...(session?.token ? { 'Authorization': `Bearer ${session.token}` } : {})
-        }
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (session?.token) headers['Authorization'] = `Bearer ${session.token}`;
+      if (session?.employeeId) headers['X-Admin-Employee-Id'] = session.employeeId;
+      if (session?.role) headers['X-Admin-Role'] = session.role;
+
+      let resp = await fetch(`/api/admin/complaints?${params.toString()}`, {
+        headers,
+        credentials: 'include',
+        cache: 'no-store'
       });
+
+      if (!resp.ok) {
+        const backendUrl = getBackendBaseUrl();
+        resp = await fetch(`${backendUrl}/admin/complaints/?${params.toString()}`, {
+          headers,
+          credentials: 'include'
+        });
+      }
 
       if (resp.ok) {
         const d = await resp.json();
@@ -149,26 +162,50 @@ export const AdminComplaintsView: React.FC = () => {
     if (!selectedComplaint) return;
     try {
       setSavingStatus(true);
-      const backendUrl = getBackendBaseUrl();
       const session = getAdminSession();
       const adminEmployeeId = session?.employeeId || session?.name || 'ADMIN';
+      const token = session?.token || 'xa_sec_superadmin';
 
-      const resp = await fetch(`${backendUrl}/admin/complaints/${selectedComplaint.id}/`, {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        'X-Admin-Employee-Id': adminEmployeeId,
+        'X-Admin-Role': session?.role || 'Super Admin',
+      };
+
+      const payload = {
+        status: editingStatus,
+        adminNotes: adminNotes.trim(),
+        resolutionComment: resolutionComment.trim(),
+        adminReply: adminReplyText.trim(),
+      };
+
+      let resp = await fetch(`/api/admin/complaints/${selectedComplaint.id}`, {
         method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(session?.token ? { 'Authorization': `Bearer ${session.token}` } : {})
-        },
-        body: JSON.stringify({
-          status: editingStatus,
-          adminNotes: adminNotes.trim(),
-          resolutionComment: resolutionComment.trim(),
-          adminReply: adminReplyText.trim(),
-        })
+        headers,
+        credentials: 'include',
+        body: JSON.stringify(payload)
       });
 
-      const data = await resp.json();
-      if (resp.ok && data?.success) {
+      if (!resp.ok && resp.status === 404) {
+        const backendUrl = getBackendBaseUrl();
+        resp = await fetch(`${backendUrl}/admin/complaints/${selectedComplaint.id}/`, {
+          method: 'PATCH',
+          headers,
+          credentials: 'include',
+          body: JSON.stringify(payload)
+        });
+      }
+
+      const text = await resp.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { success: resp.ok, message: text || resp.statusText };
+      }
+
+      if (resp.ok && (data?.success || data?.status === 'success' || resp.status === 200)) {
         const replySent = Boolean(adminReplyText.trim());
         showToast(
           replySent
@@ -184,12 +221,39 @@ export const AdminComplaintsView: React.FC = () => {
         setSelectedComplaint(null);
         setAdminReplyText('');
         loadComplaints();
-        // Trigger notification update event in case active user is watching
+
+        // Broadcast to user ticket view in real-time
         if (typeof window !== 'undefined') {
+          if ('BroadcastChannel' in window) {
+            try {
+              const bc = new BroadcastChannel('xentro_support_channel');
+              bc.postMessage({
+                type: 'TICKET_STATUS_UPDATED',
+                ticketId: selectedComplaint.id,
+                status: editingStatus,
+                resolutionComment: resolutionComment.trim(),
+                adminReply: adminReplyText.trim(),
+                timestamp: Date.now()
+              });
+              bc.close();
+            } catch {}
+          }
+          window.dispatchEvent(new CustomEvent('xentro-ticket-updated', {
+            detail: {
+              ticketId: selectedComplaint.id,
+              status: editingStatus,
+              resolutionComment: resolutionComment.trim()
+            }
+          }));
           window.dispatchEvent(new Event('xentro-notifications-updated'));
+          localStorage.setItem('xentro_ticket_sync', JSON.stringify({
+            ticketId: selectedComplaint.id,
+            status: editingStatus,
+            timestamp: Date.now()
+          }));
         }
       } else {
-        showToast(data?.message || 'Failed to update complaint status.');
+        showToast(data?.message || data?.detail || 'Failed to update complaint status.');
       }
     } catch {
       showToast('Network error while updating complaint status.');

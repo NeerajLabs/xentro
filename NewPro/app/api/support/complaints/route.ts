@@ -16,12 +16,12 @@ export async function POST(req: NextRequest) {
       'Content-Type': 'application/json',
     };
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    const xUserId = req.headers.get('x-user-id');
-    if (xUserId) headers['X-User-Id'] = xUserId;
-    const xUserEmail = req.headers.get('x-user-email');
-    if (xUserEmail) headers['X-User-Email'] = xUserEmail;
-    const xUserName = req.headers.get('x-user-name');
-    if (xUserName) headers['X-User-Name'] = xUserName;
+    const xUserId = req.headers.get('x-user-id') || body.userId || body.accountId;
+    if (xUserId) headers['X-User-Id'] = String(xUserId);
+    const xUserEmail = req.headers.get('x-user-email') || body.userEmail;
+    if (xUserEmail) headers['X-User-Email'] = String(xUserEmail);
+    const xUserName = req.headers.get('x-user-name') || body.userName;
+    if (xUserName) headers['X-User-Name'] = String(xUserName);
 
     const cookieHeader = req.headers.get('cookie');
     if (cookieHeader) headers['Cookie'] = cookieHeader;
@@ -33,10 +33,16 @@ export async function POST(req: NextRequest) {
       cache: 'no-store',
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { success: res.ok, message: text || res.statusText };
+    }
     return NextResponse.json(data, { status: res.status });
   } catch (err: any) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, message: err.message || 'Failed to submit the request.' }, { status: 500 });
   }
 }
 
@@ -52,7 +58,7 @@ export async function GET(req: NextRequest) {
     if (token) headers['Authorization'] = `Bearer ${token}`;
     const xUserId = req.headers.get('x-user-id') || searchParams.get('userId') || searchParams.get('accountId');
     if (xUserId) headers['X-User-Id'] = xUserId;
-    const xUserEmail = req.headers.get('x-user-email');
+    const xUserEmail = req.headers.get('x-user-email') || searchParams.get('email');
     if (xUserEmail) headers['X-User-Email'] = xUserEmail;
     const xUserName = req.headers.get('x-user-name');
     if (xUserName) headers['X-User-Name'] = xUserName;
@@ -68,9 +74,15 @@ export async function GET(req: NextRequest) {
       cache: 'no-store',
     });
 
-    const data = await res.json();
+    const text = await res.text();
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch {
+      data = { success: res.ok, message: text || res.statusText };
+    }
     return NextResponse.json(data, { status: res.status });
   } catch (err: any) {
-    return NextResponse.json({ success: false, message: err.message }, { status: 500 });
+    return NextResponse.json({ success: false, message: err.message || 'Failed to retrieve tickets.' }, { status: 500 });
   }
 }
