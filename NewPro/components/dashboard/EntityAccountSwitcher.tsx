@@ -114,15 +114,22 @@ export const EntityAccountSwitcher: React.FC<EntityAccountSwitcherProps> = ({
   }, [isOpen]);
 
   const handleSelectPersonal = async () => {
+    setIsOpen(false);
     if (isPersonalActive) {
-      setIsOpen(false);
+      const dest = personalRoleName === 'Explorer' ? 'feed' : 'dashboard';
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('xentro-navigate-tab', {
+            detail: { tab: dest },
+          })
+        );
+      }
       return;
     }
 
     setIsSwitching(true);
     try {
       const res = await entityContextService.switchPersona(profile.id, null);
-      setIsOpen(false);
       showToast(res.message, 'info');
 
       // Navigate to correct personal destination per requirement:
@@ -143,15 +150,21 @@ export const EntityAccountSwitcher: React.FC<EntityAccountSwitcherProps> = ({
   };
 
   const handleSelectEntity = async (entity: LinkedEntity) => {
+    setIsOpen(false);
     if (activeEntity?.id === entity.id) {
-      setIsOpen(false);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('xentro-navigate-tab', {
+            detail: { tab: 'dashboard' },
+          })
+        );
+      }
       return;
     }
 
     setIsSwitching(true);
     try {
       const res = await entityContextService.switchPersona(profile.id, entity.id);
-      setIsOpen(false);
       showToast(res.message, 'success');
 
       // Navigate to authorized entity dashboard

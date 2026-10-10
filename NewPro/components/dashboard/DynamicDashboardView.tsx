@@ -11,6 +11,8 @@ import {
   RefreshCw,
   SlidersHorizontal,
   Compass,
+  User,
+  ArrowLeftRight,
 } from 'lucide-react';
 import { UserRole, UserProfile, getUserProfile, setActiveRole, getActiveRole, getUserRegisteredRoles } from '@/lib/userProfile';
 import { isDevToolsEnabled } from '@/lib/devTools';
@@ -109,9 +111,35 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
             </p>
           </div>
 
-          {/* Action to Launch Full Signup / Profile Setup: Dev only */}
-          {isDevToolsEnabled() && (
-            <div className="flex items-center gap-2 self-start md:self-auto">
+          <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
+            {activeEntity && (
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const res = await entityContextService.switchPersona(profile.id, null);
+                    showToast(res.message, 'info');
+                    if (onNavigateTab) {
+                      onNavigateTab(res.destinationTab);
+                    } else {
+                      window.dispatchEvent(
+                        new CustomEvent('xentro-navigate-tab', { detail: { tab: res.destinationTab } })
+                      );
+                    }
+                  } catch (err: any) {
+                    showToast(err.message || 'Failed to switch to personal account', 'error');
+                  }
+                }}
+                className="px-3.5 py-2 rounded-xl bg-[#101212] dark:bg-white text-white dark:text-[#101212] hover:bg-[#202422] dark:hover:bg-gray-100 text-xs font-bold flex items-center gap-2 active:scale-95 transition-all cursor-pointer shadow-xs"
+                title="Switch back to Personal Account"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5 text-[#D9FF3F] dark:text-emerald-600" />
+                <span>Switch to Personal ({profile.name})</span>
+              </button>
+            )}
+
+            {/* Action to Launch Full Signup / Profile Setup: Dev only */}
+            {isDevToolsEnabled() && (
               <button
                 onClick={() => setIsSignupOpen(true)}
                 className="px-3.5 py-2 rounded-xl bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-bold text-[#101212] dark:text-white flex items-center gap-2 active:scale-95 transition-all cursor-pointer"
@@ -120,8 +148,8 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
                 <UserPlus className="w-3.5 h-3.5" />
                 <span>Signup New Role</span>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Dynamic Persona / Role Test Switcher Bar: visible only if ?dev=1 or multi-role registered */}

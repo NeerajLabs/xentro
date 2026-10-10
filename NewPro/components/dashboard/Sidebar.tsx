@@ -179,9 +179,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, []);
 
-  const isExplorer = profile.role === 'explorer';
+  const isExplorer = profile.role === 'explorer' && !activeEntity;
   const navItems: NavItem[] = [
-    ...(isExplorer ? [] : [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }]),
+    ...(!isExplorer
+      ? [
+          {
+            id: 'dashboard',
+            label: activeEntity ? `${activeEntity.name} Dashboard` : 'Dashboard',
+            icon: LayoutDashboard,
+          },
+        ]
+      : []),
     { id: 'feed', label: 'Feed / Role', icon: Home },
     {
       id: 'messages',

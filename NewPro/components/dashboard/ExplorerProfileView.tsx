@@ -265,6 +265,9 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
   const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>(() =>
     entityContextService.getLinkedEntities()
   );
+  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
+    entityContextService.getActiveEntity()
+  );
 
   useEffect(() => {
     if (isOwn) {
@@ -272,12 +275,14 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
       if (u.id) {
         entityContextService.fetchLinkedEntities(u.id).then((list) => {
           setLinkedEntities(list);
+          setActiveEntity(entityContextService.getActiveEntity());
         });
       }
 
       const handleLinked = (e: Event) => {
         const ce = e as CustomEvent;
         setLinkedEntities(ce.detail?.entities || entityContextService.getLinkedEntities());
+        setActiveEntity(entityContextService.getActiveEntity());
       };
 
       const handleOpenEntity = () => {
@@ -622,21 +627,57 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto">
-                {linkedEntities.map((ent) => (
+              <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+                {linkedEntities.map((ent) => {
+                  const isCurrentActive = activeEntity?.id === ent.id;
+                  return (
+                    <button
+                      key={ent.id}
+                      type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await entityContextService.switchPersona(profile.id, ent.id);
+                          showToast(res.message, 'success');
+                          window.dispatchEvent(
+                            new CustomEvent('xentro-navigate-tab', {
+                              detail: { tab: 'dashboard' },
+                            })
+                          );
+                        } catch (err: any) {
+                          showToast(err.message || 'Failed to switch workspace', 'error');
+                        }
+                      }}
+                      className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
+                    >
+                      <span>{isCurrentActive ? `Open ${ent.name} Dashboard` : `Switch to ${ent.name}`}</span>
+                      <ArrowRight className="w-3 h-3" />
+                    </button>
+                  );
+                })}
+
+                {activeEntity && (
                   <button
-                    key={ent.id}
                     type="button"
-                    onClick={() => {
-                      entityContextService.setActiveEntityId(ent.id);
-                      showToast(`Switched active workspace to ${ent.name}!`, 'success');
+                    onClick={async () => {
+                      try {
+                        const res = await entityContextService.switchPersona(profile.id, null);
+                        showToast(res.message, 'info');
+                        window.dispatchEvent(
+                          new CustomEvent('xentro-navigate-tab', {
+                            detail: { tab: res.destinationTab },
+                          })
+                        );
+                      } catch (err: any) {
+                        showToast(err.message || 'Failed to switch to personal account', 'error');
+                      }
                     }}
-                    className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-gray-100 dark:bg-white/10 text-[#101212] dark:text-white hover:bg-gray-200 transition-colors flex items-center gap-1.5 cursor-pointer active:scale-95"
+                    title="Switch back to Personal Account"
                   >
-                    <span>Switch to {ent.name}</span>
-                    <ArrowRight className="w-3 h-3" />
+                    <User className="w-3.5 h-3.5" />
+                    <span>Switch to Personal</span>
                   </button>
-                ))}
+                )}
               </div>
             </div>
           )}

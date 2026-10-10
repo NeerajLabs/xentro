@@ -70,7 +70,8 @@ export const DashboardLayout: React.FC = () => {
   const handleSelectNavTab = (tabId: string) => {
     setSelectedProfile(null);
     let resolvedTab = tabId;
-    if (resolvedTab === 'dashboard' && userProfile.role === 'explorer' && !activeEntity) {
+    const currentEntity = entityContextService.getActiveEntity();
+    if (resolvedTab === 'dashboard' && userProfile.role === 'explorer' && !currentEntity) {
       resolvedTab = 'feed';
     }
     if (activeNavTab !== 'dashboard' && resolvedTab === 'dashboard') {
@@ -92,24 +93,33 @@ export const DashboardLayout: React.FC = () => {
     }
   };
 
+  // Sync initial tab from URL on mount only (and popstate) to prevent reverting programmatic tab navigation
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
-      const params = new URLSearchParams(window.location.search);
-      let tabParam = params.get('tab');
-      if (tabParam) {
-        if (tabParam === 'dashboard' && userProfile.role === 'explorer' && !entityContextService.getActiveEntityId()) {
-          tabParam = 'feed';
-          const url = new URL(window.location.href);
-          url.searchParams.delete('tab');
-          window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
+      const readUrlTab = () => {
+        const params = new URLSearchParams(window.location.search);
+        let tabParam = params.get('tab');
+        if (tabParam) {
+          const currentEntity = entityContextService.getActiveEntity();
+          if (tabParam === 'dashboard' && userProfile.role === 'explorer' && !currentEntity) {
+            tabParam = 'feed';
+            const url = new URL(window.location.href);
+            url.searchParams.delete('tab');
+            window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
+          }
+          setActiveNavTab(tabParam);
         }
-        if (activeNavTab !== 'dashboard' && tabParam === 'dashboard') {
-          setLastUniversalTab(activeNavTab);
-        }
-        setActiveNavTab(tabParam);
-      }
-    }
+      };
+      readUrlTab();
 
+      window.addEventListener('popstate', readUrlTab);
+      return () => {
+        window.removeEventListener('popstate', readUrlTab);
+      };
+    }
+  }, [userProfile.role]);
+
+  React.useEffect(() => {
     const handleNavigateTab = (e: Event) => {
       const customEvent = e as CustomEvent;
       if (customEvent.detail?.tab) {
@@ -202,20 +212,17 @@ export const DashboardLayout: React.FC = () => {
       window.removeEventListener('xentro-role-changed', handleRoleChanged);
       window.removeEventListener('xentro-open-profile', handleOpenProfileEvent);
     };
-  }, [activeNavTab]);
+  }, [userProfile.role, activeEntity]);
 
   const showHeader = activeNavTab === 'feed';
 
-  if (activeNavTab === 'dashboard') {
-    if (userProfile.role === 'explorer') {
-      setActiveNavTab('profile');
-      return null;
-    }
+  // Personal stand-alone dashboard for Mentor/Investor personal accounts (no active entity)
+  if (activeNavTab === 'dashboard' && !activeEntity && userProfile.role !== 'explorer') {
     return (
       <ToastProvider>
         <DashboardWorkspace
           onBackToUniversal={() => {
-            const backTarget = userProfile.role === 'explorer' ? 'profile' : (lastUniversalTab || 'feed');
+            const backTarget = lastUniversalTab || 'feed';
             setActiveNavTab(backTarget);
             if (typeof window !== 'undefined') {
               const url = new URL(window.location.href);
@@ -240,6 +247,13 @@ export const DashboardLayout: React.FC = () => {
       </ToastProvider>
     );
   }
+
+  // Explorers without an active entity do not have a dashboard
+  if (activeNavTab === 'dashboard' && !activeEntity && userProfile.role === 'explorer') {
+    setActiveNavTab('feed');
+    return null;
+  }
+
 
   return (
     <ToastProvider>
