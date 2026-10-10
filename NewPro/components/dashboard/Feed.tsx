@@ -105,13 +105,11 @@ export const Feed: React.FC<FeedProps> = ({ searchQuery = '', onPostCreated }) =
 
   return (
     <div className="w-full flex-1 max-w-[640px] mx-auto">
-      {/* 1. Create a Post Trigger Box - hidden for read-only guest/explorer sessions */}
-      {userProfile.role !== 'explorer' && (
-        <CreatePostTrigger
-          userProfile={userProfile}
-          onOpenModal={handleOpenCreateModal}
-        />
-      )}
+      {/* 1. Create a Post Trigger Box */}
+      <CreatePostTrigger
+        userProfile={userProfile}
+        onOpenModal={handleOpenCreateModal}
+      />
 
       {/* 2. Social Posts List */}
       <div className="space-y-4 animate-fade-slide">

@@ -137,9 +137,10 @@ const POST_TYPES_BY_ROLE: Record<ExtendedRole, string[]> = {
   ],
   explorer: [
     'Community Inquiry',
-    'Ecosystem Feedback',
-    'General Note',
+    'Startup Idea / Feedback',
+    'Ecosystem Insight',
     'Collaboration Request',
+    'General Update',
   ],
 };
 
@@ -375,6 +376,8 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
         return `Announce cohort openings at ${currentPersona.organization}, grant deadlines, upcoming Demo Days, or spotlight student innovators...`;
       case 'student':
         return 'Share what you are building, prototype demo links, hackathon results, or search for co-founders and early testers...';
+      case 'explorer':
+        return 'Share your perspective, startup ideas, questions, or invite founders & mentors to connect across the network...';
       default:
         return "What's happening in your venture or ecosystem? Write your post...";
     }

@@ -10,6 +10,7 @@ import {
   GraduationCap,
   Building2,
   Send,
+  Compass,
 } from 'lucide-react';
 import { UserProfile } from '@/lib/userProfile';
 
@@ -27,6 +28,13 @@ export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
   // Format role badge styling and label
   const getRoleBadge = () => {
     switch (userProfile.role) {
+      case 'explorer':
+        return {
+          icon: <Compass className="w-3 h-3 text-[#101212] dark:text-[#D9FF3F]" />,
+          label: 'Ecosystem Explorer',
+          bg: 'bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] border-[#D9FF3F]/40',
+          placeholder: "Share an idea, question, interesting discovery, or insight...",
+        };
       case 'startup':
         return {
           icon: <Rocket className="w-3 h-3 text-[#101212] dark:text-[#D9FF3F]" />,

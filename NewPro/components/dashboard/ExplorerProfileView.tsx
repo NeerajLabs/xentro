@@ -832,6 +832,33 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
         </div>
       )}
 
+      {activeTab === 'activity' && (
+        <div className="bg-white dark:bg-[#181B1A] p-8 rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] text-center space-y-3">
+          <div className="w-12 h-12 rounded-2xl bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center mx-auto">
+            <Compass className="w-6 h-6" />
+          </div>
+          <h3 className="text-sm font-bold text-[#101212] dark:text-white">
+            {isOwn ? 'Your Activity & Feed Posts' : `${profile.name}'s Activity`}
+          </h3>
+          <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] max-w-sm mx-auto leading-relaxed">
+            {isOwn
+              ? 'As an Explorer, you can share questions, perspectives, and startup feedback directly to the Universal Feed.'
+              : `${profile.name} has not published recent public discussions yet.`}
+          </p>
+          {isOwn && onBackToFeed && (
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={onBackToFeed}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] transition-colors cursor-pointer shadow-xs"
+              >
+                <span>Go to Feed to Post</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Edit Explorer Profile Modal */}
       {isEditModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
