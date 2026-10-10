@@ -71,7 +71,7 @@ export const DashboardLayout: React.FC = () => {
     setSelectedProfile(null);
     let resolvedTab = tabId;
     if (resolvedTab === 'dashboard' && userProfile.role === 'explorer' && !activeEntity) {
-      resolvedTab = 'profile';
+      resolvedTab = 'feed';
     }
     if (activeNavTab !== 'dashboard' && resolvedTab === 'dashboard') {
       setLastUniversalTab(activeNavTab);
@@ -97,11 +97,11 @@ export const DashboardLayout: React.FC = () => {
       const params = new URLSearchParams(window.location.search);
       let tabParam = params.get('tab');
       if (tabParam) {
-        if (tabParam === 'dashboard' && userProfile.role === 'explorer') {
-          tabParam = 'profile';
+        if (tabParam === 'dashboard' && userProfile.role === 'explorer' && !entityContextService.getActiveEntityId()) {
+          tabParam = 'feed';
           const url = new URL(window.location.href);
-          url.searchParams.set('tab', 'profile');
-          window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+          url.searchParams.delete('tab');
+          window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
         }
         if (activeNavTab !== 'dashboard' && tabParam === 'dashboard') {
           setLastUniversalTab(activeNavTab);

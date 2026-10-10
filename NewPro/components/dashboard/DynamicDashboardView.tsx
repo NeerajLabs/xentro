@@ -21,6 +21,11 @@ import { ESPDashboard } from './roles/ESPDashboard';
 import { ExplorerDashboard } from './roles/ExplorerDashboard';
 import { RoleRequestModal } from './RoleRequestModal';
 import { useToast } from '@/components/ui/Toast';
+import {
+  entityContextService,
+  LinkedEntity,
+  ENTITY_CONTEXT_CHANGED_EVENT,
+} from '@/lib/entityContextService';
 
 interface DynamicDashboardViewProps {
   onNavigateTab?: (tabId: string) => void;
@@ -29,6 +34,9 @@ interface DynamicDashboardViewProps {
 export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNavigateTab }) => {
   const { showToast } = useToast();
   const [profile, setProfile] = useState<UserProfile>(getUserProfile());
+  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
+    entityContextService.getActiveEntity()
+  );
   const [isSignupOpen, setIsSignupOpen] = useState(false);
 
   useEffect(() => {
@@ -40,10 +48,16 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
         setProfile(getUserProfile());
       }
     };
+    const handleEntitySwitch = (e: Event) => {
+      const ce = e as CustomEvent;
+      setActiveEntity(ce.detail?.entity || entityContextService.getActiveEntity());
+    };
 
     window.addEventListener('xentro-role-changed', handleRoleChanged);
+    window.addEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
     return () => {
       window.removeEventListener('xentro-role-changed', handleRoleChanged);
+      window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
     };
   }, []);
 
@@ -69,14 +83,29 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
           <div className="space-y-1">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-xl sm:text-2xl font-bold font-sora text-[#101212] dark:text-white tracking-tight">
-                Welcome back, {profile.name}
+                {activeEntity ? `Welcome back to ${activeEntity.name}` : `Welcome back, ${profile.name}`}
               </h1>
               <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-[#D9FF3F] text-[#101212] shadow-2xs">
-                {profile.role}
+                {activeEntity ? activeEntity.entityType : profile.role}
               </span>
             </div>
             <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-              <span className="font-semibold text-[#101212] dark:text-white">{profile.roleTitle}</span> &bull; {profile.organization} &bull; <span className="text-[#565B59]">{profile.sector}</span>
+              {activeEntity ? (
+                <>
+                  <span className="font-semibold text-[#101212] dark:text-white">
+                    Role: {activeEntity.role || 'Member'}
+                  </span>{' '}
+                  &bull; Organization: {activeEntity.name} &bull;{' '}
+                  <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                    Status: {activeEntity.membershipStatus || 'ACTIVE'}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="font-semibold text-[#101212] dark:text-white">{profile.roleTitle}</span> &bull;{' '}
+                  {profile.organization} &bull; <span className="text-[#565B59]">{profile.sector}</span>
+                </>
+              )}
             </p>
           </div>
 
@@ -96,7 +125,7 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
         </div>
 
         {/* Dynamic Persona / Role Test Switcher Bar: visible only if ?dev=1 or multi-role registered */}
-        {(isDevToolsEnabled() || getUserRegisteredRoles().length > 1) && (
+        {(isDevToolsEnabled() || getUserRegisteredRoles().length > 1) && !activeEntity && (
           <div className="pt-3 border-t border-gray-100 dark:border-[#262A29] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
             <div className="flex items-center gap-2 text-xs text-[#565B59] dark:text-[#B6B8B7]">
               <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -132,22 +161,51 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
         )}
       </div>
 
-      {/* 2. Render Corresponding Role Dashboard */}
-      <div key={profile.role} className="animate-fade-slide">
-        {profile.role === 'startup' && (
-          <StartupDashboard profile={profile} onNavigateTab={onNavigateTab} />
-        )}
-        {profile.role === 'mentor' && (
+      {/* 2. Render Corresponding Role / Entity Dashboard */}
+      <div key={activeEntity ? activeEntity.id : profile.role} className="animate-fade-slide">
+        {activeEntity?.entityType === 'Startup' ? (
+          <StartupDashboard
+            profile={{
+              ...profile,
+              role: 'startup',
+              name: activeEntity.name,
+              organization: activeEntity.name,
+              roleTitle: activeEntity.role || 'Founder',
+            }}
+            onNavigateTab={onNavigateTab}
+          />
+        ) : activeEntity?.entityType === 'Investor Organization' ? (
+          <InvestorDashboard
+            profile={{
+              ...profile,
+              role: 'investor',
+              name: activeEntity.name,
+              organization: activeEntity.name,
+              roleTitle: activeEntity.role || 'Managing Partner',
+            }}
+            onNavigateTab={onNavigateTab}
+          />
+        ) : activeEntity?.entityType === 'ESP' ? (
+          <ESPDashboard
+            profile={{
+              ...profile,
+              role: 'esp',
+              name: activeEntity.name,
+              organization: activeEntity.name,
+              roleTitle: activeEntity.role || 'Director',
+            }}
+            onNavigateTab={onNavigateTab}
+          />
+        ) : profile.role === 'mentor' ? (
           <MentorDashboard profile={profile} onNavigateTab={onNavigateTab} />
-        )}
-        {profile.role === 'investor' && (
+        ) : profile.role === 'investor' ? (
           <InvestorDashboard profile={profile} onNavigateTab={onNavigateTab} />
-        )}
-        {profile.role === 'esp' && (
+        ) : profile.role === 'esp' ? (
           <ESPDashboard profile={profile} onNavigateTab={onNavigateTab} />
-        )}
-        {profile.role === 'explorer' && (
+        ) : profile.role === 'explorer' ? (
           <ExplorerDashboard profile={profile} onNavigateTab={onNavigateTab} />
+        ) : (
+          <StartupDashboard profile={profile} onNavigateTab={onNavigateTab} />
         )}
       </div>
 

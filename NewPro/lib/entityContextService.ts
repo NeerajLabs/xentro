@@ -3,7 +3,7 @@
 export interface LinkedEntity {
   id: string;
   name: string;
-  entityType: 'STARTUP' | 'INVESTOR_ORG' | 'ESP' | 'INSTITUTION';
+  entityType: 'Startup' | 'Investor Organization' | 'ESP' | 'Institution' | string;
   accountType?: string;
   username?: string;
   sector?: string;
@@ -15,8 +15,24 @@ export interface LinkedEntity {
   primaryOwnerName?: string;
   verificationStatus?: string;
   activationStatus?: string;
+  membershipStatus?: string;
+  role?: string;
+  logo?: string | null;
+  permissions?: string[];
+  dashboardUrl?: string;
+  profileUrl?: string;
   createdAt?: string;
   details?: Record<string, any>;
+}
+
+export interface PersonalAccountContext {
+  userId: string;
+  name: string;
+  email: string;
+  role: 'Explorer' | 'Mentor' | 'Individual Investor';
+  destination: 'feed' | 'dashboard';
+  avatar?: string | null;
+  isPersonal: true;
 }
 
 export const ENTITY_CONTEXT_CHANGED_EVENT = 'xentro-entity-switched';
@@ -49,48 +65,81 @@ class EntityContextService {
     }
   }
 
-  async fetchLinkedEntities(userId: string): Promise<LinkedEntity[]> {
-    if (!userId || typeof window === 'undefined') return this.getLinkedEntities();
+  /**
+   * Authoritatively fetch eligible entity memberships from MongoDB backend.
+   * Excludes suspended/revoked memberships and prohibited combinations (e.g. Mentor -> Investor Org).
+   */
+  async fetchEligibleWorkspaces(userId: string): Promise<{
+    personalAccount: PersonalAccountContext | null;
+    eligibleEntities: LinkedEntity[];
+  }> {
+    if (!userId || typeof window === 'undefined') {
+      return {
+        personalAccount: null,
+        eligibleEntities: this.getLinkedEntities(),
+      };
+    }
+
     try {
-      const res = await fetch(`/api/entities?userId=${encodeURIComponent(userId)}`, { credentials: 'omit' });
-      if (!res.ok) return this.getLinkedEntities();
+      const res = await fetch(`/api/auth/workspaces?userId=${encodeURIComponent(userId)}`, {
+        credentials: 'omit',
+      });
+      if (!res.ok) {
+        return {
+          personalAccount: null,
+          eligibleEntities: this.getLinkedEntities(),
+        };
+      }
+
       const body = await res.json();
-      if (body?.success && Array.isArray(body?.data?.entities)) {
-        const remoteEntities: LinkedEntity[] = body.data.entities.map((e: any) => ({
-          id: e.id,
+      if (body?.success && body?.data) {
+        const entities: LinkedEntity[] = (body.data.eligibleEntities || []).map((e: any) => ({
+          id: e.entityId,
           name: e.name,
-          entityType: e.entityType || 'STARTUP',
-          accountType: e.accountType || (e.entityType === 'INVESTOR_ORG' ? 'Investor Organization' : 'Startup'),
-          username: e.username,
-          sector: e.details?.sector || e.industry || '',
-          stage: e.details?.stage || e.stage || '',
-          pitch: e.details?.pitch || e.description || '',
-          website: e.details?.website || e.website || '',
-          officialEmail: e.officialEmail,
-          primaryOwnerId: e.primaryOwnerId,
-          primaryOwnerName: e.primaryOwnerName,
-          verificationStatus: e.verificationStatus || 'PENDING',
-          activationStatus: e.activationStatus || 'ACTIVE',
-          createdAt: e.createdAt,
-          details: e.details,
+          entityType: e.entityType,
+          accountType: e.entityType,
+          role: e.role,
+          membershipStatus: e.membershipStatus,
+          logo: e.logo,
+          sector: e.sector,
+          stage: e.stage,
+          permissions: e.permissions,
+          dashboardUrl: e.dashboardUrl,
+          profileUrl: e.profileUrl,
         }));
 
-        // Merge existing local entities to not lose recently added items
-        const current = this.getLinkedEntities();
-        const mergedMap = new Map<string, LinkedEntity>();
-        current.forEach((item) => mergedMap.set(item.id, item));
-        remoteEntities.forEach((item) => mergedMap.set(item.id, item));
+        this.saveLinkedEntities(entities);
 
-        const mergedList = Array.from(mergedMap.values());
-        this.saveLinkedEntities(mergedList);
-        return mergedList;
+        // If the currently active entity is no longer eligible (e.g. revoked), revert to personal account
+        const activeId = this.getActiveEntityId();
+        if (activeId && !entities.some((e) => e.id === activeId)) {
+          this.setActiveEntityId(null);
+        }
+
+        return {
+          personalAccount: body.data.personalAccount || null,
+          eligibleEntities: entities,
+        };
       }
-      return this.getLinkedEntities();
+
+      return {
+        personalAccount: null,
+        eligibleEntities: this.getLinkedEntities(),
+      };
     } catch (err) {
-      console.warn('[EntityContextService] Failed to fetch remote entities:', err);
-      return this.getLinkedEntities();
+      console.warn('[EntityContextService] Failed to fetch authoritative workspaces:', err);
+      return {
+        personalAccount: null,
+        eligibleEntities: this.getLinkedEntities(),
+      };
     }
   }
+
+  async fetchLinkedEntities(userId: string): Promise<LinkedEntity[]> {
+    const res = await this.fetchEligibleWorkspaces(userId);
+    return res.eligibleEntities;
+  }
+
 
   getActiveEntityId(): string | null {
     if (typeof window === 'undefined') return null;
@@ -125,6 +174,60 @@ class EntityContextService {
       );
     } catch (err) {
       console.error('[EntityContextService] Failed to set active entity:', err);
+    }
+  }
+
+  /**
+   * Execute backend verified persona switch.
+   * Enforces authoritative RBAC, active membership checks, and mentor-investor isolation.
+   */
+  async switchPersona(
+    userId: string,
+    targetEntityId: string | null
+  ): Promise<{
+    success: boolean;
+    destinationTab: 'feed' | 'dashboard' | 'profile';
+    message: string;
+    entity?: LinkedEntity | null;
+  }> {
+    try {
+      const res = await fetch('/api/auth/workspaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          userId,
+          targetContext: targetEntityId ? 'ENTITY' : 'PERSONAL',
+          targetEntityId,
+        }),
+      });
+
+      const body = await res.json();
+      if (!res.ok || !body?.success) {
+        throw new Error(body?.message || 'Persona switch rejected by authorization policy.');
+      }
+
+      if (targetEntityId) {
+        this.setActiveEntityId(targetEntityId);
+        const entity = this.getActiveEntity();
+        return {
+          success: true,
+          destinationTab: 'dashboard',
+          message: body.message,
+          entity,
+        };
+      } else {
+        this.setActiveEntityId(null);
+        const destinationTab = body.data?.destinationTab || 'feed';
+        return {
+          success: true,
+          destinationTab,
+          message: body.message,
+          entity: null,
+        };
+      }
+    } catch (err: any) {
+      console.error('[EntityContextService] Switch persona failed:', err);
+      throw err;
     }
   }
 
