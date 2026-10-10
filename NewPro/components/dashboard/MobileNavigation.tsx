@@ -3,6 +3,8 @@
 import React from 'react';
 import { LayoutDashboard, Home, MessageCircle, Briefcase, GraduationCap, User } from 'lucide-react';
 
+import { getUserProfile } from '@/lib/userProfile';
+
 interface MobileNavigationProps {
   activeTab: string;
   onSelectTab: (tab: string) => void;
@@ -14,8 +16,10 @@ export const MobileNavigation: React.FC<MobileNavigationProps> = ({
   onSelectTab,
   onToggleMessages,
 }) => {
+  const profile = getUserProfile();
+  const isExplorer = profile?.role === 'explorer';
   const items = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    ...(isExplorer ? [] : [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }]),
     { id: 'feed', label: 'Home', icon: Home },
     { id: 'messages', label: 'Messages', icon: MessageCircle },
     { id: 'opportunity', label: 'Opportunity', icon: Briefcase },

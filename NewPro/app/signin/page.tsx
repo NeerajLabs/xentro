@@ -265,7 +265,8 @@ export default function SignInPage() {
     localStorage.setItem("xentro_onboarding_complete", "true");
     document.cookie = `xentro_session=${encodeURIComponent(JSON.stringify({ userId: profile.id, role: activeRole, name: profile.name, profile }))}; path=/; max-age=86400; SameSite=Lax`;
 
-    window.location.href = "/";
+    const targetRole = String(activeRole || profile.role || 'explorer').toLowerCase();
+    window.location.href = targetRole === 'explorer' ? "/?tab=profile" : "/";
   };
 
   const executeAdminLogin = async (empId: string, pass: string) => {

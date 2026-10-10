@@ -165,8 +165,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
     };
   }, []);
 
+  const isExplorer = profile.role === 'explorer';
   const navItems: NavItem[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    ...(isExplorer ? [] : [{ id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard }]),
     { id: 'feed', label: 'Feed / Role', icon: Home },
     {
       id: 'messages',
@@ -180,7 +181,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'mentor', label: 'Mentor', icon: GraduationCap },
     { id: 'investor', label: 'Investor', icon: TrendingUp },
     { id: 'esp', label: 'ESP', icon: Grid2X2 },
-    { id: 'roles', label: 'Accounts & Roles', icon: ShieldCheck },
+    ...(!isExplorer ? [{ id: 'roles', label: 'Accounts & Roles', icon: ShieldCheck }] : []),
     {
       id: 'notifications',
       label: 'Notifications',
@@ -386,7 +387,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
         )}
 
-        {/* Action 2: Preview Profile (Directly Below Signup New Role) */}
+        {/* Action 2: Personal Profile (Directly Below Navigation) */}
         <button
           onClick={() => onSelectTab('profile')}
           className={`w-full flex items-center rounded-xl transition-all duration-200 text-left group hover:scale-105 active:scale-95 cursor-pointer ${
@@ -396,8 +397,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
               ? 'bg-gray-100/90 dark:bg-[#202422] text-[#101212] dark:text-white ring-1 ring-[#D9FF3F]'
               : 'bg-transparent text-[#565B59] hover:bg-gray-100/60 dark:hover:bg-[#202422]/60'
           }`}
-          title={!isExpanded ? 'Preview Profile' : undefined}
-          aria-label="Preview Profile"
+          title={!isExpanded ? (isExplorer ? 'Personal Profile' : 'Preview Profile') : undefined}
+          aria-label="Profile"
         >
           <div
             className={`flex items-center justify-center flex-shrink-0 ${
@@ -419,7 +420,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <div className="flex flex-col">
               <span className="text-xs font-bold text-[#101212] dark:text-white transition-colors duration-200 leading-tight group-hover:text-[#9EBE12] dark:group-hover:text-[#D9FF3F]">
-                Preview Profile
+                {isExplorer ? 'Personal Profile' : 'Preview Profile'}
               </span>
               <span className="text-[10px] text-[#565B59] dark:text-[#B6B8B7] transition-colors duration-200 capitalize">
                 {profile.role} Identity

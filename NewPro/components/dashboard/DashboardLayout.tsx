@@ -49,17 +49,22 @@ export const DashboardLayout: React.FC = () => {
 
   const handleSelectNavTab = (tabId: string) => {
     setSelectedProfile(null);
-    if (activeNavTab !== 'dashboard' && tabId === 'dashboard') {
+    let resolvedTab = tabId;
+    if (resolvedTab === 'dashboard' && userProfile.role === 'explorer') {
+      resolvedTab = 'profile';
+    }
+    if (activeNavTab !== 'dashboard' && resolvedTab === 'dashboard') {
       setLastUniversalTab(activeNavTab);
     }
-    setActiveNavTab(tabId);
+    setActiveNavTab(resolvedTab);
 
-    // Rule 16: Update URL search params so browser refresh inside Dashboard preserves active dashboard,
-    // while returning to Universal cleans the param so refresh on Universal stays on Universal.
+    // Update URL search params so browser refresh preserves tab state
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
-      if (tabId === 'dashboard') {
+      if (resolvedTab === 'dashboard') {
         url.searchParams.set('tab', 'dashboard');
+      } else if (resolvedTab === 'profile') {
+        url.searchParams.set('tab', 'profile');
       } else {
         url.searchParams.delete('tab');
       }
@@ -70,8 +75,14 @@ export const DashboardLayout: React.FC = () => {
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
-      const tabParam = params.get('tab');
+      let tabParam = params.get('tab');
       if (tabParam) {
+        if (tabParam === 'dashboard' && userProfile.role === 'explorer') {
+          tabParam = 'profile';
+          const url = new URL(window.location.href);
+          url.searchParams.set('tab', 'profile');
+          window.history.replaceState({}, '', url.pathname + url.search + url.hash);
+        }
         if (activeNavTab !== 'dashboard' && tabParam === 'dashboard') {
           setLastUniversalTab(activeNavTab);
         }
@@ -176,15 +187,23 @@ export const DashboardLayout: React.FC = () => {
   const showHeader = activeNavTab === 'feed';
 
   if (activeNavTab === 'dashboard') {
+    if (userProfile.role === 'explorer') {
+      setActiveNavTab('profile');
+      return null;
+    }
     return (
       <ToastProvider>
         <DashboardWorkspace
           onBackToUniversal={() => {
-            const backTarget = lastUniversalTab || 'feed';
+            const backTarget = userProfile.role === 'explorer' ? 'profile' : (lastUniversalTab || 'feed');
             setActiveNavTab(backTarget);
             if (typeof window !== 'undefined') {
               const url = new URL(window.location.href);
-              url.searchParams.delete('tab');
+              if (backTarget === 'profile') {
+                url.searchParams.set('tab', 'profile');
+              } else {
+                url.searchParams.delete('tab');
+              }
               window.history.replaceState({}, '', url.pathname + (url.search ? url.search : '') + url.hash);
             }
           }}
@@ -368,15 +387,24 @@ export const DashboardLayout: React.FC = () => {
                   />
                 </div>
               ) : activeNavTab === 'dashboard' ? (
-                <div className="max-w-[1240px] mx-auto animate-fade-slide">
-                  <DynamicDashboardView
-                    onNavigateTab={(tab) => {
-                      if (tab === 'feed' || tab === 'messages' || tab === 'notifications' || tab === 'profile') {
-                        setActiveNavTab(tab);
-                      }
-                    }}
+                userProfile.role === 'explorer' ? (
+                  <ExplorerProfileView
+                    explorerId={userProfile.id}
+                    explorerData={userProfile}
+                    isOwnProfile={true}
+                    onBackToFeed={() => setActiveNavTab('feed')}
                   />
-                </div>
+                ) : (
+                  <div className="max-w-[1240px] mx-auto animate-fade-slide">
+                    <DynamicDashboardView
+                      onNavigateTab={(tab) => {
+                        if (tab === 'feed' || tab === 'messages' || tab === 'notifications' || tab === 'profile') {
+                          setActiveNavTab(tab);
+                        }
+                      }}
+                    />
+                  </div>
+                )
               ) : (
                 /* Universal Feed: Exact layout from second image */
                 <div className="flex flex-col lg:flex-row justify-center items-start gap-6 max-w-[1040px] mx-auto">

@@ -75,12 +75,20 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     if (status === 'APPROVED') {
       // 1. Grant role to user in MongoDB
       if (targetUserId) {
+        const isPersonalConversion = ['mentor', 'investor', 'individual investor'].includes(requestedRole.toLowerCase());
+        const updateDoc: any = {
+          $addToSet: { activeRoles: requestedRole },
+          $set: { updatedAt: nowIso },
+        };
+        if (isPersonalConversion) {
+          const canonicalRole = requestedRole.toLowerCase().includes('mentor') ? 'mentor' : 'investor';
+          updateDoc.$set.role = canonicalRole;
+          updateDoc.$set.primaryRole = canonicalRole;
+          updateDoc.$set.accountType = canonicalRole === 'mentor' ? 'Mentor' : 'Individual Investor';
+        }
         await usersCol.updateOne(
           { $or: [{ id: targetUserId }, { _id: targetUserId }] },
-          {
-            $addToSet: { activeRoles: requestedRole },
-            $set: { updatedAt: nowIso },
-          }
+          updateDoc
         );
       }
 

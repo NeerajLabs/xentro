@@ -399,9 +399,9 @@ export default function PersonalProfilePage() {
   };
 
   const handleLaunchXentro = () => {
-    // Complete onboarding and navigate to Explorer Dashboard
+    // Complete onboarding and navigate directly to Explorer Personal Profile
     authService.completeOnboarding("Explorer");
-    router.push("/");
+    router.push("/?tab=profile");
   };
 
   // Profile Saving Loading Screen (Section 7)
