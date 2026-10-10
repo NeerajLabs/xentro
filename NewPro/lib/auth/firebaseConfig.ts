@@ -11,6 +11,7 @@
  * NEXT_PUBLIC_FIREBASE_APP_ID
  */
 
+
 export interface FirebaseConfig {
   apiKey?: string;
   authDomain?: string;

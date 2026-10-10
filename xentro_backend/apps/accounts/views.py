@@ -132,7 +132,8 @@ class SignUpView(APIView):
             return api_error("Full name, email, and password are required.")
 
         users_col = get_collection("users")
-        if users_col.find_one({"email": email}):
+        _existing_check = users_col.find_one({"email": email})
+        if _existing_check and _existing_check.get("emailVerified") and _existing_check.get("onboardingCompleted"):
             return api_error("An account with this email already exists. Please sign in instead.", status_code=409)
 
         # Require and verify 6-digit email OTP
@@ -448,23 +449,240 @@ class SendOtpView(APIView):
         return api_error(res.get("message", "Failed to dispatch verification code."), status_code=400)
 
 
-class SendSignUpOtpView(APIView):
-    """Specifically dispatches a 6-digit OTP for new user signup after verifying email uniqueness."""
+class SignUpStep1View(APIView):
+    """
+    POST /api/v1/auth/signup/step1/
+    Validates Step 1 Account Registration fields:
+    - fullName, email, phoneNumber, password, confirmPassword
+    - 3 checkboxes: termsAccepted, privacyAccepted, identityConsentAccepted
+    Creates/resumes provisional personal account in MongoDB:
+    - User ID (XU-XXXXXX), Profile ID (PRF-XXXXXX)
+    - baseRole: "explorer", accountType: "Explorer"
+    - accountStatus: "PENDING_VERIFICATION", emailVerified: False
+    Dispatches 6-digit OTP to email via Celery / resilient service.
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
+        data = request.data
+        full_name = str(data.get("fullName") or data.get("full_name") or "").strip()
+        email = str(data.get("email") or "").strip().lower()
+        phone_number = str(data.get("phoneNumber") or data.get("phone_number") or "").strip()
+        password = str(data.get("password") or "")
+        confirm_password = str(data.get("confirmPassword") or data.get("confirm_password") or "")
+
+        terms_accepted = bool(data.get("termsAccepted") or data.get("terms_accepted") or data.get("agreeTerms") or data.get("agreedToTerms"))
+        privacy_accepted = bool(data.get("privacyAccepted") or data.get("privacy_accepted") or data.get("agreePrivacy") or data.get("agreedToPrivacy"))
+        identity_consent = bool(data.get("identityConsentAccepted") or data.get("identity_consent") or data.get("consentIdentity") or data.get("consentIdentityVerification"))
+
+        if not full_name:
+            return api_error("Full Name is required.")
+
+        if not email or "@" not in email or "." not in email:
+            return api_error("A valid email address is required.")
+
+        if password:
+            if len(password) < 6:
+                return api_error("Password must be at least 6 characters long.")
+            if confirm_password and password != confirm_password:
+                return api_error("Passwords do not match. Please verify your password entry.")
+
+        # If full signup step 1, enforce all three agreements
+        if any(k in data for k in ("termsAccepted", "agreeTerms", "agreedToTerms", "privacyAccepted", "agreePrivacy", "agreedToPrivacy", "identityConsentAccepted", "consentIdentityVerification")):
+            if not terms_accepted:
+                return api_error("You must accept the Terms & Conditions to proceed.")
+            if not privacy_accepted:
+                return api_error("You must accept the Privacy Policy to proceed.")
+            if not identity_consent:
+                return api_error("You must consent to Xentro Identity Verification to proceed.")
+
+        users_col = get_collection("users")
+        existing_user = users_col.find_one({"email": email})
+
+        if existing_user and existing_user.get("onboardingCompleted") and existing_user.get("emailVerified"):
+            return api_error("An account with this email already exists. Please sign in instead.", status_code=409)
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        salt = bcrypt.gensalt(12)
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8') if password else (existing_user.get("passwordHash") if existing_user else "")
+
+        if existing_user:
+            user_id = existing_user.get("id") or generate_xentro_id("user")
+            profile_id = existing_user.get("profileId") or generate_xentro_id("profile")
+            update_data = {
+                "id": user_id,
+                "xentroId": user_id,
+                "profileId": profile_id,
+                "fullName": full_name or existing_user.get("fullName", ""),
+                "phoneNumber": phone_number or existing_user.get("phoneNumber", ""),
+                "accountType": "Explorer",
+                "baseRole": "explorer",
+                "userType": "Explorer",
+                "primaryRole": "Explorer",
+                "activeRoles": ["Explorer"],
+                "accountStatus": "PENDING_VERIFICATION",
+                "termsAccepted": terms_accepted or existing_user.get("termsAccepted", False),
+                "termsAcceptedAt": now_iso if terms_accepted else existing_user.get("termsAcceptedAt"),
+                "termsVersion": "1.0",
+                "privacyAccepted": privacy_accepted or existing_user.get("privacyAccepted", False),
+                "privacyAcceptedAt": now_iso if privacy_accepted else existing_user.get("privacyAcceptedAt"),
+                "privacyVersion": "1.0",
+                "identityConsentAccepted": identity_consent or existing_user.get("identityConsentAccepted", False),
+                "identityConsentAcceptedAt": now_iso if identity_consent else existing_user.get("identityConsentAcceptedAt"),
+                "identityConsentVersion": "1.0",
+                "identityStatus": existing_user.get("identityStatus") or "NOT_SUBMITTED",
+                "updatedAt": now_iso,
+            }
+            if password_hash:
+                update_data["passwordHash"] = password_hash
+            users_col.update_one({"_id": existing_user["_id"]}, {"$set": update_data})
+        else:
+            user_id = generate_xentro_id("user")
+            profile_id = generate_xentro_id("profile")
+            new_user = {
+                "id": user_id,
+                "xentroId": user_id,
+                "profileId": profile_id,
+                "username": clean_username(full_name),
+                "email": email,
+                "fullName": full_name,
+                "phoneNumber": phone_number,
+                "passwordHash": password_hash,
+                "accountType": "Explorer",
+                "baseRole": "explorer",
+                "userType": "Explorer",
+                "primaryRole": "Explorer",
+                "activeRoles": ["Explorer"],
+                "emailVerified": False,
+                "phoneVerified": False,
+                "identityStatus": "NOT_SUBMITTED",
+                "accountStatus": "PENDING_VERIFICATION",
+                "onboardingCompleted": False,
+                "isActive": True,
+                "is_staff": False,
+                "termsAccepted": terms_accepted,
+                "termsAcceptedAt": now_iso if terms_accepted else None,
+                "termsVersion": "1.0",
+                "privacyAccepted": privacy_accepted,
+                "privacyAcceptedAt": now_iso if privacy_accepted else None,
+                "privacyVersion": "1.0",
+                "identityConsentAccepted": identity_consent,
+                "identityConsentAcceptedAt": now_iso if identity_consent else None,
+                "identityConsentVersion": "1.0",
+                "createdAt": now_iso,
+                "updatedAt": now_iso,
+            }
+            users_col.insert_one(new_user)
+
+        otp_res = send_email_otp(email)
+        if not otp_res.get("success"):
+            return api_error(otp_res.get("message", "Failed to dispatch verification code."), status_code=400)
+
+        # Trigger Celery task if worker is active
+        try:
+            from .tasks import send_otp_email_task
+            otp_record = get_collection("otp_codes").find_one({"email": email})
+            if otp_record and otp_record.get("code"):
+                send_otp_email_task.delay(email, otp_record["code"], full_name)
+        except Exception:
+            pass
+
+        return api_success({
+            "userId": user_id,
+            "profileId": profile_id,
+            "email": email,
+            "accountStatus": "PENDING_VERIFICATION",
+            "message": f"Verification code sent to {email}."
+        }, f"Verification code sent to {email}.")
+
+
+class SendSignUpOtpView(APIView):
+    """Dispatches a 6-digit OTP for signup. Accepts either email alone or full Step 1 payload."""
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        if request.data.get("fullName") or request.data.get("password") or request.data.get("agreeTerms") or request.data.get("termsAccepted"):
+            return SignUpStep1View().post(request)
+
         email = request.data.get("email", "").strip().lower()
         if not email:
             return api_error("Email address is required.")
 
         users_col = get_collection("users")
-        if users_col.find_one({"email": email}):
+        existing_user = users_col.find_one({"email": email})
+        if existing_user and existing_user.get("onboardingCompleted") and existing_user.get("emailVerified"):
             return api_error("An account with this email already exists. Please sign in instead.", status_code=409)
 
         res = send_email_otp(email)
         if res.get("success"):
+            try:
+                from .tasks import send_otp_email_task
+                otp_rec = get_collection("otp_codes").find_one({"email": email})
+                if otp_rec and otp_rec.get("code"):
+                    send_otp_email_task.delay(email, otp_rec["code"], "Explorer")
+            except Exception:
+                pass
             return api_success(res, res.get("message"))
         return api_error(res.get("message", "Failed to dispatch verification code."), status_code=400)
+
+
+class VerifySignUpOtpView(APIView):
+    """
+    POST /api/v1/auth/signup/otp/verify/
+    Verifies 6-digit email OTP for signup, transitions account to PROFILE_SETUP_PENDING,
+    and issues JWT tokens for authenticated profile completion.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        email = request.data.get("email", "").strip().lower()
+        code = request.data.get("code") or request.data.get("otp", "")
+        if not email or not code:
+            return api_error("Email and 6-digit verification code are required.")
+
+        res = verify_email_otp(email, str(code).strip())
+        if not res.get("success"):
+            return api_error(res.get("message", "Invalid or expired verification code."))
+
+        users_col = get_collection("users")
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        user = users_col.find_one({"email": email})
+        if not user:
+            return api_error("User not found.", status_code=404)
+
+        users_col.update_one(
+            {"_id": user["_id"]},
+            {"$set": {
+                "emailVerified": True,
+                "accountStatus": "PROFILE_SETUP_PENDING",
+                "updatedAt": now_iso
+            }}
+        )
+        user = users_col.find_one({"_id": user["_id"]})
+        user_clean = enrich_user_account_data(user)
+
+        access_token = create_access_token({
+            "sub": user["id"],
+            "email": user["email"],
+            "name": user.get("fullName", ""),
+            "account_type": user_clean.get("accountType", "Explorer"),
+            "active_roles": user_clean.get("activeRoles", ["Explorer"]),
+            "is_staff": user.get("is_staff", False)
+        })
+        refresh_token = create_refresh_token(user["id"])
+
+        response_data = {
+            "emailVerified": True,
+            "accountStatus": "PROFILE_SETUP_PENDING",
+            "user": user_clean,
+            "tokens": {
+                "accessToken": access_token,
+                "refreshToken": refresh_token
+            }
+        }
+        resp = api_success(response_data, "Email verified successfully. Proceed to profile setup.")
+        resp.set_cookie("xentro_session", access_token, max_age=86400, httponly=True, samesite="Lax")
+        return resp
 
 
 class VerifyOtpView(APIView):
@@ -480,12 +698,21 @@ class VerifyOtpView(APIView):
         if res.get("success"):
             users_col = get_collection("users")
             now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
-            users_col.update_one(
-                {"email": email},
-                {"$set": {"emailVerified": True, "updatedAt": now_iso}}
-            )
             user = users_col.find_one({"email": email})
             if user:
+                account_status = user.get("accountStatus", "ACTIVE")
+                if account_status == "PENDING_VERIFICATION":
+                    account_status = "PROFILE_SETUP_PENDING"
+
+                users_col.update_one(
+                    {"_id": user["_id"]},
+                    {"$set": {
+                        "emailVerified": True,
+                        "accountStatus": account_status,
+                        "updatedAt": now_iso
+                    }}
+                )
+                user = users_col.find_one({"_id": user["_id"]})
                 user_clean = enrich_user_account_data(user)
                 access_token = create_access_token({
                     "sub": user["id"],
@@ -498,6 +725,8 @@ class VerifyOtpView(APIView):
                 refresh_token = create_refresh_token(user["id"])
                 resp = api_success({
                     "verified": True,
+                    "emailVerified": True,
+                    "accountStatus": account_status,
                     "user": user_clean,
                     "tokens": {
                         "accessToken": access_token,
@@ -1434,24 +1663,63 @@ def save_user_profile_to_db(user_identifier, data):
 
     full_name = data.get("fullName") or data.get("name")
     headline = str(data.get("headline") or "").strip()
-    location = str(data.get("location") or "").strip()
+
+    # Parse location — accept structuredLocation dict, location dict, or flat "City, State" string
+    structured_location_raw = data.get("structuredLocation") or {}
+    location_data = data.get("location")
+    if isinstance(location_data, dict) and location_data:
+        structured_location = {
+            "city": str(location_data.get("city") or "").strip(),
+            "state": str(location_data.get("state") or "").strip(),
+            "country": str(location_data.get("country") or "India").strip(),
+        }
+        location = ", ".join(filter(None, [structured_location["city"], structured_location["state"]]))
+    elif isinstance(structured_location_raw, dict) and structured_location_raw:
+        structured_location = {
+            "city": str(structured_location_raw.get("city") or "").strip(),
+            "state": str(structured_location_raw.get("state") or "").strip(),
+            "country": str(structured_location_raw.get("country") or "India").strip(),
+        }
+        location = ", ".join(filter(None, [structured_location["city"], structured_location["state"]]))
+    else:
+        location = str(location_data or "").strip()
+        parts = [p.strip() for p in location.split(",") if p.strip()]
+        structured_location = {
+            "city": parts[0] if len(parts) > 0 else "",
+            "state": parts[1] if len(parts) > 1 else "",
+            "country": parts[2] if len(parts) > 2 else "India",
+        }
+
     current_role = str(data.get("currentRole") or data.get("current_role") or data.get("roleTitle") or "").strip()
     current_org = str(data.get("currentOrganization") or data.get("current_organization") or data.get("organization") or "").strip()
-    education = str(data.get("education") or "").strip()
-    bio = str(data.get("bio") or "").strip()
+
+    # Education records: support array of education objects or string
+    education_raw = data.get("education") or (user.get("education") if user else [])
+    if isinstance(education_raw, list):
+        education = education_raw
+    elif isinstance(education_raw, str) and education_raw.strip():
+        education = [{"institution": education_raw.strip(), "degree": "", "fieldOfStudy": "", "startYear": "", "endYear": "", "currentlyStudying": False}]
+    else:
+        education = []
+
+    bio = str(data.get("bio") or data.get("about") or "").strip()
     prof_exp = str(data.get("professionalExperience") or data.get("professional_experience") or data.get("experienceSummary") or data.get("experience_summary") or "").strip()
 
     skills = data.get("skills") or data.get("areasOfExpertise") or []
     if isinstance(skills, str):
         skills = [s.strip() for s in skills.split(",") if s.strip()]
 
-    industries = data.get("industries") or data.get("industriesOfFocus") or []
+    industries = data.get("industries") or data.get("industriesOfFocus") or data.get("industryInterests") or []
     if isinstance(industries, str):
         industries = [i.strip() for i in industries.split(",") if i.strip()]
 
-    interests = data.get("startupInterests") or data.get("entrepreneurshipInterests") or []
+    interests = data.get("startupInterests") or data.get("entrepreneurshipInterests") or data.get("ecosystemInterests") or []
     if isinstance(interests, str):
         interests = [item.strip() for item in interests.split(",") if item.strip()]
+
+    ecosystem_goals = data.get("ecosystemGoals") or data.get("goals") or []
+    if isinstance(ecosystem_goals, str):
+        ecosystem_goals = [g.strip() for g in ecosystem_goals.split(",") if g.strip()]
 
     linkedin = str(data.get("linkedin") or data.get("linkedinUrl") or "").strip()
     website = str(data.get("website") or data.get("websiteUrl") or "").strip()
@@ -1463,40 +1731,88 @@ def save_user_profile_to_db(user_identifier, data):
     if other_link and other_link not in other_links:
         other_links = [other_link] + [l for l in other_links if l != other_link]
 
-    photo_url = data.get("photoUrl") or data.get("avatar") or data.get("photo_url")
+    photo_url = data.get("photoUrl") or data.get("avatar") or data.get("photo_url") or data.get("profilePicture")
 
+    profile_id = (user.get("profileId") if user else None) or generate_xentro_id("profile")
+    user_actual_id = user.get("id") if user else str(user_identifier or user_id or generate_xentro_id("user"))
+
+    _resolved_photo = photo_url or (user.get("photoUrl") or user.get("avatar") if user else None)
     personal_profile_doc = {
+        "id": profile_id,
+        "profileId": profile_id,
+        "userId": user_actual_id,
+        "profileType": "personal",
         "fullName": full_name or (user.get("fullName") if user else "Verified User"),
+        "displayName": full_name or (user.get("fullName") if user else "Verified User"),
+        "publicUsername": clean_username(full_name or "user"),
+        "professionalHeadline": headline,
         "headline": headline,
-        "location": location,
+        "bio": bio,
+        "about": bio,
+        "avatarUrl": _resolved_photo,
+        "photoUrl": _resolved_photo,
+        "profilePicture": _resolved_photo,
+        "location": structured_location,
         "currentRole": current_role,
         "currentOrganization": current_org,
+        "professional": {
+            "category": current_role.lower().replace(" ", "_") if current_role else "explorer",
+            "currentOrganization": current_org,
+            "designation": None,
+        },
         "education": education,
-        "bio": bio,
+        "experience": [],
         "professionalExperience": prof_exp,
         "experienceSummary": prof_exp,
         "skills": skills,
         "areasOfExpertise": skills,
         "industries": industries,
+        "industryInterests": industries,
         "industriesOfFocus": industries,
         "startupInterests": interests,
+        "ecosystemInterests": interests,
         "entrepreneurshipInterests": interests,
+        "ecosystemGoals": ecosystem_goals,
+        "socialLinks": {
+            "linkedin": linkedin,
+            "github": None,
+            "website": website,
+            "otherLinks": other_links,
+        },
         "linkedin": linkedin,
         "website": website,
         "otherLink": other_link,
         "otherLinks": other_links,
-        "photoUrl": photo_url or (user.get("photoUrl") or user.get("avatar") if user else None),
-        "updatedAt": now_iso
+        "visibility": {
+            "profile": "public",
+            "education": "public",
+            "experience": "public",
+            "connections": "mutual_only",
+            "activity": "public",
+        },
+        "profileUpdatedAt": now_iso,
+        "updatedAt": now_iso,
     }
 
+    # Persist in canonical personal_profiles collection
+    profiles_col = get_collection("personal_profiles")
+    profiles_col.update_one(
+        {"userId": user_actual_id},
+        {"$set": personal_profile_doc},
+        upsert=True
+    )
+
     update_doc = {
+        "profileId": profile_id,
         "headline": headline,
-        "location": location,
+        "location": structured_location,
+        "locationString": location,
         "currentRole": current_role,
         "currentOrganization": current_org,
         "organization": current_org or (user.get("organization") if user else ""),
         "education": education,
         "bio": bio,
+        "about": bio,
         "professionalExperience": prof_exp,
         "experienceSummary": prof_exp,
         "skills": skills,
@@ -1505,6 +1821,7 @@ def save_user_profile_to_db(user_identifier, data):
         "industriesOfFocus": industries,
         "startupInterests": interests,
         "entrepreneurshipInterests": interests,
+        "ecosystemGoals": ecosystem_goals,
         "linkedin": linkedin,
         "linkedinUrl": linkedin,
         "website": website,
@@ -1512,7 +1829,9 @@ def save_user_profile_to_db(user_identifier, data):
         "otherLink": other_link,
         "otherLinks": other_links,
         "personalProfile": personal_profile_doc,
-        "updatedAt": now_iso
+        "onboardingCompleted": True,
+        "baseRole": "explorer",
+        "updatedAt": now_iso,
     }
     if full_name:
         update_doc["fullName"] = full_name
@@ -1520,11 +1839,14 @@ def save_user_profile_to_db(user_identifier, data):
         update_doc["photoUrl"] = photo_url
         update_doc["avatar"] = photo_url
 
+    if user and user.get("accountStatus") in ["PENDING_VERIFICATION", "PROFILE_SETUP_PENDING"]:
+        update_doc["accountStatus"] = "ACTIVE"
+
     if user:
         users_col.update_one({"_id": user["_id"]}, {"$set": update_doc})
         updated_user = users_col.find_one({"_id": user["_id"]})
     else:
-        target_id = str(user_identifier or user_id or generate_xentro_id("XU"))
+        target_id = user_actual_id
         target_email = email or f"{target_id.lower()}@xentro.network"
         new_doc = {
             "id": target_id,
@@ -1533,12 +1855,26 @@ def save_user_profile_to_db(user_identifier, data):
             "fullName": full_name or "Verified User",
             "email": target_email,
             "accountType": "Explorer",
-            "activeRoles": ["Personal Account"],
+            "baseRole": "explorer",
+            "activeRoles": ["Explorer"],
+            "accountStatus": "ACTIVE",
+            "onboardingCompleted": True,
             "createdAt": now_iso,
             **update_doc
         }
         users_col.insert_one(new_doc)
         updated_user = new_doc
+
+    # Celery async background triggers
+    try:
+        from .tasks import send_welcome_email_task, update_user_search_index_task
+        u_email = updated_user.get("email")
+        if u_email and "@" in u_email and not u_email.endswith("@xentro.network"):
+            send_welcome_email_task.delay(u_email, updated_user.get("fullName", "Explorer"))
+        if updated_user.get("id"):
+            update_user_search_index_task.delay(updated_user["id"])
+    except Exception:
+        pass
 
     return enrich_user_account_data(updated_user)
 
@@ -1580,7 +1916,8 @@ class UpdateUserProfileView(APIView):
         user_clean = save_user_profile_to_db(user_identifier, request.data)
         return api_success({
             "user": user_clean,
-            "profile": user_clean.get("personalProfile") or user_clean
+            "profile": user_clean.get("personalProfile") or user_clean,
+            "onboardingCompleted": True
         }, "Profile saved successfully.")
 
     def put(self, request):
@@ -1588,6 +1925,298 @@ class UpdateUserProfileView(APIView):
 
     def patch(self, request):
         return self.post(request)
+
+
+class WorkspacesListView(APIView):
+    """
+    GET /api/v1/auth/workspaces/
+    Returns list of authorized workspaces for the authenticated user:
+    - Base Personal Account: Explorer (always active)
+    - Personal Role Upgrades: Mentor, Individual Investor (if approved)
+    - Authorized Entity Accounts: Startups, Investor Orgs, ESPs, Institutions
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        user_id, user_doc = resolve_verified_session_user(request)
+        if not user_id:
+            return api_error("Authentication required to view workspaces.", status_code=401)
+
+        users_col = get_collection("users")
+        memberships_col = get_collection("memberships")
+        entities_col = get_collection("entities")
+
+        if not user_doc:
+            user_doc = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+            if not user_doc:
+                return api_error("User not found.", status_code=404)
+
+        workspaces = [
+            {
+                "id": "explorer",
+                "name": "Explorer Workspace",
+                "role": "Explorer",
+                "type": "PERSONAL",
+                "url": "/",
+                "isActive": True,
+                "badge": "Base Account"
+            }
+        ]
+
+        active_roles = list(user_doc.get("activeRoles") or ["Explorer"])
+        if "Mentor" in active_roles:
+            workspaces.append({
+                "id": "mentor",
+                "name": "Mentor Workspace",
+                "role": "Mentor",
+                "type": "PERSONAL_ROLE",
+                "url": "/mentor/dashboard",
+                "isActive": False,
+                "badge": "Approved Role"
+            })
+        if "Investor" in active_roles or "Individual Investor" in active_roles:
+            workspaces.append({
+                "id": "investor",
+                "name": "Individual Investor Workspace",
+                "role": "Individual Investor",
+                "type": "PERSONAL_ROLE",
+                "url": "/investor/dashboard",
+                "isActive": False,
+                "badge": "Approved Role"
+            })
+
+        user_memberships = list(memberships_col.find({
+            "userId": user_doc["id"],
+            "status": {"$in": ["ACTIVE", "APPROVED"]}
+        }))
+
+        for mem in user_memberships:
+            ent = entities_col.find_one({"id": mem.get("entityId")})
+            ent_name = mem.get("entityName") or (ent.get("name") if ent else "Entity")
+            ent_type = mem.get("entityType") or (ent.get("entityType") if ent else "STARTUP")
+            ent_url = f"/{ent_type.lower()}/dashboard" if ent_type else "/dashboard"
+            workspaces.append({
+                "id": mem.get("entityId"),
+                "name": f"{ent_name} ({ent_type})",
+                "role": mem.get("role", "Admin"),
+                "type": "ENTITY",
+                "entityType": ent_type,
+                "url": ent_url,
+                "isActive": False,
+                "badge": mem.get("role", "Member")
+            })
+
+        return api_success({
+            "workspaces": workspaces,
+            "totalCount": len(workspaces),
+            "userId": user_doc["id"]
+        })
+
+
+class RoleUpgradeView(APIView):
+    """
+    POST /api/v1/roles/upgrade/
+    Allows an Explorer to apply for Mentor or Individual Investor personal role upgrade.
+    Preserves existing User ID and canonical profile.
+    Saves application to role_applications and role_requests collections for admin review.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        user_id, user_doc = resolve_verified_session_user(request)
+        if not user_id:
+            return api_error("Authentication required to apply for role upgrade.", status_code=401)
+
+        users_col = get_collection("users")
+        if not user_doc:
+            user_doc = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+            if not user_doc:
+                return api_error("User not found.", status_code=404)
+
+        requested_role = request.data.get("requestedRole") or request.data.get("role")
+        if not requested_role or requested_role not in ["Mentor", "Individual Investor", "Investor"]:
+            return api_error("Valid requested role is required ('Mentor' or 'Individual Investor').")
+
+        canonical_role = "Mentor" if requested_role == "Mentor" else "Individual Investor"
+
+        active_roles = list(user_doc.get("activeRoles") or ["Explorer"])
+        if canonical_role in active_roles or (canonical_role == "Individual Investor" and "Investor" in active_roles):
+            return api_error(f"You already have the {canonical_role} role approved.", status_code=400)
+
+        req_col = get_collection("role_requests")
+        app_col = get_collection("role_applications")
+
+        existing_pending = req_col.find_one({
+            "userId": user_doc["id"],
+            "requestedRole": {"$in": [canonical_role, "Mentor" if canonical_role == "Mentor" else "Investor"]},
+            "status": "PENDING"
+        })
+        if existing_pending:
+            return api_error(f"You already have a pending application for {canonical_role} under review.", status_code=409)
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        req_id = generate_xentro_id("request")
+        application_data = request.data.get("applicationData") or request.data
+
+        app_doc = {
+            "id": req_id,
+            "userId": user_doc["id"],
+            "userEmail": user_doc.get("email"),
+            "userName": user_doc.get("fullName"),
+            "requestedRole": canonical_role,
+            "status": "PENDING",
+            "applicationData": application_data,
+            "submittedAt": now_iso,
+            "createdAt": now_iso,
+            "updatedAt": now_iso
+        }
+        req_col.insert_one(app_doc)
+        app_col.insert_one({**app_doc, "applicationId": req_id})
+
+        if canonical_role == "Mentor":
+            mentor_col = get_collection("mentor_profiles")
+            mentor_col.update_one(
+                {"userId": user_doc["id"]},
+                {"$set": {
+                    "id": generate_xentro_id("mentor"),
+                    "userId": user_doc["id"],
+                    "fullName": user_doc.get("fullName"),
+                    "headline": application_data.get("headline") or user_doc.get("headline", ""),
+                    "expertise": application_data.get("expertise", []),
+                    "status": "PENDING_REVIEW",
+                    "submittedAt": now_iso,
+                    "updatedAt": now_iso
+                }},
+                upsert=True
+            )
+        else:
+            inv_col = get_collection("investor_profiles")
+            inv_col.update_one(
+                {"userId": user_doc["id"]},
+                {"$set": {
+                    "id": generate_xentro_id("investor"),
+                    "userId": user_doc["id"],
+                    "fullName": user_doc.get("fullName"),
+                    "investorType": application_data.get("investorType", "ANGEL"),
+                    "chequeRange": application_data.get("chequeRange", {"min": 500000, "max": 2500000}),
+                    "sectors": application_data.get("sectors", []),
+                    "status": "PENDING_REVIEW",
+                    "submittedAt": now_iso,
+                    "updatedAt": now_iso
+                }},
+                upsert=True
+            )
+
+        return api_success({
+            "applicationId": req_id,
+            "requestedRole": canonical_role,
+            "status": "PENDING_REVIEW",
+            "submittedAt": now_iso
+        }, f"Application to become {canonical_role} has been submitted for administrative review.")
+
+
+class EntityCreateView(APIView):
+    """
+    POST /api/v1/entities/create/
+    Allows an Explorer to initiate creation of Startup, Investor Organization, or ESP/Institution account.
+    - Generates immutable entity ID (ST-XXXXXX, VCI-XXXXXX, ES-XXXXXX, INS-XXXXXX).
+    - Preserves user's personal Explorer identity and profile.
+    - Creates explicit membership linking the personal user to the entity.
+    - Enforces verification/commercial activation rules.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        user_id, user_doc = resolve_verified_session_user(request)
+        if not user_id:
+            return api_error("Authentication required to create an entity account.", status_code=401)
+
+        users_col = get_collection("users")
+        if not user_doc:
+            user_doc = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+            if not user_doc:
+                return api_error("User not found.", status_code=404)
+
+        data = request.data
+        entity_type_raw = str(data.get("entityType") or data.get("type") or "STARTUP").upper()
+        entity_name = str(data.get("name") or data.get("entityName") or "").strip()
+        official_email = str(data.get("officialEmail") or data.get("email") or "").strip().lower()
+
+        if not entity_name:
+            return api_error("Entity name is required.")
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        entities_col = get_collection("entities")
+        memberships_col = get_collection("memberships")
+
+        if entity_type_raw in ["STARTUP", "VENTURE"]:
+            entity_id = generate_xentro_id("startup")
+            canonical_type = "STARTUP"
+            verification_status = "PENDING"
+            activation_status = "ACTIVE"
+            role_in_org = "Founder"
+        elif entity_type_raw in ["INVESTOR_ORG", "INVESTOR", "VC", "FIRM"]:
+            entity_id = generate_xentro_id("investor_org")
+            canonical_type = "INVESTOR_ORG"
+            verification_status = "PENDING"
+            activation_status = "PENDING_COMMERCIAL_ACTIVATION"
+            role_in_org = "Managing Partner"
+        elif entity_type_raw in ["ESP", "INCUBATOR", "ACCELERATOR"]:
+            entity_id = generate_xentro_id("esp")
+            canonical_type = "ESP"
+            verification_status = "PENDING"
+            activation_status = "PENDING_ADMIN_APPROVAL"
+            role_in_org = "Director"
+        else:
+            entity_id = generate_xentro_id("institution")
+            canonical_type = "INSTITUTION"
+            verification_status = "PENDING"
+            activation_status = "PENDING_ADMIN_APPROVAL"
+            role_in_org = "Dean / Lead"
+
+        entity_doc = {
+            "id": entity_id,
+            "entityType": canonical_type,
+            "accountType": canonical_type,
+            "name": entity_name,
+            "username": clean_username(entity_name),
+            "officialEmail": official_email or user_doc.get("email"),
+            "primaryOwnerId": user_doc["id"],
+            "primaryOwnerName": user_doc.get("fullName"),
+            "verificationStatus": verification_status,
+            "activationStatus": activation_status,
+            "status": "PENDING" if canonical_type in ["ESP", "INSTITUTION"] else "ACTIVE",
+            "visibility": "PUBLIC",
+            "details": data.get("details", {}),
+            "createdAt": now_iso,
+            "updatedAt": now_iso,
+        }
+        entities_col.insert_one(entity_doc)
+
+        membership_id = generate_xentro_id("membership")
+        membership_doc = {
+            "id": membership_id,
+            "entityId": entity_id,
+            "entityName": entity_name,
+            "entityType": canonical_type,
+            "userId": user_doc["id"],
+            "userEmail": user_doc.get("email"),
+            "role": role_in_org,
+            "permissions": ["OWNER", "ADMIN", "MANAGE_TEAM"],
+            "status": "ACTIVE",
+            "createdAt": now_iso,
+            "updatedAt": now_iso
+        }
+        memberships_col.insert_one(membership_doc)
+
+        entity_doc.pop("_id", None)
+        membership_doc.pop("_id", None)
+
+        return api_success({
+            "entity": entity_doc,
+            "membership": membership_doc,
+            "message": f"{canonical_type.title()} account created. Verification and review is pending."
+        }, f"{canonical_type.title()} account initiated successfully.")
 
 
 def resolve_verified_session_user(request):

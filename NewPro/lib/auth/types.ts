@@ -46,26 +46,55 @@ export interface IdentityVerificationData {
   statusMessage?: string;
 }
 
+export interface EducationRecord {
+  id?: string;
+  institution: string;
+  degree: string;
+  fieldOfStudy: string;
+  startYear: string;
+  endYear: string;
+  currentlyStudying: boolean;
+}
+
+export interface StructuredLocation {
+  city: string;
+  state: string;
+  country: string;
+  isManual?: boolean;
+}
+
 export interface PersonalProfile {
+  profileId?: string;
   photoUrl?: string;
   fullName: string;
   headline: string;
   location: string;
+  structuredLocation?: StructuredLocation;
   bio: string;
   currentRole: string;
   currentOrganization: string;
-  education: string;
+  education: EducationRecord[];
+  educationEntries?: EducationRecord[];
   professionalExperience: string;
   skills: string[];
   areasOfExpertise: string[];
   industries: string[];
   startupInterests: string[];
   entrepreneurshipInterests: string[];
+  ecosystemGoals?: string[];
   linkedin?: string;
   website?: string;
   otherLinks?: string[];
   email?: string;
   phoneNumber?: string;
+  publicUsername?: string;
+  visibility?: {
+    profile?: string;
+    education?: string;
+    experience?: string;
+    connections?: string;
+    activity?: string;
+  };
 }
 
 export interface User {
@@ -86,6 +115,7 @@ export interface User {
   entityId?: string;
   avatar?: string;
   role?: string;
+  onboardingCompleted?: boolean;
 }
 
 export type ParticipationPath =

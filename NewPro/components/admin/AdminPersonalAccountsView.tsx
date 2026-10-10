@@ -60,6 +60,8 @@ export const AdminPersonalAccountsView: React.FC = () => {
   const [participationFilter, setParticipationFilter] = useState<string>('All');
   const [selectedAccount, setSelectedAccount] = useState<AdminPersonalAccount[] | null>(null);
   const [drawerAccount, setDrawerAccount] = useState<AdminPersonalAccount | null>(null);
+  const [dossierData, setDossierData] = useState<any | null>(null);
+  const [loadingDossier, setLoadingDossier] = useState(false);
   const [suspendModalOpen, setSuspendModalOpen] = useState(false);
   const [suspendReason, setSuspendReason] = useState('');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -96,6 +98,30 @@ export const AdminPersonalAccountsView: React.FC = () => {
 
   const isMasterAdmin = adminSession?.role === 'Super Admin' || adminSession?.role === 'Master Admin';
 
+  const renderAvatar = (name: string, photoUrl?: string, size = "w-8 h-8 text-xs") => {
+    if (photoUrl && photoUrl.trim() && !photoUrl.includes('unsplash.com') && !photoUrl.includes('dicebear.com')) {
+      return (
+        <img
+          src={photoUrl}
+          alt={name}
+          className={`${size} rounded-full object-cover border border-[#E5E7EB] dark:border-[#262A29]`}
+        />
+      );
+    }
+    const initials = (name || 'User')
+      .split(' ')
+      .filter(Boolean)
+      .map((n) => n[0])
+      .join('')
+      .slice(0, 2)
+      .toUpperCase();
+    return (
+      <div className={`${size} rounded-full bg-[#D9FF3F]/15 border border-[#D9FF3F]/30 text-[#101212] dark:text-[#D9FF3F] font-bold font-mono flex items-center justify-center shrink-0`}>
+        {initials || 'U'}
+      </div>
+    );
+  };
+
   const loadData = async () => {
     try {
       const backendUrl = getBackendBaseUrl();
@@ -108,15 +134,15 @@ export const AdminPersonalAccountsView: React.FC = () => {
             name: u.name,
             email: u.email,
             phone: u.phone,
-            avatar: u.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(u.name)}`,
+            avatar: u.avatar || u.photoUrl || '',
             identityStatus: u.identityStatus as any,
             participationModes: u.participationModes || ['Personal Account'],
             entityMemberships: u.entityMemberships || [],
             accountStatus: u.isActive ? 'Active' : (u.accountStatus === 'REJECTED' ? 'Restricted' : 'Pending Verification'),
             createdDate: u.createdDate,
-            lastActive: u.lastActive || 'Just now',
+            lastActive: u.lastActive || 'Unavailable',
             connectionsCount: u.connectionsCount || 0,
-            bio: u.bio || 'Platform user'
+            bio: u.bio || ''
           }));
 
           setAccounts(backendUsers);
@@ -399,26 +425,161 @@ export const AdminPersonalAccountsView: React.FC = () => {
     return true;
   });
 
-  const handleOpenDrawer = (acc: AdminPersonalAccount) => {
+  const handleOpenDrawer = async (acc: AdminPersonalAccount) => {
     setDrawerAccount(acc);
-  };
-
-  const handleConfirmSuspend = () => {
-    if (!drawerAccount || !suspendReason.trim()) return;
-    const ok = adminDomainService.suspendPersonalAccount(drawerAccount.id, suspendReason);
-    if (ok) {
-      showToast(`Account for ${drawerAccount.name} has been suspended.`);
-      setSuspendModalOpen(false);
-      setSuspendReason('');
-      setDrawerAccount((prev) => (prev ? { ...prev, accountStatus: 'Suspended' } : null));
+    setLoadingDossier(true);
+    setDossierData(null);
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const token = adminSession?.token;
+      const resp = await fetch(`${backendUrl}/admin/users/${acc.id}/`, {
+        headers: {
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        }
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data?.success && data?.data) {
+          setDossierData(data.data);
+        }
+      }
+    } catch (err) {
+      console.warn("Could not fetch user dossier:", err);
+    } finally {
+      setLoadingDossier(false);
     }
   };
 
-  const handleRestoreAccount = (acc: AdminPersonalAccount) => {
-    const ok = adminDomainService.restorePersonalAccount(acc.id);
-    if (ok) {
-      showToast(`Account for ${acc.name} has been restored to Active.`);
-      setDrawerAccount((prev) => (prev ? { ...prev, accountStatus: 'Active' } : null));
+  const handleVerifyIdentity = async (action: 'VERIFY' | 'REJECT') => {
+    if (!drawerAccount) return;
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const token = adminSession?.token;
+      const resp = await fetch(`${backendUrl}/admin/users/${drawerAccount.id}/verify/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ action, notes: `Identity verification ${action.toLowerCase()}ed by admin.` })
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        showToast(`Identity status updated to ${action === 'VERIFY' ? 'Verified' : 'Rejected'}.`);
+        handleOpenDrawer(drawerAccount);
+        loadData();
+      } else {
+        showToast(data?.message || 'Failed to update identity verification.', 'error');
+      }
+    } catch {
+      showToast('Network error while updating identity verification.', 'error');
+    }
+  };
+
+  const handleRoleAction = async (role: 'MENTOR' | 'INVESTOR', action: 'APPROVE' | 'REJECT') => {
+    if (!drawerAccount) return;
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const token = adminSession?.token;
+      const resp = await fetch(`${backendUrl}/admin/users/${drawerAccount.id}/role-action/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ role, action })
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        showToast(`${role} application ${action.toLowerCase()}ed.`);
+        handleOpenDrawer(drawerAccount);
+        loadData();
+      } else {
+        showToast(data?.message || `Failed to ${action.toLowerCase()} role.`, 'error');
+      }
+    } catch {
+      showToast('Network error during role action.', 'error');
+    }
+  };
+
+  const handleRestrictAccount = async () => {
+    if (!drawerAccount) return;
+    const reason = prompt(`Enter reason to restrict ${drawerAccount.email}:`, 'Account under compliance review.');
+    if (reason === null) return;
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const token = adminSession?.token;
+      const resp = await fetch(`${backendUrl}/admin/users/${drawerAccount.id}/restrict/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ reason })
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        showToast(`Account restricted successfully.`);
+        handleOpenDrawer(drawerAccount);
+        loadData();
+      } else {
+        showToast(data?.message || 'Failed to restrict account.', 'error');
+      }
+    } catch {
+      showToast('Network error while restricting account.', 'error');
+    }
+  };
+
+  const handleConfirmSuspend = async () => {
+    if (!drawerAccount || !suspendReason.trim()) return;
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const token = adminSession?.token;
+      const resp = await fetch(`${backendUrl}/admin/users/${drawerAccount.id}/suspend/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ reason: suspendReason.trim() })
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        showToast(`Account for ${drawerAccount.name} has been suspended.`);
+        setSuspendModalOpen(false);
+        setSuspendReason('');
+        handleOpenDrawer(drawerAccount);
+        loadData();
+      } else {
+        showToast(data?.message || 'Failed to suspend account.', 'error');
+      }
+    } catch {
+      showToast('Network error suspending account.', 'error');
+    }
+  };
+
+  const handleRestoreAccount = async (acc: AdminPersonalAccount) => {
+    try {
+      const backendUrl = getBackendBaseUrl();
+      const token = adminSession?.token;
+      const resp = await fetch(`${backendUrl}/admin/users/${acc.id}/`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+        },
+        body: JSON.stringify({ accountStatus: 'Active', isActive: true, reason: 'Restored to Active by admin' })
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        showToast(`Account for ${acc.name} has been restored to Active.`);
+        handleOpenDrawer(acc);
+        loadData();
+      } else {
+        showToast(data?.message || 'Failed to restore account.', 'error');
+      }
+    } catch {
+      showToast('Network error restoring account.', 'error');
     }
   };
 
@@ -709,11 +870,7 @@ export const AdminPersonalAccountsView: React.FC = () => {
               <tr key={acc.id} className="hover:bg-gray-50/50 dark:hover:bg-[#202422]/40 transition-colors">
                 <td className="py-3.5 px-4">
                   <div className="flex items-center gap-3">
-                    <img
-                      src={acc.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                      alt={acc.name}
-                      className="w-8 h-8 rounded-full object-cover border border-[#E5E7EB] dark:border-[#262A29]"
-                    />
+                    {renderAvatar(acc.name, acc.avatar, "w-8 h-8 text-xs")}
                     <div>
                       <div className="font-semibold text-[#101212] dark:text-white flex items-center gap-1.5">
                         <span>{acc.name}</span>
@@ -804,8 +961,8 @@ export const AdminPersonalAccountsView: React.FC = () => {
       {/* Account Detail Drawer */}
       {drawerAccount && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end">
-          <div className="w-full max-w-xl bg-white dark:bg-[#181B1A] h-full shadow-2xl flex flex-col justify-between overflow-y-auto border-l border-[#E5E7EB] dark:border-[#262A29] p-6 space-y-6 animate-in slide-in-from-right duration-200">
-            <div>
+          <div className="w-full max-w-2xl bg-white dark:bg-[#181B1A] h-full shadow-2xl flex flex-col justify-between overflow-y-auto border-l border-[#E5E7EB] dark:border-[#262A29] p-6 space-y-6 animate-in slide-in-from-right duration-200">
+            <div className="space-y-6">
               <div className="flex items-center justify-between pb-4 border-b border-[#E5E7EB] dark:border-[#262A29]">
                 <div className="flex items-center gap-2">
                   <User className="w-5 h-5 text-emerald-600 dark:text-[#D9FF3F]" />
@@ -821,15 +978,11 @@ export const AdminPersonalAccountsView: React.FC = () => {
                 </button>
               </div>
 
-              {/* Profile Card */}
-              <div className="mt-6 flex items-start gap-4 p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29]">
-                <img
-                  src={drawerAccount.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150&auto=format&fit=crop&q=80'}
-                  alt={drawerAccount.name}
-                  className="w-14 h-14 rounded-full object-cover border-2 border-[#D9FF3F]"
-                />
+              {/* Profile Header */}
+              <div className="flex items-start gap-4 p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29]">
+                {renderAvatar(drawerAccount.name, drawerAccount.avatar, "w-14 h-14 text-base")}
                 <div className="space-y-1 flex-1">
-                  <div className="flex items-center justify-between">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <div className="flex items-center gap-2">
                       <h4 className="font-sora text-base font-bold text-[#101212] dark:text-white">
                         {drawerAccount.name}
@@ -858,62 +1011,285 @@ export const AdminPersonalAccountsView: React.FC = () => {
                 </div>
               </div>
 
-              {/* Identity & Regulatory Security Safeguard */}
-              <div className="mt-5 p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/20 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Identity Verification Status: {drawerAccount.identityStatus}</span>
-                  </div>
+              {loadingDossier ? (
+                <div className="py-12 flex flex-col items-center justify-center text-gray-400 gap-2">
+                  <div className="w-6 h-6 border-2 border-[#D9FF3F] border-t-transparent rounded-full animate-spin" />
+                  <span className="text-xs">Fetching comprehensive account dossier from MongoDB...</span>
                 </div>
-                <p className="text-[11px] text-[#565B59] dark:text-[#A0A4A2] leading-relaxed">
-                  In compliance with UIDAI & Indian data privacy standards, raw Aadhaar numbers and biometric scans are permanently sealed in hardware security modules. Safe verification tokens only.
-                </p>
-              </div>
-
-              {/* Participation Modes */}
-              <div className="mt-6 space-y-2">
-                <div className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                  Participation Contexts
-                </div>
-                <div className="flex flex-wrap gap-1.5">
-                  {drawerAccount.participationModes.map((mode, i) => (
-                    <span
-                      key={i}
-                      className="px-3 py-1 rounded-lg text-xs font-medium bg-gray-100 dark:bg-[#202422] text-[#101212] dark:text-white border border-gray-200 dark:border-gray-700/50"
-                    >
-                      {mode}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Linked Entity Memberships */}
-              <div className="mt-6 space-y-2">
-                <div className="text-xs font-bold uppercase tracking-wider text-gray-400">
-                  Linked Entity Memberships ({drawerAccount.entityMemberships.length})
-                </div>
-                {drawerAccount.entityMemberships.length > 0 ? (
-                  <div className="space-y-2">
-                    {drawerAccount.entityMemberships.map((m, idx) => (
-                      <div
-                        key={idx}
-                        className="p-3 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between text-xs"
-                      >
-                        <div>
-                          <div className="font-semibold text-[#101212] dark:text-white">{m.entityName}</div>
-                          <div className="text-[11px] text-gray-400">{m.entityType} &bull; Role: {m.role}</div>
-                        </div>
-                        <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-800 dark:bg-[#D9FF3F]/15 dark:text-[#D9FF3F] font-mono font-semibold">
-                          Linked
+              ) : (
+                <div className="space-y-6">
+                  {/* SECTION 5.1 — IDENTITY & CONTACT */}
+                  <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422]/60 border border-[#E5E7EB] dark:border-[#262A29] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#101212] dark:text-[#D9FF3F] flex items-center gap-1.5">
+                        <Key className="w-3.5 h-3.5" /> 5.1 Identity & Contact
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-100 dark:bg-[#262A29] text-gray-400">
+                        Profile ID: {dossierData?.identityContact?.profileId || 'PRF-UNASSIGNED'}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">Internal User ID</span>
+                        <span className="font-mono font-semibold text-[#101212] dark:text-white">{drawerAccount.id}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">Account Type</span>
+                        <span className="font-semibold text-[#101212] dark:text-white">{dossierData?.identityContact?.accountType || 'Explorer'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">Public Username</span>
+                        <span className="font-mono text-[#101212] dark:text-white">{dossierData?.identityContact?.username || '—'}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">Onboarding Completed</span>
+                        <span className={`font-semibold ${dossierData?.identityContact?.onboardingCompleted ? 'text-emerald-500' : 'text-amber-500'}`}>
+                          {dossierData?.identityContact?.onboardingCompleted ? 'Completed' : 'Pending Profile Setup'}
                         </span>
                       </div>
-                    ))}
+                    </div>
                   </div>
-                ) : (
-                  <p className="text-xs text-[#6E7370] dark:text-[#8E9390] italic">No organizational entities attached to this human identity.</p>
-                )}
-              </div>
+
+                  {/* SECTION 5.2 — SIGNUP & CONSENT VERIFICATION */}
+                  <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422]/60 border border-[#E5E7EB] dark:border-[#262A29] space-y-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold uppercase tracking-wider text-[#101212] dark:text-[#D9FF3F] flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5" /> 5.2 Signup & Verification Compliance
+                      </span>
+                      {getIdentityBadge(drawerAccount.identityStatus)}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">Email OTP Verified</span>
+                        <span className="font-semibold text-[#101212] dark:text-white">
+                          {dossierData?.signupVerification?.emailVerified ? 'Yes' : 'No'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">Terms Acceptance</span>
+                        <span className="font-semibold text-[#101212] dark:text-white">
+                          {dossierData?.signupVerification?.agreedToTerms ? `Accepted (v${dossierData?.signupVerification?.termsVersion || '1.0'})` : 'Pending'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">Privacy Policy Consent</span>
+                        <span className="font-semibold text-[#101212] dark:text-white">
+                          {dossierData?.signupVerification?.agreedToPrivacy ? `Accepted (v${dossierData?.signupVerification?.privacyVersion || '1.0'})` : 'Pending'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">Identity Consent</span>
+                        <span className="font-semibold text-[#101212] dark:text-white">
+                          {dossierData?.signupVerification?.consentIdentityVerification ? `Accepted (v${dossierData?.signupVerification?.identityConsentVersion || '1.0'})` : 'Pending'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Admin Verification Controls */}
+                    <div className="pt-2 border-t border-gray-200 dark:border-[#262A29] flex items-center justify-between gap-2">
+                      <span className="text-[11px] text-gray-400">Review Identity Verification:</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleVerifyIdentity('REJECT')}
+                          className="px-2.5 py-1 rounded-lg text-xs font-medium text-rose-600 dark:text-rose-400 bg-rose-500/10 hover:bg-rose-500/20 transition-all cursor-pointer"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          onClick={() => handleVerifyIdentity('VERIFY')}
+                          className="px-2.5 py-1 rounded-lg text-xs font-bold text-[#101212] bg-[#D9FF3F] hover:bg-[#C7F020] transition-all cursor-pointer"
+                        >
+                          Approve Identity
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECTION 5.3 — PERSONAL PROFILE */}
+                  <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422]/60 border border-[#E5E7EB] dark:border-[#262A29] space-y-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#101212] dark:text-[#D9FF3F] flex items-center gap-1.5">
+                      <Briefcase className="w-3.5 h-3.5" /> 5.3 Personal Profile
+                    </span>
+                    <div className="space-y-2 text-xs">
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">Professional Headline</span>
+                        <span className="font-medium text-[#101212] dark:text-white">
+                          {dossierData?.personalProfile?.headline || drawerAccount.bio || '—'}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <span className="text-gray-400 block text-[11px]">Current Role</span>
+                          <span className="font-medium text-[#101212] dark:text-white">
+                            {dossierData?.personalProfile?.currentRole || '—'}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-gray-400 block text-[11px]">Current Organization</span>
+                          <span className="font-medium text-[#101212] dark:text-white">
+                            {dossierData?.personalProfile?.currentOrganization || '—'}
+                          </span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-gray-400 block text-[11px]">Location</span>
+                        <span className="font-medium text-[#101212] dark:text-white">
+                          {dossierData?.personalProfile?.location || '—'}
+                        </span>
+                      </div>
+                      {dossierData?.personalProfile?.skills?.length > 0 && (
+                        <div>
+                          <span className="text-gray-400 block text-[11px] mb-1">Skills</span>
+                          <div className="flex flex-wrap gap-1">
+                            {dossierData.personalProfile.skills.map((s: string, idx: number) => (
+                              <span key={idx} className="px-2 py-0.5 rounded text-[10px] bg-gray-200 dark:bg-[#262A29] text-[#101212] dark:text-white font-medium">
+                                {s}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* SECTION 5.4 — EDUCATION */}
+                  <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422]/60 border border-[#E5E7EB] dark:border-[#262A29] space-y-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#101212] dark:text-[#D9FF3F] flex items-center gap-1.5">
+                      <Award className="w-3.5 h-3.5" /> 5.4 Education History
+                    </span>
+                    {dossierData?.education && dossierData.education.length > 0 ? (
+                      <div className="space-y-2">
+                        {dossierData.education.map((edu: any, idx: number) => (
+                          <div key={idx} className="p-2.5 rounded-lg bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] text-xs">
+                            <div className="font-semibold text-[#101212] dark:text-white">{edu.institution}</div>
+                            <div className="text-[11px] text-gray-400">
+                              {[edu.degree, edu.fieldOfStudy].filter(Boolean).join(' • ')}
+                            </div>
+                            <div className="text-[10px] text-gray-500 mt-0.5">
+                              {edu.startYear ? `${edu.startYear} - ${edu.currentlyStudying ? 'Present' : (edu.endYear || 'Present')}` : ''}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">No education information provided.</p>
+                    )}
+                  </div>
+
+                  {/* SECTION 5.5 — PERSONAL ROLES */}
+                  <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422]/60 border border-[#E5E7EB] dark:border-[#262A29] space-y-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#101212] dark:text-[#D9FF3F] flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5" /> 5.5 Personal Roles & Upgrades
+                    </span>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29]">
+                        <div>
+                          <span className="font-semibold text-[#101212] dark:text-white">Explorer Base Role</span>
+                          <span className="text-[11px] text-gray-400 block">Default personal account role</span>
+                        </div>
+                        <span className="text-[11px] font-bold text-emerald-500">Active</span>
+                      </div>
+
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29]">
+                        <div>
+                          <span className="font-semibold text-[#101212] dark:text-white">Mentor Role</span>
+                          <span className="text-[11px] text-gray-400 block">Status: {dossierData?.personalRoles?.mentorRole || 'Not Applied'}</span>
+                        </div>
+                        {dossierData?.personalRoles?.mentorRole === 'PENDING' ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleRoleAction('MENTOR', 'REJECT')}
+                              className="px-2 py-0.5 rounded text-[10px] font-medium text-rose-500 hover:bg-rose-500/10"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              onClick={() => handleRoleAction('MENTOR', 'APPROVE')}
+                              className="px-2 py-0.5 rounded text-[10px] font-bold text-[#101212] bg-[#D9FF3F]"
+                            >
+                              Approve
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-gray-400">{dossierData?.personalRoles?.mentorRole || 'Not Applied'}</span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center justify-between p-2 rounded-lg bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29]">
+                        <div>
+                          <span className="font-semibold text-[#101212] dark:text-white">Individual Investor</span>
+                          <span className="text-[11px] text-gray-400 block">Status: {dossierData?.personalRoles?.investorRole || 'Not Applied'}</span>
+                        </div>
+                        {dossierData?.personalRoles?.investorRole === 'PENDING' ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleRoleAction('INVESTOR', 'REJECT')}
+                              className="px-2 py-0.5 rounded text-[10px] font-medium text-rose-500 hover:bg-rose-500/10"
+                            >
+                              Reject
+                            </button>
+                            <button
+                              onClick={() => handleRoleAction('INVESTOR', 'APPROVE')}
+                              className="px-2 py-0.5 rounded text-[10px] font-bold text-[#101212] bg-[#D9FF3F]"
+                            >
+                              Approve
+                            </button>
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-gray-400">{dossierData?.personalRoles?.investorRole || 'Not Applied'}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* SECTION 5.6 — ENTITY MEMBERSHIPS */}
+                  <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422]/60 border border-[#E5E7EB] dark:border-[#262A29] space-y-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#101212] dark:text-[#D9FF3F] flex items-center gap-1.5">
+                      <Building className="w-3.5 h-3.5" /> 5.6 Linked Entity Accounts
+                    </span>
+                    {dossierData?.entityMemberships && dossierData.entityMemberships.length > 0 ? (
+                      <div className="space-y-2">
+                        {dossierData.entityMemberships.map((m: any, idx: number) => (
+                          <div key={idx} className="p-2.5 rounded-lg bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-between text-xs">
+                            <div>
+                              <div className="font-semibold text-[#101212] dark:text-white">{m.entityName}</div>
+                              <div className="text-[11px] text-gray-400">{m.entityType} • Role: {m.role} • ID: {m.entityId}</div>
+                            </div>
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-semibold">
+                              {m.verificationStatus || 'ACTIVE'}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">No Entity Linked</p>
+                    )}
+                  </div>
+
+                  {/* SECTION 5.7 — SYSTEM RECORDED ACTIVITY */}
+                  <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422]/60 border border-[#E5E7EB] dark:border-[#262A29] space-y-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-[#101212] dark:text-[#D9FF3F] flex items-center gap-1.5">
+                      <Clock className="w-3.5 h-3.5" /> 5.7 Audit Activity Log
+                    </span>
+                    {dossierData?.accountActivity && dossierData.accountActivity.length > 0 ? (
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                        {dossierData.accountActivity.map((act: any, idx: number) => (
+                          <div key={idx} className="p-2 rounded bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29] text-[11px]">
+                            <div className="flex items-center justify-between text-gray-400 text-[10px]">
+                              <span className="font-mono font-bold text-[#101212] dark:text-white">{act.action}</span>
+                              <span>{act.timestamp ? new Date(act.timestamp).toLocaleString() : ''}</span>
+                            </div>
+                            {act.reason && <p className="text-gray-500 mt-0.5">{act.reason}</p>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-gray-400 italic">No audit records found.</p>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Actions Bar */}
@@ -933,7 +1309,6 @@ export const AdminPersonalAccountsView: React.FC = () => {
                       ? "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-400 border-emerald-500/30 cursor-pointer shadow-xs"
                       : "bg-gray-100 dark:bg-[#202422] text-gray-400 border-transparent cursor-not-allowed opacity-50"
                   }`}
-                  title={isMasterAdmin ? "Edit user details" : "Only Master Admin is authorized to edit users"}
                 >
                   <Edit3 className="w-3.5 h-3.5" />
                   <span>Edit Account</span>
@@ -952,28 +1327,35 @@ export const AdminPersonalAccountsView: React.FC = () => {
                       ? "bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/30 cursor-pointer shadow-xs"
                       : "bg-gray-100 dark:bg-[#202422] text-gray-400 border-transparent cursor-not-allowed opacity-50"
                   }`}
-                  title={isMasterAdmin ? "Permanently delete user account" : "Only Master Admin is authorized to delete users"}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                   <span>Delete Account</span>
                 </button>
               </div>
 
-              {drawerAccount.accountStatus === 'Suspended' ? (
+              <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => handleRestoreAccount(drawerAccount)}
-                  className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  onClick={handleRestrictAccount}
+                  className="py-2 px-3 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-xs font-semibold transition-all cursor-pointer"
                 >
-                  Restore Account to Active
+                  Restrict Access
                 </button>
-              ) : (
-                <button
-                  onClick={() => setSuspendModalOpen(true)}
-                  className="w-full py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-400 border border-amber-500/30 text-xs font-semibold transition-all cursor-pointer"
-                >
-                  Suspend Personal Account
-                </button>
-              )}
+                {drawerAccount.accountStatus === 'Suspended' ? (
+                  <button
+                    onClick={() => handleRestoreAccount(drawerAccount)}
+                    className="py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all shadow-xs cursor-pointer"
+                  >
+                    Restore to Active
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setSuspendModalOpen(true)}
+                    className="py-2 px-3 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-rose-500/30 text-xs font-semibold transition-all cursor-pointer"
+                  >
+                    Suspend Account
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>

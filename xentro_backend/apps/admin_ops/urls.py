@@ -16,6 +16,11 @@ from .views import (
     AdminComplaintDetailView,
     AdminFeedListView,
     AdminFeedPostDeleteView,
+    AdminUserVerifyIdentityView,
+    AdminUserRestrictView,
+    AdminUserSuspendView,
+    AdminUserArchiveView,
+    AdminUserRoleActionView,
 )
 
 urlpatterns = [
@@ -27,6 +32,12 @@ urlpatterns = [
     path("admin/audit-logs/", AdminAuditLogsView.as_view(), name="admin_audit_logs"),
     path("admin/users/", AdminUsersListView.as_view(), name="admin_users_list"),
     path("admin/users/<str:user_id>/", AdminUserDetailView.as_view(), name="admin_user_detail"),
+    path("admin/users/<str:user_id>/verify/", AdminUserVerifyIdentityView.as_view(), name="admin_user_verify_identity"),
+    path("admin/users/<str:user_id>/verify-identity/", AdminUserVerifyIdentityView.as_view(), name="admin_user_verify_identity_alias"),
+    path("admin/users/<str:user_id>/restrict/", AdminUserRestrictView.as_view(), name="admin_user_restrict"),
+    path("admin/users/<str:user_id>/suspend/", AdminUserSuspendView.as_view(), name="admin_user_suspend"),
+    path("admin/users/<str:user_id>/archive/", AdminUserArchiveView.as_view(), name="admin_user_archive"),
+    path("admin/users/<str:user_id>/role-action/", AdminUserRoleActionView.as_view(), name="admin_user_role_action"),
     path("admin/registration-requests/", AdminRegistrationRequestsView.as_view(), name="admin_registration_requests"),
     path("admin/registration-requests/<str:user_id>/action/", AdminRegistrationActionView.as_view(), name="admin_registration_action"),
     path("admin/roles/", AdminRolesListView.as_view(), name="admin_roles_list"),

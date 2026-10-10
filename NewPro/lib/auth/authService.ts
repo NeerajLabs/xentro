@@ -240,7 +240,9 @@ export const authService = {
       bio: existingProfile?.bio || "",
       currentRole: existingProfile?.currentRole || "",
       currentOrganization: existingProfile?.currentOrganization || "",
-      education: existingProfile?.education || "",
+      education: Array.isArray(existingProfile?.education)
+        ? existingProfile.education
+        : [],
       professionalExperience: existingProfile?.professionalExperience || "",
       skills: existingProfile?.skills || [],
       areasOfExpertise: existingProfile?.areasOfExpertise || [],
@@ -434,38 +436,50 @@ export const authService = {
     // Also update xentro_user_profile with these fields
     try {
       const stored = getStorageItem("xentro_user_profile");
-      if (stored) {
-        const u = JSON.parse(stored);
-        const updated = {
-          ...u,
-          name: profile.fullName || u.name,
-          headline: profile.headline,
-          bio: profile.bio,
-          location: profile.location,
-          roleTitle: profile.currentRole || u.roleTitle,
-          currentRole: profile.currentRole,
-          organization: profile.currentOrganization || u.organization,
-          currentOrganization: profile.currentOrganization,
-          education: profile.education,
-          professionalExperience: profile.professionalExperience,
-          skills: profile.skills,
-          areasOfExpertise: profile.areasOfExpertise || profile.skills,
-          industries: profile.industries,
-          industriesOfFocus: profile.industries,
-          startupInterests: profile.startupInterests,
-          entrepreneurshipInterests: profile.entrepreneurshipInterests || profile.startupInterests,
-          linkedin: profile.linkedin,
-          website: profile.website,
-          otherLink: profile.otherLinks?.[0] || "",
-          otherLinks: profile.otherLinks || [],
-          avatar: profile.photoUrl || u.avatar,
-        };
-        setStorageItem("xentro_user_profile", JSON.stringify(updated));
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(
-            new CustomEvent("xentro-role-changed", { detail: { role: updated.role, profile: updated } })
-          );
-        }
+      const currentUser = this.getCurrentUser();
+      const u = stored ? JSON.parse(stored) : {
+        id: currentUser?.id || currentUser?.xentroId || `usr_${Date.now()}`,
+        name: profile.fullName || currentUser?.fullName || '',
+        email: currentUser?.email || '',
+        role: 'explorer',
+        roleTitle: profile.currentRole || 'Ecosystem Explorer',
+        organization: profile.currentOrganization || 'Xentro Network',
+        sector: '',
+        stageOrFocus: 'Exploring',
+        avatar: profile.photoUrl || '/xentro-logo.png',
+      };
+
+      const updated = {
+        ...u,
+        name: profile.fullName || u.name,
+        role: (u.role || 'explorer').toLowerCase(),
+        headline: profile.headline,
+        bio: profile.bio,
+        location: profile.location,
+        roleTitle: profile.currentRole || u.roleTitle || 'Explorer',
+        currentRole: profile.currentRole,
+        organization: profile.currentOrganization || u.organization,
+        currentOrganization: profile.currentOrganization,
+        education: profile.education,
+        professionalExperience: profile.professionalExperience,
+        skills: profile.skills,
+        areasOfExpertise: profile.areasOfExpertise || profile.skills,
+        industries: profile.industries,
+        industriesOfFocus: profile.industries,
+        startupInterests: profile.startupInterests,
+        entrepreneurshipInterests: profile.entrepreneurshipInterests || profile.startupInterests,
+        linkedin: profile.linkedin,
+        website: profile.website,
+        otherLink: profile.otherLinks?.[0] || "",
+        otherLinks: profile.otherLinks || [],
+        avatar: profile.photoUrl || u.avatar,
+      };
+      setStorageItem("xentro_user_profile", JSON.stringify(updated));
+      setStorageItem("xentro_active_role", (updated.role || "explorer").toLowerCase());
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("xentro-role-changed", { detail: { role: updated.role, profile: updated } })
+        );
       }
     } catch (_) {}
 
@@ -484,6 +498,7 @@ export const authService = {
         fullName: profile.fullName,
         headline: profile.headline,
         location: profile.location,
+        structuredLocation: profile.structuredLocation,
         bio: profile.bio,
         currentRole: profile.currentRole,
         currentOrganization: profile.currentOrganization,
@@ -497,6 +512,7 @@ export const authService = {
         industriesOfFocus: profile.industries,
         startupInterests: profile.startupInterests,
         entrepreneurshipInterests: profile.entrepreneurshipInterests || profile.startupInterests,
+        ecosystemGoals: profile.ecosystemGoals || [],
         linkedin: profile.linkedin,
         website: profile.website,
         otherLink: profile.otherLinks?.[0] || "",
@@ -563,7 +579,11 @@ export const authService = {
               bio: serverUser.bio || pProfile.bio || "",
               currentRole: serverUser.currentRole || pProfile.currentRole || "",
               currentOrganization: serverUser.currentOrganization || serverUser.organization || pProfile.currentOrganization || "",
-              education: serverUser.education || pProfile.education || "",
+              education: Array.isArray(serverUser.education)
+                ? serverUser.education
+                : Array.isArray(pProfile.education)
+                ? pProfile.education
+                : [],
               professionalExperience: serverUser.professionalExperience || serverUser.experienceSummary || pProfile.professionalExperience || "",
               skills: serverUser.skills || serverUser.areasOfExpertise || pProfile.skills || [],
               areasOfExpertise: serverUser.areasOfExpertise || serverUser.skills || pProfile.areasOfExpertise || [],
@@ -642,7 +662,7 @@ export const authService = {
         bio: "",
         currentRole: "",
         currentOrganization: "",
-        education: "",
+        education: [],
         professionalExperience: "",
         skills: [],
         areasOfExpertise: [],
@@ -907,14 +927,18 @@ export const authService = {
   completeOnboarding(role?: string): void {
     setStorageItem("xentro_onboarding_complete", "true");
     if (role) {
-      setStorageItem("xentro_active_role", role);
+      const normalized = role.toLowerCase();
+      setStorageItem("xentro_active_role", normalized);
       const user = this.getCurrentUser();
       if (user) {
         if (!user.activeRoles) user.activeRoles = [];
         if (!user.activeRoles.includes(role)) {
           user.activeRoles.push(role);
-          setStorageItem(SESSION_USER_KEY, JSON.stringify(user));
         }
+        if (!user.activeRoles.includes(normalized)) {
+          user.activeRoles.push(normalized);
+        }
+        setStorageItem(SESSION_USER_KEY, JSON.stringify(user));
       }
     }
   },

@@ -31,6 +31,7 @@ import { DashboardWorkspace } from './workspace/DashboardWorkspace';
 import { DynamicDashboardView } from './DynamicDashboardView';
 import { RoleRequestModal } from './RoleRequestModal';
 import { SupportPageView } from './SupportPageView';
+import { AccountsAndRolesManager } from './AccountsAndRolesManager';
 
 export const DashboardLayout: React.FC = () => {
   const [activeNavTab, setActiveNavTab] = useState('feed');
@@ -113,11 +114,18 @@ export const DashboardLayout: React.FC = () => {
             const serverUser = data?.data?.user || data?.user;
             if (serverUser && serverUser.personalProfile) {
               const p = serverUser.personalProfile;
+              const formatLoc = (loc: any) => {
+                if (!loc) return '';
+                if (typeof loc === 'string') return loc;
+                if (typeof loc === 'object') return [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+                return String(loc);
+              };
               const merged = {
                 ...current,
+                name: serverUser.fullName || p.fullName || current.name,
                 headline: p.headline || current.headline,
                 bio: p.bio || current.bio,
-                location: p.location || current.location,
+                location: formatLoc(p.location || current.location),
                 currentRole: p.currentRole || current.currentRole,
                 currentOrganization: p.currentOrganization || current.currentOrganization,
                 education: p.education || current.education,
@@ -132,6 +140,9 @@ export const DashboardLayout: React.FC = () => {
               };
               localStorage.setItem('xentro_user_profile', JSON.stringify(merged));
               setUserProfile(merged);
+              window.dispatchEvent(
+                new CustomEvent('xentro-role-changed', { detail: { role: merged.role, profile: merged } })
+              );
             }
           }
         }
@@ -348,6 +359,13 @@ export const DashboardLayout: React.FC = () => {
               ) : activeNavTab === 'support' ? (
                 <div className="space-y-4 max-w-[1040px] mx-auto animate-fade-slide">
                   <SupportPageView onBackToFeed={() => setActiveNavTab('feed')} />
+                </div>
+              ) : activeNavTab === 'roles' ? (
+                <div className="space-y-4 max-w-[1240px] mx-auto animate-fade-slide">
+                  <AccountsAndRolesManager
+                    onSelectTab={(tab) => handleSelectNavTab(tab)}
+                    onOpenProfile={() => handleSelectNavTab('profile')}
+                  />
                 </div>
               ) : activeNavTab === 'dashboard' ? (
                 <div className="max-w-[1240px] mx-auto animate-fade-slide">

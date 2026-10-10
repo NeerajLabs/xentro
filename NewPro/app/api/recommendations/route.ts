@@ -114,6 +114,8 @@ export async function GET(req: NextRequest) {
         investors.push({ ...recItem, category: 'investors', type: 'investor' });
       } else if (accountType.includes('esp') || accountType.includes('institution')) {
         esps.push({ ...recItem, category: 'opportunities', type: 'esp' });
+      } else if (accountType.includes('explorer')) {
+        people.push({ ...recItem, category: 'people', type: 'explorer' });
       } else {
         people.push({ ...recItem, category: 'people', type: 'startup' });
       }

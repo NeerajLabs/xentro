@@ -27,6 +27,7 @@ import {
   Eye,
   LogOut,
   LifeBuoy,
+  ShieldCheck,
 } from 'lucide-react';
 import { logoutFromNewPro } from '@/lib/authGuard';
 import { UserProfile, getUserProfile, GUEST_AVATAR } from '@/lib/userProfile';
@@ -179,6 +180,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'mentor', label: 'Mentor', icon: GraduationCap },
     { id: 'investor', label: 'Investor', icon: TrendingUp },
     { id: 'esp', label: 'ESP', icon: Grid2X2 },
+    { id: 'roles', label: 'Accounts & Roles', icon: ShieldCheck },
     {
       id: 'notifications',
       label: 'Notifications',

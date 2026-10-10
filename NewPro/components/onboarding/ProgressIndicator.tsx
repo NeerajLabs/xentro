@@ -4,7 +4,7 @@ import React from "react";
 import { Check } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type OnboardingStep = 1 | 2 | 3 | 4 | 5;
+export type OnboardingStep = 1 | 2 | 3;
 
 interface StepItem {
   number: string;
@@ -16,13 +16,11 @@ interface StepItem {
 const STEPS: StepItem[] = [
   { number: "01", stepNumber: 1, label: "Account", step: 1 },
   { number: "02", stepNumber: 2, label: "Email OTP", step: 2 },
-  { number: "03", stepNumber: 3, label: "Profile", step: 3 },
-  { number: "04", stepNumber: 4, label: "Choose Path", step: 4 },
-  { number: "05", stepNumber: 5, label: "Launch", step: 5 },
+  { number: "03", stepNumber: 3, label: "Profile Setup", step: 3 },
 ];
 
 interface ProgressIndicatorProps {
-  currentStep: OnboardingStep;
+  currentStep: number;
   className?: string;
 }
 
@@ -30,34 +28,34 @@ export const ProgressIndicator: React.FC<ProgressIndicatorProps> = ({
   currentStep,
   className,
 }) => {
-  const safeStep = Math.max(1, Math.min(5, currentStep)) as OnboardingStep;
+  const safeStep = Math.max(1, Math.min(3, currentStep)) as OnboardingStep;
   const currentStepItem = STEPS.find((s) => s.step === safeStep) || STEPS[0];
   const nextStepItem = STEPS.find((s) => s.step === safeStep + 1);
 
-  // Track connects center of col 1 (10%) to center of col 5 (90%), total width 80%
-  const progressPercent = ((safeStep - 1) / 4) * 80;
+  // Track connects center of col 1 (16.67%) to center of col 3 (83.33%), total track span 66.67%
+  const progressPercent = ((safeStep - 1) / 2) * 66.67;
 
   return (
     <nav
       aria-label="Onboarding Progress"
-      className={cn("w-full max-w-xl mx-auto py-2 select-none", className)}
+      className={cn("w-full max-w-md mx-auto py-2 select-none", className)}
     >
       <div className="relative w-full">
-        {/* Background track line between center of Step 1 and Step 5 */}
+        {/* Background track line between center of Step 1 and Step 3 */}
         <div
           aria-hidden="true"
-          className="absolute top-3.5 sm:top-4 left-[10%] right-[10%] h-[2px] bg-[#E3E5E3] dark:bg-[#262928] z-0"
+          className="absolute top-3.5 sm:top-4 left-[16.67%] right-[16.67%] h-[2px] bg-[#E3E5E3] dark:bg-[#262928] z-0"
         />
 
         {/* Active filled progress track */}
         <div
           aria-hidden="true"
-          className="absolute top-3.5 sm:top-4 left-[10%] h-[2px] bg-[#D9FF3F] shadow-[0_0_8px_rgba(217,255,63,0.4)] transition-all duration-300 z-0"
+          className="absolute top-3.5 sm:top-4 left-[16.67%] h-[2px] bg-[#D9FF3F] shadow-[0_0_8px_rgba(217,255,63,0.4)] transition-all duration-300 z-0"
           style={{ width: `${progressPercent}%` }}
         />
 
-        {/* 5 Milestone Step Nodes */}
-        <ol className="grid grid-cols-5 relative z-10 list-none m-0 p-0">
+        {/* 3 Milestone Step Nodes */}
+        <ol className="grid grid-cols-3 relative z-10 list-none m-0 p-0">
           {STEPS.map((item) => {
             const isCompleted = item.step < safeStep;
             const isCurrent = item.step === safeStep;

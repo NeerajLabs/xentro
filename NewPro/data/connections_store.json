@@ -1,5 +1,37 @@
 [
   {
+    "id": "conn_556f260a78",
+    "pair_key": "xu-262537_xu-415998",
+    "senderId": "XU-415998",
+    "senderName": "Karunya Kranthi Kumar Yala",
+    "senderRole": "Founder @ Startup",
+    "senderAvatar": "blob:https://xentro-five.vercel.app/526e7792-f514-446e-acbc-4247871f0984",
+    "recipientId": "XU-262537",
+    "recipientName": "pedro",
+    "recipientRole": "Explorer",
+    "recipientAvatar": "https://api.dicebear.com/7.x/initials/svg?seed=pedro",
+    "note": "",
+    "status": "accepted",
+    "createdAt": "2026-10-10T05:54:07.095421+00:00",
+    "updatedAt": "2026-10-10T00:24:26.119426+00:00"
+  },
+  {
+    "id": "conn_eec7f346f2",
+    "pair_key": "xu-262537_xu-832010",
+    "senderId": "XU-262537",
+    "senderName": "pedro",
+    "senderRole": "Explorer",
+    "senderAvatar": "https://api.dicebear.com/7.x/initials/svg?seed=pedro",
+    "recipientId": "XU-832010",
+    "recipientName": "Badampudi Neeraj Kumar",
+    "recipientRole": "Explorer",
+    "recipientAvatar": "https://api.dicebear.com/7.x/initials/svg?seed=Badampudi Neeraj Kumar",
+    "note": "",
+    "status": "pending",
+    "createdAt": "2026-10-10T00:21:02.782095+00:00",
+    "updatedAt": "2026-10-10T00:21:02.782095+00:00"
+  },
+  {
     "id": "conn_d2f68c7b0d",
     "pair_key": "XU-834524_XU-926197",
     "senderId": "XU-834524",

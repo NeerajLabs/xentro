@@ -28,10 +28,13 @@ PREFIXES = {
     "opportunity": "OPP",
     "transaction": "TXN",
     "entitlement": "ENT",
+    "profile": "PRF",
     "subscription": "SUB",
     "endorsement": "END",
     "complaint": "CMP",
     "ticket": "TCK",
+    "request": "REQ",
+    "membership": "MEM",
 }
 
 def generate_xentro_id(entity_type: str = "user") -> str:

@@ -164,6 +164,10 @@ export default function OnboardingPage() {
       return;
     }
     setUser(active);
+    if (typeof window !== "undefined" && (localStorage.getItem("xentro_onboarding_complete") === "true" || active.onboardingCompleted)) {
+      router.push("/");
+      return;
+    }
     setEspApplicantName(active.fullName);
     setStartupOfficialEmail(`team@${active.email.split("@")[1] || "company.com"}`);
     setInvestorOrgOfficialEmail(`partner@${active.email.split("@")[1] || "vcfirm.com"}`);

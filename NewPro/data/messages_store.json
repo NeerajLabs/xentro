@@ -603,5 +603,110 @@
       "XU-783757"
     ],
     "createdAt": "2026-10-07T11:38:34.437948+00:00"
+  },
+  {
+    "id": "msg_1791591880092_wkmr",
+    "clientMessageId": "msg_1791591880092_wkmr",
+    "conversationId": "conv_xu-262537_xu-415998",
+    "senderId": "XU-262537",
+    "senderName": "pedro",
+    "content": "hi",
+    "text": "hi",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-262537"
+    ],
+    "createdAt": "2026-10-10T00:24:40.332561+00:00"
+  },
+  {
+    "id": "msg_1791591914059_iqmt",
+    "clientMessageId": "msg_1791591914059_iqmt",
+    "conversationId": "conv_xu-262537_xu-415998",
+    "senderId": "XU-262537",
+    "senderName": "pedro",
+    "content": "hi",
+    "text": "hi",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-262537"
+    ],
+    "createdAt": "2026-10-10T00:25:14.141342+00:00"
+  },
+  {
+    "id": "msg_1791591919960_2e6f",
+    "clientMessageId": "msg_1791591919960_2e6f",
+    "conversationId": "conv_xu-262537_xu-415998",
+    "senderId": "XU-262537",
+    "senderName": "pedro",
+    "content": "hi",
+    "text": "hi",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-262537"
+    ],
+    "createdAt": "2026-10-10T00:25:20.080714+00:00"
+  },
+  {
+    "id": "msg_1791591936142_o47d",
+    "clientMessageId": "msg_1791591936142_o47d",
+    "conversationId": "conv_xu-262537_xu-415998",
+    "senderId": "XU-262537",
+    "senderName": "pedro",
+    "content": "hello",
+    "text": "hello",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-262537"
+    ],
+    "createdAt": "2026-10-10T00:25:36.222804+00:00"
+  },
+  {
+    "id": "msg_1791591956294_gt09",
+    "clientMessageId": "msg_1791591956294_gt09",
+    "conversationId": "conv_xu-262537_xu-415998",
+    "senderId": "XU-262537",
+    "senderName": "pedro",
+    "content": "i am fine",
+    "text": "i am fine",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-262537"
+    ],
+    "createdAt": "2026-10-10T00:25:56.372672+00:00"
+  },
+  {
+    "id": "msg_1791592080570_50s6",
+    "clientMessageId": "msg_1791592080570_50s6",
+    "conversationId": "conv_xu-262537_xu-415998",
+    "senderId": "XU-262537",
+    "senderName": "pedro",
+    "content": "hi",
+    "text": "hi",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-262537"
+    ],
+    "createdAt": "2026-10-10T05:58:00.788398+00:00"
+  },
+  {
+    "id": "msg_1791592108224_o1q3",
+    "clientMessageId": "msg_1791592108224_o1q3",
+    "conversationId": "conv_xu-262537_xu-415998",
+    "senderId": "XU-262537",
+    "senderName": "pedro",
+    "content": "hu",
+    "text": "hu",
+    "type": "TEXT",
+    "attachments": [],
+    "readBy": [
+      "XU-262537"
+    ],
+    "createdAt": "2026-10-10T05:58:28.456105+00:00"
   }
 ]

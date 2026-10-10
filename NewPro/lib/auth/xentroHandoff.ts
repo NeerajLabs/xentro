@@ -18,7 +18,7 @@ export interface UserProfile {
   headline?: string;
   currentRole?: string;
   currentOrganization?: string;
-  education?: string;
+  education?: string | any[];
   professionalExperience?: string;
   skills?: string[];
   areasOfExpertise?: string[];

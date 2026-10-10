@@ -10,6 +10,9 @@ app = Celery("xentro_backend")
 app.config_from_object("django.conf:settings", namespace="CELERY")
 app.conf.broker_url = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 app.conf.result_backend = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+app.conf.broker_connection_retry_on_startup = False
+app.conf.broker_connection_timeout = 1.0
+app.conf.broker_transport_options = {"max_retries": 1, "socket_timeout": 1.0, "socket_connect_timeout": 1.0}
 app.autodiscover_tasks()
 
 @app.task(bind=True, ignore_result=True)

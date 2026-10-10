@@ -154,6 +154,15 @@ export function emptyProfileForRole(role: UserRole, id?: string, email?: string)
  *  - otherwise an EMPTY shell for the active role is returned (no name, no fake org).
  * Demo presets (`defaultProfiles`) are for viewing other people's showcase cards only.
  */
+export function formatLocation(loc: any): string {
+  if (!loc) return '';
+  if (typeof loc === 'string') return loc;
+  if (typeof loc === 'object') {
+    return [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+  }
+  return String(loc);
+}
+
 export function getUserProfile(): UserProfile {
   if (typeof window === 'undefined') {
     return emptyProfileForRole('startup');
@@ -164,12 +173,14 @@ export function getUserProfile(): UserProfile {
     const personal = safeParseJson(localStorage.getItem('xentro_personal_profile'));
     if (stored) {
       const parsed = JSON.parse(stored) as UserProfile;
-      if (parsed && parsed.role === role && parsed.name && parsed.name.trim()) {
+      const parsedRole = (parsed?.role || '').toLowerCase();
+      if (parsed && (parsedRole === role.toLowerCase() || (role === 'explorer' && parsedRole === 'explorer')) && parsed.name && parsed.name.trim()) {
         if (personal) {
-          return {
+          const merged: UserProfile = {
             ...parsed,
+            name: parsed.name || personal.fullName,
             headline: parsed.headline || personal.headline,
-            location: parsed.location || personal.location,
+            location: formatLocation(parsed.location || personal.location),
             bio: parsed.bio || personal.bio,
             currentRole: parsed.currentRole || personal.currentRole,
             currentOrganization: parsed.currentOrganization || personal.currentOrganization,
@@ -186,13 +197,18 @@ export function getUserProfile(): UserProfile {
             otherLink: parsed.otherLink || personal.otherLinks?.[0],
             otherLinks: (parsed.otherLinks && parsed.otherLinks.length > 0) ? parsed.otherLinks : personal.otherLinks,
           };
+          return merged;
         }
-        return parsed;
+        return {
+          ...parsed,
+          location: formatLocation(parsed.location),
+        };
       }
     }
     // Attempt recovery from handoff stores before returning an empty shell
     const recovered = recoverRoleProfile(role);
     if (recovered && recovered.name && recovered.name.trim()) {
+      saveUserProfile(recovered);
       return recovered;
     }
     return emptyProfileForRole(role);
@@ -251,17 +267,28 @@ export function saveUserProfile(profile: UserProfile): void {
 export function getActiveRole(): UserRole {
   if (typeof window === 'undefined') return 'startup';
   try {
-    const role = localStorage.getItem(USER_ROLE_KEY) as UserRole | null;
-    if (role && (role === 'startup' || role === 'mentor' || role === 'investor' || role === 'esp' || role === 'explorer')) {
-      return role;
+    const rawRole = (localStorage.getItem(USER_ROLE_KEY) || '').toLowerCase().trim();
+    if (rawRole && (rawRole === 'startup' || rawRole === 'mentor' || rawRole === 'investor' || rawRole === 'esp' || rawRole === 'explorer')) {
+      return rawRole as UserRole;
     }
-    // Rule 18: Inspect stored profile to safely recover role if active role key was lost/corrupted
+    // Inspect stored profile to safely recover role if active role key was lost/corrupted
     const stored = localStorage.getItem(USER_PROFILE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (parsed?.role && (parsed.role === 'startup' || parsed.role === 'mentor' || parsed.role === 'investor' || parsed.role === 'esp' || parsed.role === 'explorer')) {
-        localStorage.setItem(USER_ROLE_KEY, parsed.role);
-        return parsed.role as UserRole;
+      const parsedRole = (parsed?.role || '').toLowerCase().trim();
+      if (parsedRole && (parsedRole === 'startup' || parsedRole === 'mentor' || parsedRole === 'investor' || parsedRole === 'esp' || parsedRole === 'explorer')) {
+        localStorage.setItem(USER_ROLE_KEY, parsedRole);
+        return parsedRole as UserRole;
+      }
+    }
+    // Inspect current user session
+    const userRaw = localStorage.getItem('xentro_current_user');
+    if (userRaw) {
+      const u = JSON.parse(userRaw);
+      const uRole = (u?.role || u?.primaryRole || u?.baseRole || u?.accountType || '').toLowerCase().trim();
+      if (uRole && (uRole === 'startup' || uRole === 'mentor' || uRole === 'investor' || uRole === 'esp' || uRole === 'explorer')) {
+        localStorage.setItem(USER_ROLE_KEY, uRole);
+        return uRole as UserRole;
       }
     }
     return 'startup';

@@ -25,6 +25,7 @@ interface RoleRequestModalProps {
   onClose: () => void;
   currentUserProfile?: UserProfile;
   onRequestSubmitted?: () => void;
+  initialRole?: string;
 }
 
 interface RoleRequestItem {
@@ -87,11 +88,12 @@ export const RoleRequestModal: React.FC<RoleRequestModalProps> = ({
   onClose,
   currentUserProfile,
   onRequestSubmitted,
+  initialRole,
 }) => {
   const { showToast } = useToast();
   const [profile, setProfile] = useState<UserProfile>(currentUserProfile || getUserProfile());
   const [activeTab, setActiveTab] = useState<'request' | 'history'>('request');
-  const [selectedRole, setSelectedRole] = useState<string>('Startup Founder');
+  const [selectedRole, setSelectedRole] = useState<string>(initialRole || 'Startup Founder');
   const [orgName, setOrgName] = useState<string>('');
   const [publicLink, setPublicLink] = useState<string>('');
   const [reason, setReason] = useState<string>('');
@@ -103,9 +105,12 @@ export const RoleRequestModal: React.FC<RoleRequestModalProps> = ({
     if (isOpen) {
       const p = currentUserProfile || getUserProfile();
       setProfile(p);
+      if (initialRole) {
+        setSelectedRole(initialRole);
+      }
       fetchRequests(p);
     }
-  }, [isOpen, currentUserProfile]);
+  }, [isOpen, currentUserProfile, initialRole]);
 
   const fetchRequests = async (p?: UserProfile) => {
     const prof = p || profile;

@@ -19,11 +19,14 @@ import {
   Compass,
   Check,
   Clock,
+  Edit3,
+  X,
+  Loader2,
 } from 'lucide-react';
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { messagingService } from '@/lib/messagingService';
 import { useToast } from '@/components/ui/Toast';
-import { getUserProfile, UserProfile } from '@/lib/userProfile';
+import { getUserProfile, UserProfile, saveUserProfile } from '@/lib/userProfile';
 
 interface ExplorerProfileViewProps {
   explorerId?: string;
@@ -31,6 +34,68 @@ interface ExplorerProfileViewProps {
   isOwnProfile?: boolean;
   onBackToFeed?: () => void;
   onBackToDiscover?: () => void;
+}
+
+function formatProfileLocation(loc: any): string {
+  if (!loc) return '';
+  if (typeof loc === 'string') return loc;
+  if (typeof loc === 'object') return [loc.city, loc.state, loc.country].filter(Boolean).join(', ');
+  return String(loc);
+}
+
+function buildExplorerState(cu: any, isOwn: boolean, explorerData: any, explorerId?: string): any {
+  if (isOwn) {
+    return {
+      id: cu?.id || 'usr_explorer',
+      name: cu?.name || 'Ecosystem Explorer',
+      username: (cu?.username || cu?.name || 'explorer').toLowerCase().replace(/[^a-z0-9]/g, ''),
+      role: cu?.roleTitle || 'Explorer',
+      organization: cu?.currentOrganization || cu?.organization || 'Xentro Network',
+      avatar: cu?.avatar || '/xentro-logo.png',
+      bio: cu?.bio || '',
+      email: cu?.email || 'explorer@xentro.network',
+      location: formatProfileLocation(cu?.location),
+      joinedDate: 'Joined October 2026',
+      headline: cu?.headline || '',
+      currentRole: cu?.currentRole || cu?.roleTitle || '',
+      currentOrganization: cu?.currentOrganization || cu?.organization || '',
+      education: cu?.education || '',
+      professionalExperience: cu?.professionalExperience || '',
+      skills: cu?.skills || [],
+      areasOfExpertise: cu?.areasOfExpertise || cu?.skills || [],
+      industries: cu?.industries || cu?.industriesOfFocus || [],
+      startupInterests: cu?.startupInterests || cu?.entrepreneurshipInterests || [],
+      linkedin: cu?.linkedin || '',
+      website: cu?.website || '',
+      otherLink: cu?.otherLink || cu?.otherLinks?.[0] || '',
+      interests: cu?.industries || cu?.industriesOfFocus || [],
+    };
+  }
+  return {
+    id: explorerId || explorerData?.id || 'usr_explorer_partner',
+    name: explorerData?.name || explorerData?.fullName || 'Ecosystem Explorer',
+    username: explorerData?.username || (explorerData?.name || 'explorer').toLowerCase().replace(/[^a-z0-9]/g, ''),
+    role: explorerData?.role || explorerData?.roleTitle || 'Explorer',
+    organization: explorerData?.organization || explorerData?.company || 'Ecosystem Member',
+    avatar: explorerData?.avatar || '/xentro-logo.png',
+    bio: explorerData?.bio || 'Passionate explorer connecting with founders, mentors, and investors across the venture network.',
+    email: explorerData?.email || '',
+    location: formatProfileLocation(explorerData?.location || 'India'),
+    joinedDate: 'Joined 2026',
+    headline: explorerData?.headline || '',
+    currentRole: explorerData?.currentRole || explorerData?.roleTitle || '',
+    currentOrganization: explorerData?.currentOrganization || explorerData?.organization || '',
+    education: explorerData?.education || '',
+    professionalExperience: explorerData?.professionalExperience || '',
+    skills: explorerData?.skills || [],
+    areasOfExpertise: explorerData?.areasOfExpertise || [],
+    industries: explorerData?.industries || [],
+    startupInterests: explorerData?.startupInterests || explorerData?.entrepreneurshipInterests || [],
+    linkedin: explorerData?.linkedin || '',
+    website: explorerData?.website || '',
+    otherLink: explorerData?.otherLink || explorerData?.otherLinks?.[0] || '',
+    interests: explorerData?.interests || explorerData?.industries || ['Ecosystem Growth', 'Startups', 'Collaborative Innovation'],
+  };
 }
 
 export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
@@ -42,65 +107,84 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
 }) => {
   const { showToast } = useToast();
   const currentUser = getUserProfile();
+  const isOwn = Boolean(isOwnProfile) || (!explorerId && getUserProfile().role === 'explorer');
 
   const [activeTab, setActiveTab] = useState<'overview' | 'activity' | 'network'>('overview');
-  const [profile, setProfile] = useState<any>(() => {
-    if (isOwnProfile) {
-      const cu = currentUser as any;
-      return {
-        id: cu.id || 'usr_explorer',
-        name: cu.name || 'Ecosystem Explorer',
-        username: cu.username || 'explorer',
-        role: cu.roleTitle || 'Explorer',
-        organization: cu.currentOrganization || cu.organization || 'Xentro Network',
-        avatar: cu.avatar || '/xentro-logo.png',
-        bio: cu.bio || '',
-        email: cu.email || 'explorer@xentro.network',
-        location: cu.location || '',
-        joinedDate: 'Joined October 2026',
-        headline: cu.headline || '',
-        currentRole: cu.currentRole || cu.roleTitle || '',
-        currentOrganization: cu.currentOrganization || cu.organization || '',
-        education: cu.education || '',
-        professionalExperience: cu.professionalExperience || '',
-        skills: cu.skills || [],
-        areasOfExpertise: cu.areasOfExpertise || cu.skills || [],
-        industries: cu.industries || cu.industriesOfFocus || [],
-        startupInterests: cu.startupInterests || cu.entrepreneurshipInterests || [],
-        linkedin: cu.linkedin || '',
-        website: cu.website || '',
-        otherLink: cu.otherLink || cu.otherLinks?.[0] || '',
-        interests: cu.industries || cu.industriesOfFocus || [],
-      };
-    }
-    return {
-      id: explorerId || explorerData?.id || 'usr_explorer_partner',
-      name: explorerData?.name || explorerData?.fullName || 'Ecosystem Explorer',
-      username: explorerData?.username || (explorerData?.name || 'explorer').toLowerCase().replace(/[^a-z0-9]/g, ''),
-      role: explorerData?.role || explorerData?.roleTitle || 'Explorer',
-      organization: explorerData?.organization || explorerData?.company || 'Ecosystem Member',
-      avatar: explorerData?.avatar || '/xentro-logo.png',
-      bio: explorerData?.bio || 'Passionate explorer connecting with founders, mentors, and investors across the venture network.',
-      email: explorerData?.email || '',
-      location: explorerData?.location || 'India',
-      joinedDate: 'Joined 2026',
-      headline: explorerData?.headline || '',
-      currentRole: explorerData?.currentRole || explorerData?.roleTitle || '',
-      currentOrganization: explorerData?.currentOrganization || explorerData?.organization || '',
-      education: explorerData?.education || '',
-      professionalExperience: explorerData?.professionalExperience || '',
-      skills: explorerData?.skills || [],
-      areasOfExpertise: explorerData?.areasOfExpertise || [],
-      industries: explorerData?.industries || [],
-      startupInterests: explorerData?.startupInterests || explorerData?.entrepreneurshipInterests || [],
-      linkedin: explorerData?.linkedin || '',
-      website: explorerData?.website || '',
-      otherLink: explorerData?.otherLink || explorerData?.otherLinks?.[0] || '',
-      interests: explorerData?.interests || explorerData?.industries || ['Ecosystem Growth', 'Startups', 'Collaborative Innovation'],
-    };
-  });
+  const [profile, setProfile] = useState<any>(() =>
+    buildExplorerState(currentUser, isOwn, explorerData, explorerId)
+  );
 
-  const isOwn = Boolean(isOwnProfile) || (!explorerId && getUserProfile().role === 'explorer');
+  // Sync profile reactively for both own profile changes and public profile fetching
+  useEffect(() => {
+    let isCancelled = false;
+
+    if (isOwn) {
+      const fresh = getUserProfile();
+      setProfile(buildExplorerState(fresh, true, fresh, fresh.id));
+
+      const handleRoleChanged = () => {
+        const updated = getUserProfile();
+        setProfile(buildExplorerState(updated, true, updated, updated.id));
+      };
+      window.addEventListener('xentro-role-changed', handleRoleChanged);
+      return () => {
+        window.removeEventListener('xentro-role-changed', handleRoleChanged);
+      };
+    } else {
+      const targetId = explorerId || explorerData?.userId || explorerData?.id;
+      const targetEmail = explorerData?.email;
+      if (targetId || targetEmail) {
+        const fetchPublicProfile = async () => {
+          try {
+            const params = new URLSearchParams();
+            if (targetId) params.set('userId', targetId);
+            if (targetEmail) params.set('email', targetEmail);
+            const res = await fetch(`/api/profile?${params.toString()}`);
+            if (res.ok) {
+              const json = await res.json();
+              const serverUser = json?.data?.user || json?.user;
+              const p = json?.data?.profile || serverUser?.personalProfile;
+              if (serverUser && !isCancelled) {
+                setProfile((prev: any) => ({
+                  ...prev,
+                  name: serverUser.fullName || p?.fullName || prev.name,
+                  username: serverUser.username ? serverUser.username.replace(/^@/, '') : prev.username,
+                  role: p?.currentRole || serverUser.roleTitle || prev.role,
+                  organization: p?.currentOrganization || serverUser.organization || prev.organization,
+                  avatar: p?.photoUrl || serverUser.avatar || prev.avatar,
+                  bio: p?.bio || serverUser.bio || prev.bio,
+                  email: serverUser.email || prev.email,
+                  location: formatProfileLocation(p?.location || serverUser.location || prev.location),
+                  headline: p?.headline || serverUser.headline || prev.headline,
+                  currentRole: p?.currentRole || serverUser.currentRole || prev.currentRole,
+                  currentOrganization: p?.currentOrganization || serverUser.currentOrganization || prev.currentOrganization,
+                  education: (Array.isArray(p?.education) && p.education.length > 0)
+                    ? p.education
+                    : (Array.isArray(serverUser.education) && serverUser.education.length > 0)
+                    ? serverUser.education
+                    : (p?.education || serverUser.education || prev.education),
+                  professionalExperience: p?.professionalExperience || serverUser.professionalExperience || prev.professionalExperience,
+                  skills: (p?.skills && p.skills.length > 0) ? p.skills : (serverUser.skills || prev.skills),
+                  areasOfExpertise: (p?.areasOfExpertise && p.areasOfExpertise.length > 0) ? p.areasOfExpertise : prev.areasOfExpertise,
+                  industries: (p?.industries && p.industries.length > 0) ? p.industries : (serverUser.industries || prev.industries),
+                  startupInterests: (p?.startupInterests && p.startupInterests.length > 0) ? p.startupInterests : (serverUser.startupInterests || prev.startupInterests),
+                  linkedin: p?.linkedin || serverUser.linkedin || prev.linkedin,
+                  website: p?.website || serverUser.website || prev.website,
+                  otherLink: (p?.otherLinks?.[0]) || (serverUser.otherLinks?.[0]) || prev.otherLink,
+                }));
+              }
+            }
+          } catch (_) {}
+        };
+        fetchPublicProfile();
+      }
+    }
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [isOwn, explorerId, explorerData]);
+
   const partnerId = profile.id;
   const targetCountId = isOwn ? undefined : (explorerData?.userId || (profile as any).userId || explorerId || profile.id);
 
@@ -155,6 +239,156 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
       avatar: profile.avatar,
       company: profile.organization,
     });
+  };
+
+  // Edit Profile Modal State & Handlers
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [editFormData, setEditFormData] = useState({
+    name: '',
+    headline: '',
+    bio: '',
+    currentRole: '',
+    currentOrganization: '',
+    location: '',
+    education: '',
+    skills: '',
+    industries: '',
+    linkedin: '',
+    website: '',
+  });
+
+  const handleOpenEditModal = () => {
+    setEditFormData({
+      name: profile.name || '',
+      headline: profile.headline || '',
+      bio: profile.bio || '',
+      currentRole: profile.currentRole || profile.role || '',
+      currentOrganization: profile.currentOrganization || profile.organization || '',
+      location: typeof profile.location === 'string' ? profile.location : formatProfileLocation(profile.location),
+      education: typeof profile.education === 'string' ? profile.education : (Array.isArray(profile.education) ? profile.education.map((e: any) => typeof e === 'string' ? e : `${e.degree || ''} ${e.institution || ''}`).join(', ') : ''),
+      skills: Array.isArray(profile.skills) ? profile.skills.join(', ') : '',
+      industries: Array.isArray(profile.industries) ? profile.industries.join(', ') : '',
+      linkedin: profile.linkedin || '',
+      website: profile.website || '',
+    });
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingProfile(true);
+
+    try {
+      const skillsArray = editFormData.skills
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+      const industriesArray = editFormData.industries
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
+
+      const targetUserId = profile.id || currentUser.id;
+      const targetEmail = profile.email || currentUser.email;
+
+      // 1. Persist to MongoDB Atlas via /api/profile
+      const payload = {
+        userId: targetUserId,
+        email: targetEmail,
+        fullName: editFormData.name,
+        headline: editFormData.headline,
+        bio: editFormData.bio,
+        location: editFormData.location,
+        currentRole: editFormData.currentRole,
+        currentOrganization: editFormData.currentOrganization,
+        education: editFormData.education,
+        skills: skillsArray,
+        areasOfExpertise: skillsArray,
+        industries: industriesArray,
+        linkedin: editFormData.linkedin,
+        website: editFormData.website,
+      };
+
+      await fetch('/api/profile', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      // 2. Update local storage & profile store
+      const updatedProfileObj: UserProfile = {
+        ...currentUser,
+        name: editFormData.name || currentUser.name,
+        headline: editFormData.headline,
+        bio: editFormData.bio,
+        location: editFormData.location,
+        currentRole: editFormData.currentRole,
+        roleTitle: editFormData.currentRole || currentUser.roleTitle,
+        currentOrganization: editFormData.currentOrganization,
+        organization: editFormData.currentOrganization || currentUser.organization,
+        education: editFormData.education,
+        skills: skillsArray,
+        areasOfExpertise: skillsArray,
+        industries: industriesArray,
+        linkedin: editFormData.linkedin,
+        website: editFormData.website,
+      };
+      saveUserProfile(updatedProfileObj);
+
+      if (typeof window !== 'undefined') {
+        try {
+          const rawUser = localStorage.getItem('xentro_current_user');
+          if (rawUser) {
+            const u = JSON.parse(rawUser);
+            u.fullName = editFormData.name;
+            localStorage.setItem('xentro_current_user', JSON.stringify(u));
+          }
+          const rawPersonal = localStorage.getItem('xentro_personal_profile');
+          const p = rawPersonal ? JSON.parse(rawPersonal) : {};
+          const mergedPersonal = {
+            ...p,
+            fullName: editFormData.name,
+            headline: editFormData.headline,
+            bio: editFormData.bio,
+            location: editFormData.location,
+            currentRole: editFormData.currentRole,
+            currentOrganization: editFormData.currentOrganization,
+            education: editFormData.education,
+            skills: skillsArray,
+            industries: industriesArray,
+            linkedin: editFormData.linkedin,
+            website: editFormData.website,
+          };
+          localStorage.setItem('xentro_personal_profile', JSON.stringify(mergedPersonal));
+        } catch (_) {}
+      }
+
+      setProfile((prev: any) => ({
+        ...prev,
+        name: editFormData.name,
+        headline: editFormData.headline,
+        bio: editFormData.bio,
+        location: editFormData.location,
+        role: editFormData.currentRole || prev.role,
+        currentRole: editFormData.currentRole,
+        organization: editFormData.currentOrganization || prev.organization,
+        currentOrganization: editFormData.currentOrganization,
+        education: editFormData.education,
+        skills: skillsArray,
+        areasOfExpertise: skillsArray,
+        industries: industriesArray,
+        linkedin: editFormData.linkedin,
+        website: editFormData.website,
+      }));
+
+      setIsEditModalOpen(false);
+      showToast('Explorer profile successfully updated!', 'success');
+    } catch (err) {
+      showToast('Failed to save profile changes. Please try again.', 'error');
+    } finally {
+      setIsSavingProfile(false);
+    }
   };
 
   return (
@@ -233,7 +467,7 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
             </div>
 
             {/* Action Buttons */}
-            {!isOwnProfile && (
+            {!isOwn ? (
               <div className="flex items-center gap-2 w-full sm:w-auto">
                 {/* Connect button */}
                 <button
@@ -266,7 +500,6 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
                   )}
                 </button>
 
-
                 {/* Message Button */}
                 <button
                   type="button"
@@ -275,6 +508,17 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
                 >
                   <MessageCircle className="w-3.5 h-3.5" />
                   <span>Message</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={handleOpenEditModal}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] hover:opacity-90 transition-opacity flex items-center gap-1.5 shadow-xs cursor-pointer"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>Edit Profile</span>
                 </button>
               </div>
             )}
@@ -385,8 +629,35 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
 
               {/* Education */}
               {profile.education && (
-                <div className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                  <span className="font-semibold text-[#101212] dark:text-white">Education:</span> {profile.education}
+                <div className="space-y-1.5 pt-2 border-t border-[#E5E7EB] dark:border-[#262A29]">
+                  <div className="text-xs font-semibold text-[#101212] dark:text-white flex items-center gap-1.5">
+                    <span>Education</span>
+                  </div>
+                  {Array.isArray(profile.education) ? (
+                    profile.education.length > 0 ? (
+                      <div className="space-y-2">
+                        {profile.education.map((edu: any, idx: number) => (
+                          <div key={idx} className="p-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] text-xs border border-gray-100 dark:border-gray-800">
+                            <div className="font-semibold text-[#101212] dark:text-white">{edu.institution}</div>
+                            {(edu.degree || edu.fieldOfStudy) && (
+                              <div className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                                {[edu.degree, edu.fieldOfStudy].filter(Boolean).join(" • ")}
+                              </div>
+                            )}
+                            {(edu.startYear || edu.endYear) && (
+                              <div className="text-[10px] text-[#7D8280]">
+                                {[edu.startYear, edu.endYear || (edu.currentlyStudying ? "Present" : "")].filter(Boolean).join(" - ")}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-xs text-[#565B59]">No education information provided.</div>
+                    )
+                  ) : (
+                    <div className="text-xs text-[#565B59] dark:text-[#B6B8B7]">{profile.education}</div>
+                  )}
                 </div>
               )}
 
@@ -561,13 +832,213 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
         </div>
       )}
 
-      {activeTab === 'activity' && (
-        <div className="bg-white dark:bg-[#181B1A] p-8 rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] text-center space-y-2">
-          <Compass className="w-8 h-8 text-[#9EBE12] mx-auto mb-2 opacity-70" />
-          <h3 className="text-sm font-bold text-[#101212] dark:text-white">No Public Posts Yet</h3>
-          <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] max-w-sm mx-auto">
-            {profile.name} has not published public discussions or asks recently.
-          </p>
+      {/* Edit Explorer Profile Modal */}
+      {isEditModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
+          <div className="w-full max-w-xl max-h-[90vh] flex flex-col bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-2xl shadow-2xl overflow-hidden animate-zoom-in">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E7EB] dark:border-[#262A29] bg-[#F7F8F6] dark:bg-[#121413]">
+              <div>
+                <h3 className="text-base font-bold text-[#101212] dark:text-white font-display flex items-center gap-2">
+                  <Edit3 className="w-4 h-4 text-[#9EBE12]" />
+                  <span>Edit Explorer Profile</span>
+                </h3>
+                <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                  Update your personal profile information and background.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditModalOpen(false)}
+                className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-200 dark:hover:bg-[#202422] transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Form Body */}
+            <form onSubmit={handleSaveProfile} className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* Full Name & Headline */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                    Full Name *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={editFormData.name}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    placeholder="e.g. Mukesh Sai"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                    Professional Headline
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.headline}
+                    onChange={(e) => setEditFormData({ ...editFormData, headline: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    placeholder="e.g. Founder & Tech Explorer"
+                  />
+                </div>
+              </div>
+
+              {/* Bio */}
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  About / Bio
+                </label>
+                <textarea
+                  rows={3}
+                  value={editFormData.bio}
+                  onChange={(e) => setEditFormData({ ...editFormData, bio: e.target.value })}
+                  className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12] resize-none"
+                  placeholder="Tell founders, mentors, and the network about your journey and interests..."
+                />
+              </div>
+
+              {/* Current Role & Current Organization */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                    Current Role / Title
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.currentRole}
+                    onChange={(e) => setEditFormData({ ...editFormData, currentRole: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    placeholder="e.g. Student / Software Engineer / Founder"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                    Organization / Company
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.currentOrganization}
+                    onChange={(e) => setEditFormData({ ...editFormData, currentOrganization: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    placeholder="e.g. IIT Madras / Autonomous"
+                  />
+                </div>
+              </div>
+
+              {/* Location & Education */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                    Location
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.location}
+                    onChange={(e) => setEditFormData({ ...editFormData, location: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    placeholder="e.g. Bengaluru, Karnataka, India"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                    Education / University
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.education}
+                    onChange={(e) => setEditFormData({ ...editFormData, education: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    placeholder="e.g. B.Tech Computer Science, IIIT Hyderabad"
+                  />
+                </div>
+              </div>
+
+              {/* Skills & Focus Industries */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                    Key Skills (comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.skills}
+                    onChange={(e) => setEditFormData({ ...editFormData, skills: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    placeholder="AI/ML, Full Stack, Product Strategy"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                    Industries of Focus (comma-separated)
+                  </label>
+                  <input
+                    type="text"
+                    value={editFormData.industries}
+                    onChange={(e) => setEditFormData({ ...editFormData, industries: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    placeholder="Fintech, SaaS, Climate Tech"
+                  />
+                </div>
+              </div>
+
+              {/* Social Links */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                    LinkedIn Profile URL
+                  </label>
+                  <input
+                    type="url"
+                    value={editFormData.linkedin}
+                    onChange={(e) => setEditFormData({ ...editFormData, linkedin: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    placeholder="https://linkedin.com/in/username"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                    Website / Portfolio URL
+                  </label>
+                  <input
+                    type="url"
+                    value={editFormData.website}
+                    onChange={(e) => setEditFormData({ ...editFormData, website: e.target.value })}
+                    className="w-full px-3.5 py-2 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    placeholder="https://yourwebsite.com"
+                  />
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="pt-4 border-t border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIsEditModalOpen(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#565B59] dark:text-[#B6B8B7] hover:bg-gray-100 dark:hover:bg-[#202422] transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingProfile}
+                  className="px-5 py-2 rounded-xl text-xs font-bold bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingProfile ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Saving to Database...</span>
+                    </>
+                  ) : (
+                    <span>Save Changes</span>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
     </div>

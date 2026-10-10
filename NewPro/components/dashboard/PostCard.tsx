@@ -172,6 +172,15 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onLikeToggle }) => {
   };
 
   const handleOpenAuthorProfile = () => {
+    if (typeof window !== 'undefined' && isMe) {
+      window.dispatchEvent(
+        new CustomEvent('xentro-navigate-tab', {
+          detail: { tab: 'profile' },
+        })
+      );
+      return;
+    }
+
     // Determine profile type
     const role = (post.authorRoleType || author.role || '').toLowerCase();
     let type: 'startup' | 'mentor' | 'investor' | 'esp' | 'explorer' = 'startup';

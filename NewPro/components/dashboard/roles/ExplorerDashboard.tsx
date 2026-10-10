@@ -24,8 +24,10 @@ import { messagingService } from '@/lib/messagingService';
 import { resolveAvatarUrl } from '@/lib/auth/authService';
 import { useToast } from '@/components/ui/Toast';
 import { RoleRequestModal } from '../RoleRequestModal';
+import { CreateEntityModal } from '../CreateEntityModal';
+import { AccountsAndRolesManager } from '../AccountsAndRolesManager';
 
-export type ExplorerTab = 'overview' | 'explore' | 'connections' | 'upgrade';
+export type ExplorerTab = 'overview' | 'explore' | 'connections' | 'upgrade' | 'accounts';
 
 interface ExplorerDashboardProps {
   profile: UserProfile;
@@ -41,7 +43,10 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
   const [metrics, setMetrics] = useState({ activeConnections: 0, pendingReceived: 0, pendingSent: 0, activeUsers: 0 });
   const [isLoading, setIsLoading] = useState(false);
   const [isRoleModalOpen, setIsRoleModalOpen] = useState(false);
+  const [isEntityModalOpen, setIsEntityModalOpen] = useState(false);
   const [roleRequests, setRoleRequests] = useState<any[]>([]);
+  const [workspaces, setWorkspaces] = useState<any[]>([]);
+  const [linkedEntities, setLinkedEntities] = useState<any[]>([]);
 
   const loadRoleRequests = async () => {
     try {
@@ -57,14 +62,55 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
     } catch (_) {}
   };
 
+  const loadWorkspaces = async () => {
+    try {
+      const myId = profile.id || '';
+      const params = new URLSearchParams();
+      if (myId) params.set('userId', myId);
+      if (profile.email) params.set('email', profile.email);
+      const res = await fetch(`/api/auth/workspaces?${params.toString()}`);
+      if (res.ok) {
+        const json = await res.json();
+        setWorkspaces(json?.data?.workspaces || []);
+      }
+    } catch (_) {}
+  };
+
+  const loadEntities = async () => {
+    try {
+      const myId = profile.id || '';
+      const res = await fetch(`/api/entities?userId=${encodeURIComponent(myId)}`);
+      if (res.ok) {
+        const json = await res.json();
+        setLinkedEntities(json?.data?.entities || []);
+      }
+    } catch (_) {}
+  };
+
   useEffect(() => {
     loadConnections();
     loadRecommendations();
     loadRoleRequests();
+    loadWorkspaces();
+    loadEntities();
 
-    const handleReqUpdated = () => loadRoleRequests();
+    const handleReqUpdated = () => {
+      loadRoleRequests();
+      loadWorkspaces();
+    };
+    const handleEntUpdated = () => {
+      loadEntities();
+      loadWorkspaces();
+    };
+
     window.addEventListener('xentro-role-requests-updated', handleReqUpdated);
-    return () => window.removeEventListener('xentro-role-requests-updated', handleReqUpdated);
+    window.addEventListener('xentro-entities-updated', handleEntUpdated);
+    window.addEventListener('xentro-workspaces-updated', handleReqUpdated);
+    return () => {
+      window.removeEventListener('xentro-role-requests-updated', handleReqUpdated);
+      window.removeEventListener('xentro-entities-updated', handleEntUpdated);
+      window.removeEventListener('xentro-workspaces-updated', handleReqUpdated);
+    };
   }, [profile.id, profile.email]);
 
   const loadRecommendations = async () => {
@@ -167,7 +213,18 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
           }`}
         >
           <Rocket className="w-3.5 h-3.5" />
-          <span>Activate Role</span>
+          <span>Role Upgrades</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('accounts')}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+            activeTab === 'accounts'
+              ? 'bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] shadow-2xs'
+              : 'text-[#565B59] dark:text-[#B6B8B7] hover:bg-gray-100 dark:hover:bg-[#202422]'
+          }`}
+        >
+          <Building2 className="w-3.5 h-3.5" />
+          <span>My Accounts &amp; Roles</span>
         </button>
       </div>
 
@@ -621,12 +678,28 @@ export const ExplorerDashboard: React.FC<ExplorerDashboardProps> = ({ profile, o
         </div>
       )}
 
+      {/* MY ACCOUNTS & ROLES TAB */}
+      {activeTab === 'accounts' && (
+        <AccountsAndRolesManager
+          onSelectTab={onNavigateTab}
+          onOpenProfile={() => onNavigateTab && onNavigateTab('profile')}
+        />
+      )}
+
       {/* Role Request Modal */}
       <RoleRequestModal
         isOpen={isRoleModalOpen}
         onClose={() => setIsRoleModalOpen(false)}
         currentUserProfile={profile}
         onRequestSubmitted={loadRoleRequests}
+      />
+
+      {/* Create Entity Modal */}
+      <CreateEntityModal
+        isOpen={isEntityModalOpen}
+        onClose={() => setIsEntityModalOpen(false)}
+        currentUserProfile={profile}
+        onEntityCreated={loadEntities}
       />
     </div>
   );

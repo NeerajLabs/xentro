@@ -1,7 +1,9 @@
 from django.urls import path
 from .views import (
     SignUpView,
+    SignUpStep1View,
     SendSignUpOtpView,
+    VerifySignUpOtpView,
     SignInView,
     SendSignInOtpView,
     VerifySignInOtpView,
@@ -16,11 +18,16 @@ from .views import (
     UserProfileDetailView,
     UpdateUserProfileView,
     UserSupportComplaintView,
+    WorkspacesListView,
+    RoleUpgradeView,
+    EntityCreateView,
 )
 
 urlpatterns = [
     path("auth/signup/", SignUpView.as_view(), name="signup"),
+    path("auth/signup/step1/", SignUpStep1View.as_view(), name="signup_step1"),
     path("auth/signup/otp/send/", SendSignUpOtpView.as_view(), name="signup_otp_send"),
+    path("auth/signup/otp/verify/", VerifySignUpOtpView.as_view(), name="signup_otp_verify"),
     path("auth/signin/", SignInView.as_view(), name="signin"),
     path("auth/signin/otp/send/", SendSignInOtpView.as_view(), name="signin_otp_send"),
     path("auth/signin/otp/verify/", VerifySignInOtpView.as_view(), name="signin_otp_verify"),
@@ -37,6 +44,9 @@ urlpatterns = [
     path("users/recommendations/", UserRecommendationsView.as_view(), name="user_recommendations"),
     path("users/<str:user_id>/profile/", UserProfileDetailView.as_view(), name="user_profile_detail"),
     path("users/<str:user_id>/", UserProfileDetailView.as_view(), name="user_detail"),
+    path("auth/workspaces/", WorkspacesListView.as_view(), name="auth_workspaces"),
+    path("roles/upgrade/", RoleUpgradeView.as_view(), name="role_upgrade"),
+    path("entities/create/", EntityCreateView.as_view(), name="entity_create"),
     path("support/complaints/", UserSupportComplaintView.as_view(), name="user_support_complaints"),
     path("support/tickets/", UserSupportComplaintView.as_view(), name="user_support_tickets"),
 ]

@@ -564,7 +564,7 @@ class AdminUserDetailView(APIView):
 
     def get(self, request, user_id):
         users_col = get_collection("users")
-        user = users_col.find_one({"id": user_id})
+        user = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
         if not user:
             return api_error("User account not found.", status_code=404)
 
@@ -572,7 +572,137 @@ class AdminUserDetailView(APIView):
         user_data.pop("_id", None)
         user_data.pop("password", None)
         user_data.pop("password_hash", None)
-        return api_success({"user": user_data})
+        user_data.pop("passwordHash", None)
+
+        # 5.1 Identity & Contact
+        identity_contact = {
+            "id": user.get("id"),
+            "profileId": user.get("profileId") or user.get("id"),
+            "fullName": user.get("fullName", user.get("name", "")),
+            "email": user.get("email", ""),
+            "phoneNumber": user.get("phoneNumber", ""),
+            "accountType": user.get("accountType", "Explorer"),
+            "username": user.get("username", ""),
+            "createdAt": user.get("createdAt", ""),
+            "updatedAt": user.get("updatedAt", ""),
+            "onboardingCompleted": user.get("onboardingCompleted", False)
+        }
+
+        # 5.2 Signup & Verification
+        signup_verification = {
+            "emailVerified": user.get("emailVerified", False),
+            "emailVerifiedAt": user.get("emailVerifiedAt", ""),
+            "phoneVerified": user.get("phoneVerified", False),
+            "agreedToTerms": user.get("agreedToTerms", False),
+            "termsAcceptedAt": user.get("termsAcceptedAt", ""),
+            "termsVersion": user.get("termsVersion", "1.0"),
+            "agreedToPrivacy": user.get("agreedToPrivacy", False),
+            "privacyAcceptedAt": user.get("privacyAcceptedAt", ""),
+            "privacyVersion": user.get("privacyVersion", "1.0"),
+            "consentIdentityVerification": user.get("consentIdentityVerification", False),
+            "identityConsentAt": user.get("identityConsentAt", ""),
+            "identityConsentVersion": user.get("identityConsentVersion", "1.0"),
+            "identityStatus": user.get("identityStatus", "NOT_SUBMITTED"),
+            "verificationSubmittedAt": user.get("verificationSubmittedAt", ""),
+            "verificationReviewedAt": user.get("verificationReviewedAt", ""),
+            "reviewedBy": user.get("identityReviewedBy", "")
+        }
+
+        # 5.3 Personal Profile
+        p_prof = user.get("personalProfile") or {}
+        personal_profile = {
+            "photoUrl": user.get("photoUrl") or user.get("avatar") or p_prof.get("photoUrl"),
+            "headline": user.get("headline") or p_prof.get("headline", ""),
+            "location": user.get("location") or p_prof.get("location", ""),
+            "structuredLocation": p_prof.get("structuredLocation") or {},
+            "currentRole": user.get("currentRole") or p_prof.get("currentRole", ""),
+            "currentOrganization": user.get("currentOrganization") or user.get("organization") or p_prof.get("currentOrganization", ""),
+            "bio": user.get("bio") or p_prof.get("bio", ""),
+            "skills": user.get("skills") or p_prof.get("skills", []),
+            "industries": user.get("industries") or p_prof.get("industries", []),
+            "ecosystemInterests": p_prof.get("ecosystemInterests", []),
+            "ecosystemGoals": p_prof.get("ecosystemGoals", []),
+            "socialLinks": {
+                "linkedin": user.get("linkedin") or p_prof.get("linkedin", ""),
+                "website": user.get("website") or p_prof.get("website", ""),
+                "otherLinks": user.get("otherLinks") or p_prof.get("otherLinks", [])
+            },
+            "visibility": p_prof.get("visibility", "PUBLIC")
+        }
+
+        # 5.4 Education
+        education = p_prof.get("education") or user.get("education") or []
+        if isinstance(education, str):
+            education = [{"institution": education, "degree": "", "fieldOfStudy": "", "startYear": "", "endYear": "", "currentlyStudying": False}] if education else []
+
+        # 5.5 Personal Roles
+        mentor_col = get_collection("mentor_profiles")
+        inv_col = get_collection("investor_profiles")
+        m_app = mentor_col.find_one({"userId": user.get("id")})
+        if m_app: m_app.pop("_id", None)
+        i_app = inv_col.find_one({"userId": user.get("id")})
+        if i_app: i_app.pop("_id", None)
+
+        personal_roles = {
+            "baseRole": "Explorer",
+            "baseRoleStatus": "Active",
+            "mentorRole": m_app.get("status", "Not Applied") if m_app else "Not Applied",
+            "mentorDetails": m_app,
+            "investorRole": i_app.get("status", "Not Applied") if i_app else "Not Applied",
+            "investorDetails": i_app
+        }
+
+        # 5.6 Entity Memberships
+        entities_col = get_collection("entities")
+        mem_col = get_collection("memberships")
+        user_memberships = list(mem_col.find({"userId": user.get("id")}))
+        entity_memberships = []
+        for m in user_memberships:
+            ent = entities_col.find_one({"id": m.get("entityId")})
+            entity_memberships.append({
+                "entityId": m.get("entityId"),
+                "entityName": ent.get("name") if ent else m.get("entityName", "Entity"),
+                "entityType": ent.get("entityType") if ent else m.get("entityType", "Startup"),
+                "role": m.get("role", "Member"),
+                "status": m.get("status", "ACTIVE"),
+                "verificationStatus": ent.get("verificationStatus", "PENDING") if ent else "PENDING",
+                "createdAt": m.get("createdAt")
+            })
+        owned_ents = list(entities_col.find({"primaryOwnerId": user.get("id"), "status": {"$nin": ["ORPHANED_DELETED", "DELETED"]}}))
+        for ent in owned_ents:
+            if not any(e["entityId"] == ent["id"] for e in entity_memberships):
+                entity_memberships.append({
+                    "entityId": ent["id"],
+                    "entityName": ent.get("name", "Entity"),
+                    "entityType": ent.get("entityType", "Startup"),
+                    "role": "Founder / Owner",
+                    "status": "ACTIVE" if ent.get("isActive", True) else "INACTIVE",
+                    "verificationStatus": ent.get("verificationStatus", "PENDING"),
+                    "createdAt": ent.get("createdAt")
+                })
+
+        # 5.7 Account Activity
+        audit_col = get_collection("audit_logs")
+        recent_activity = list(audit_col.find(
+            {"$or": [{"objectId": user.get("id")}, {"object_id": user.get("id")}, {"userId": user.get("id")}]},
+            sort=[("timestamp", -1)],
+            limit=20
+        ))
+        clean_activity = []
+        for a in recent_activity:
+            a.pop("_id", None)
+            clean_activity.append(a)
+
+        return api_success({
+            "user": user_data,
+            "identityContact": identity_contact,
+            "signupVerification": signup_verification,
+            "personalProfile": personal_profile,
+            "education": education,
+            "personalRoles": personal_roles,
+            "entityMemberships": entity_memberships,
+            "accountActivity": clean_activity
+        })
 
     def patch(self, request, user_id):
         return self.put(request, user_id)
@@ -584,7 +714,8 @@ class AdminUserDetailView(APIView):
             return api_error("Forbidden: Only the Master Admin is authorized to edit user accounts.", status_code=403)
 
         users_col = get_collection("users")
-        user = users_col.find_one({"id": user_id})
+        prof_col = get_collection("personal_profiles")
+        user = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
         if not user:
             return api_error("User account not found.", status_code=404)
 
@@ -600,17 +731,44 @@ class AdminUserDetailView(APIView):
         }
 
         updates = {}
+        prof_updates = {}
         if "fullName" in data or "name" in data:
-            updates["fullName"] = str(data.get("fullName") or data.get("name")).strip()
+            val = str(data.get("fullName") or data.get("name")).strip()
+            updates["fullName"] = val
+            prof_updates["fullName"] = val
         if "email" in data:
             new_email = str(data["email"]).strip().lower()
             if new_email and new_email != user.get("email", "").lower():
-                existing = users_col.find_one({"email": new_email, "id": {"$ne": user_id}})
+                existing = users_col.find_one({"email": new_email, "id": {"$ne": user.get("id")}})
                 if existing:
                     return api_error("Another account already exists with this email address.", status_code=400)
                 updates["email"] = new_email
         if "phoneNumber" in data or "phone" in data:
             updates["phoneNumber"] = str(data.get("phoneNumber") or data.get("phone")).strip()
+        if "headline" in data:
+            updates["headline"] = str(data["headline"]).strip()
+            prof_updates["headline"] = str(data["headline"]).strip()
+        if "location" in data:
+            updates["location"] = str(data["location"]).strip()
+            prof_updates["location"] = str(data["location"]).strip()
+        if "currentRole" in data:
+            updates["currentRole"] = str(data["currentRole"]).strip()
+            prof_updates["currentRole"] = str(data["currentRole"]).strip()
+        if "currentOrganization" in data:
+            updates["currentOrganization"] = str(data["currentOrganization"]).strip()
+            prof_updates["currentOrganization"] = str(data["currentOrganization"]).strip()
+        if "education" in data:
+            updates["education"] = data["education"]
+            prof_updates["education"] = data["education"]
+        if "bio" in data:
+            updates["bio"] = str(data["bio"]).strip()
+            prof_updates["bio"] = str(data["bio"]).strip()
+        if "skills" in data:
+            updates["skills"] = data["skills"] if isinstance(data["skills"], list) else [data["skills"]]
+            prof_updates["skills"] = updates["skills"]
+        if "industries" in data:
+            updates["industries"] = data["industries"] if isinstance(data["industries"], list) else [data["industries"]]
+            prof_updates["industries"] = updates["industries"]
         if "accountStatus" in data:
             updates["accountStatus"] = str(data["accountStatus"]).strip().upper()
         if "isActive" in data:
@@ -621,8 +779,6 @@ class AdminUserDetailView(APIView):
             new_role = str(data.get("role") or data.get("accountType") or data.get("requestedRole")).strip()
             updates["activeRoles"] = [new_role]
             updates["registrationRequest.requestedRole"] = new_role
-        if "bio" in data:
-            updates["bio"] = str(data["bio"]).strip()
 
         if not updates:
             return api_error("No valid fields provided for update.", status_code=400)
@@ -632,23 +788,33 @@ class AdminUserDetailView(APIView):
         updates["updatedAt"] = now_iso
         updates["updatedBy"] = admin_id
 
-        users_col.update_one({"id": user_id}, {"$set": updates})
-        updated_user = users_col.find_one({"id": user_id})
+        # Update user record
+        users_col.update_one({"id": user.get("id")}, {"$set": updates})
+
+        # Synchronize canonical personal_profiles document
+        if prof_updates:
+            prof_updates["updatedAt"] = now_iso
+            prof_col.update_one(
+                {"$or": [{"userId": user.get("id")}, {"profileId": user.get("profileId")}]},
+                {"$set": prof_updates},
+                upsert=True
+            )
+
+        updated_user = users_col.find_one({"id": user.get("id")})
         updated_user.pop("_id", None)
         updated_user.pop("password", None)
         updated_user.pop("password_hash", None)
+        updated_user.pop("passwordHash", None)
 
         log_audit_event(
             admin_id=admin_id,
             action="USER_ACCOUNT_UPDATED",
             object_type="USER",
-            object_id=user_id,
+            object_id=user.get("id"),
             previous_state=prev_state,
-            new_state=updates,
-            reason=data.get("reason") or "User account updated by Master Admin"
+            reason=data.get("reason", "Administrative update by Super Admin")
         )
-
-        return api_success({"user": updated_user}, "User account updated successfully.")
+        return api_success({"user": updated_user}, f"User account for {updated_user.get('email')} updated successfully.")
 
     def delete(self, request, user_id):
         # Strict backend permission check (defense-in-depth)
@@ -789,51 +955,421 @@ class AdminAuditLogsView(APIView):
 
 class AdminUsersListView(APIView):
     """
-    Returns all real registered user accounts from the database for the Admin Personal Accounts view.
+    Returns all real registered user accounts from MongoDB for the Admin Personal Accounts view.
+    Zero dummy data. Calculates dynamic participation modes, actual entity memberships,
+    and server-side filtered status tabs and counts.
     """
     permission_classes = [AllowAny]
 
     def get(self, request):
         users_col = get_collection("users")
-        all_users = list(users_col.find(
-            {
-                "deleted": {"$ne": True},
-                "is_deleted": {"$ne": True},
-                "accountStatus": {"$ne": "DELETED"}
-            },
-            sort=[("createdAt", -1)],
-            limit=200
-        ))
-        result = []
+        entities_col = get_collection("entities")
+        mem_col = get_collection("memberships")
+        conn_col = get_collection("connections")
+        mentor_col = get_collection("mentor_profiles")
+        inv_col = get_collection("investor_profiles")
+
+        status_tab = request.query_params.get("status", "All").strip()
+        mode_filter = request.query_params.get("mode", "All").strip()
+        search_query = request.query_params.get("search", "").strip().lower()
+
+        base_filter = {
+            "accountStatus": {"$ne": "DELETED"}
+        }
+
+        all_users = list(users_col.find(base_filter, sort=[("createdAt", -1)], limit=500))
+
+        # Real Tab Counts
+        counts = {
+            "all": 0,
+            "requests": 0,
+            "pending_verification": 0,
+            "verified": 0,
+            "restricted": 0,
+            "suspended": 0,
+            "archived": 0,
+        }
+
+        processed_users = []
         for u in all_users:
-            req_info = u.get("registrationRequest", {})
-            result.append({
-                "id": u["id"],
-                "name": u.get("fullName", u.get("username", "Unnamed User")),
+            u_id = u.get("id") or str(u.get("_id"))
+            p_prof = u.get("personalProfile") or {}
+            id_status_raw = str(u.get("identityStatus", "NOT_SUBMITTED")).upper()
+            acct_status_raw = str(u.get("accountStatus", "ACTIVE")).upper()
+            is_deleted = bool(u.get("deleted") or u.get("is_deleted"))
+
+            # Normalize Identity Status for UI
+            if id_status_raw in ["VERIFIED", "APPROVED"]:
+                id_status_ui = "Verified"
+            elif id_status_raw in ["UNDER_REVIEW", "IN_REVIEW"]:
+                id_status_ui = "Under Review"
+            elif id_status_raw == "PENDING":
+                id_status_ui = "Pending"
+            elif id_status_raw in ["REJECTED", "FAILED"]:
+                id_status_ui = "Failed"
+            else:
+                id_status_ui = "Not Submitted"
+
+            # Normalize Account Status for UI
+            if is_deleted or acct_status_raw == "ARCHIVED":
+                acct_status_ui = "Archived"
+            elif acct_status_raw in ["SUSPENDED", "BANNED"]:
+                acct_status_ui = "Suspended"
+            elif acct_status_raw in ["RESTRICTED", "LOCKED"]:
+                acct_status_ui = "Restricted"
+            elif acct_status_raw in ["PENDING_APPROVAL", "PENDING_VERIFICATION", "PROFILE_SETUP_PENDING"]:
+                acct_status_ui = "Pending Verification"
+            else:
+                acct_status_ui = "Active"
+
+            is_reg_request = bool(
+                acct_status_raw in ["PENDING_APPROVAL", "REGISTRATION_REQUESTED"] or
+                (u.get("registrationRequest", {}).get("status") == "PENDING")
+            )
+
+            # Tab count tallies
+            if not is_deleted and acct_status_ui != "Archived":
+                counts["all"] += 1
+            else:
+                counts["archived"] += 1
+
+            if is_reg_request:
+                counts["requests"] += 1
+            if id_status_ui in ["Pending", "Under Review"]:
+                counts["pending_verification"] += 1
+            if id_status_ui == "Verified":
+                counts["verified"] += 1
+            if acct_status_ui == "Restricted":
+                counts["restricted"] += 1
+            if acct_status_ui == "Suspended":
+                counts["suspended"] += 1
+
+            # Real Entity Memberships
+            entity_memberships = []
+            user_memberships = list(mem_col.find({"userId": u_id}))
+            for m in user_memberships:
+                ent = entities_col.find_one({"id": m.get("entityId")})
+                if ent and not ent.get("is_deleted") and ent.get("status") != "ORPHANED_DELETED":
+                    entity_memberships.append({
+                        "entityId": ent.get("id"),
+                        "entityName": ent.get("name") or ent.get("startupName") or "Entity",
+                        "entityType": ent.get("entityType", "Startup"),
+                        "role": m.get("role", "Member"),
+                        "status": m.get("status", "ACTIVE")
+                    })
+
+            # Check owned entities
+            owned_ents = list(entities_col.find({
+                "primaryOwnerId": u_id,
+                "isActive": {"$ne": False},
+                "status": {"$nin": ["ORPHANED_DELETED", "DELETED"]}
+            }))
+            for ent in owned_ents:
+                if not any(e["entityId"] == ent["id"] for e in entity_memberships):
+                    entity_memberships.append({
+                        "entityId": ent["id"],
+                        "entityName": ent.get("name") or ent.get("startupName") or "Entity",
+                        "entityType": ent.get("entityType", "Startup"),
+                        "role": "Founder / Owner",
+                        "status": "Active"
+                    })
+
+            # Real Participation Modes (Explorer is canonical base)
+            participation_modes = ["Explorer"]
+            m_prof = mentor_col.find_one({"userId": u_id, "status": {"$in": ["ACTIVE", "APPROVED", "Active"]}})
+            if m_prof or "Mentor" in (u.get("activeRoles") or []):
+                participation_modes.append("Mentor")
+
+            i_prof = inv_col.find_one({"userId": u_id, "status": {"$in": ["ACTIVE", "APPROVED", "Active"]}})
+            if i_prof or "Investor" in (u.get("activeRoles") or []) or "Individual Investor" in (u.get("activeRoles") or []):
+                participation_modes.append("Individual Investor")
+
+            has_startup = any(str(e.get("entityType", "")).upper() == "STARTUP" for e in entity_memberships)
+            if has_startup or "Startup Founder" in (u.get("activeRoles") or []) or "Founder @ Startup" in (u.get("activeRoles") or []):
+                participation_modes.append("Founder @ Startup")
+
+            has_vc = any(str(e.get("entityType", "")).upper() in ["INVESTOR", "INVESTOR_ORG", "VCI"] for e in entity_memberships)
+            if has_vc or "Partner @ VC" in (u.get("activeRoles") or []):
+                participation_modes.append("Partner @ VC")
+
+            has_esp = any(str(e.get("entityType", "")).upper() == "ESP" for e in entity_memberships)
+            if has_esp or "Member @ ESP" in (u.get("activeRoles") or []):
+                participation_modes.append("Member @ ESP")
+
+            # Real Connections Count
+            conn_count = conn_col.count_documents({
+                "$or": [
+                    {"requesterId": u_id, "status": "CONNECTED"},
+                    {"receiverId": u_id, "status": "CONNECTED"}
+                ]
+            })
+
+            # Last Active
+            last_active = u.get("lastActive") or u.get("lastLogin") or "Unavailable"
+
+            photo = u.get("photoUrl") or u.get("avatar") or p_prof.get("photoUrl")
+
+            user_item = {
+                "id": u_id,
+                "profileId": u.get("profileId") or u_id,
+                "name": u.get("fullName", u.get("name", u.get("username", "Explorer"))),
                 "email": u.get("email", ""),
                 "phone": u.get("phoneNumber", ""),
-                "avatar": f"https://api.dicebear.com/7.x/initials/svg?seed={u.get('fullName', u.get('username', 'User'))}",
-                "identityStatus": u.get("identityStatus", "NOT_SUBMITTED").capitalize(),
-                "accountStatus": u.get("accountStatus", "PENDING_APPROVAL"),
-                "isActive": u.get("isActive", False),
-                "participationModes": u.get("activeRoles", ["Personal Account"]),
-                "role": req_info.get("requestedRole", u.get("activeRoles", ["Founder"])[0]),
-                "institutionName": req_info.get("institutionName", ""),
-                "createdDate": u.get("createdAt", "")[:10] if u.get("createdAt") else "",
+                "avatar": photo,
+                "identityStatus": id_status_ui,
+                "accountStatus": acct_status_ui,
+                "isActive": acct_status_ui == "Active",
+                "participationModes": list(dict.fromkeys(participation_modes)),
+                "role": participation_modes[-1] if len(participation_modes) > 1 else "Explorer",
+                "createdDate": (u.get("createdAt") or "")[:10],
                 "createdAt": u.get("createdAt", ""),
-                "lastActive": "Just now",
-                "connectionsCount": 0,
-                "bio": f"Registered as {req_info.get('requestedRole', 'User')}" + (f" at {req_info.get('institutionName')}" if req_info.get('institutionName') else ""),
-                "entityMemberships": [
-                    {
-                        "entityId": "ent-" + u["id"],
-                        "entityName": req_info.get("institutionName") or f"{u.get('fullName', 'User')}'s Startup",
-                        "entityType": "ESP" if req_info.get("requestedRole") == "ESP" or req_info.get("institutionName") else "Startup",
-                        "role": req_info.get("requestedRole", "Founder")
-                    }
-                ] if req_info.get("institutionName") or req_info.get("requestedRole") in ["ESP", "Founder"] else []
-            })
-        return api_success({"users": result, "total": len(result)})
+                "lastActive": last_active,
+                "connectionsCount": conn_count,
+                "bio": u.get("bio") or p_prof.get("bio") or "Verified Xentro ecosystem member",
+                "entityMemberships": entity_memberships,
+                "isRegistrationRequest": is_reg_request
+            }
+            processed_users.append(user_item)
+
+        # Tab Filtering
+        filtered = []
+        for pu in processed_users:
+            if status_tab == "Registration Requests" and not pu["isRegistrationRequest"]:
+                continue
+            elif status_tab == "Pending Verification" and pu["identityStatus"] not in ["Pending", "Under Review"]:
+                continue
+            elif status_tab == "Verified" and pu["identityStatus"] != "Verified":
+                continue
+            elif status_tab == "Restricted" and pu["accountStatus"] != "Restricted":
+                continue
+            elif status_tab == "Suspended" and pu["accountStatus"] != "Suspended":
+                continue
+            elif status_tab == "Archived" and pu["accountStatus"] != "Archived":
+                continue
+            elif status_tab == "All" and pu["accountStatus"] == "Archived":
+                continue
+
+            # Mode Filtering
+            if mode_filter != "All" and mode_filter not in pu["participationModes"]:
+                continue
+
+            # Text Search
+            if search_query:
+                match_name = search_query in pu["name"].lower()
+                match_email = search_query in pu["email"].lower()
+                match_phone = search_query in str(pu["phone"]).lower()
+                match_id = search_query in pu["id"].lower()
+                if not (match_name or match_email or match_phone or match_id):
+                    continue
+
+            filtered.append(pu)
+
+        return api_success({
+            "users": filtered,
+            "total": len(filtered),
+            "counts": counts
+        })
+
+
+class AdminUserVerifyIdentityView(APIView):
+    """POST /api/v1/admin/users/<str:user_id>/verify-identity/"""
+    permission_classes = [IsXentroAdmin]
+
+    def post(self, request, user_id):
+        action = request.data.get("action", "VERIFY").upper()
+        notes = request.data.get("notes", "")
+        admin_id = getattr(request.user, "admin_employee_id", "SUPER_ADMIN")
+
+        users_col = get_collection("users")
+        user = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+        if not user:
+            return api_error("User not found", status_code=404)
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        new_status = "VERIFIED" if action == "VERIFY" else "REJECTED"
+
+        users_col.update_one(
+            {"id": user["id"]},
+            {"$set": {
+                "identityStatus": new_status,
+                "identityReviewedBy": admin_id,
+                "verificationReviewedAt": now_iso,
+                "identityNotes": notes,
+                "updatedAt": now_iso
+            }}
+        )
+
+        log_audit_event(
+            admin_id=admin_id,
+            action=f"IDENTITY_{action}",
+            object_type="USER_IDENTITY",
+            object_id=user["id"],
+            reason=notes or f"Identity verification {action.lower()} by admin."
+        )
+
+        return api_success({"userId": user["id"], "identityStatus": new_status}, f"Identity status set to {new_status}.")
+
+
+class AdminUserRestrictView(APIView):
+    """POST /api/v1/admin/users/<str:user_id>/restrict/"""
+    permission_classes = [IsXentroAdmin]
+
+    def post(self, request, user_id):
+        reason = request.data.get("reason", "Account restricted due to policy review.")
+        admin_id = getattr(request.user, "admin_employee_id", "SUPER_ADMIN")
+
+        users_col = get_collection("users")
+        user = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+        if not user:
+            return api_error("User not found", status_code=404)
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        users_col.update_one(
+            {"id": user["id"]},
+            {"$set": {"accountStatus": "RESTRICTED", "isActive": False, "updatedAt": now_iso}}
+        )
+        log_audit_event(
+            admin_id=admin_id,
+            action="ACCOUNT_RESTRICTED",
+            object_type="USER_ACCOUNT",
+            object_id=user["id"],
+            reason=reason
+        )
+        return api_success({"userId": user["id"], "accountStatus": "RESTRICTED"}, "Account has been restricted.")
+
+
+class AdminUserSuspendView(APIView):
+    """POST /api/v1/admin/users/<str:user_id>/suspend/"""
+    permission_classes = [IsXentroAdmin]
+
+    def post(self, request, user_id):
+        reason = request.data.get("reason", "Account suspended by platform operations.")
+        admin_id = getattr(request.user, "admin_employee_id", "SUPER_ADMIN")
+
+        users_col = get_collection("users")
+        user = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+        if not user:
+            return api_error("User not found", status_code=404)
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        users_col.update_one(
+            {"id": user["id"]},
+            {"$set": {"accountStatus": "SUSPENDED", "isActive": False, "updatedAt": now_iso}}
+        )
+        log_audit_event(
+            admin_id=admin_id,
+            action="ACCOUNT_SUSPENDED",
+            object_type="USER_ACCOUNT",
+            object_id=user["id"],
+            reason=reason
+        )
+        return api_success({"userId": user["id"], "accountStatus": "SUSPENDED"}, "Account has been suspended.")
+
+
+class AdminUserArchiveView(APIView):
+    """POST /api/v1/admin/users/<str:user_id>/archive/"""
+    permission_classes = [IsXentroAdmin]
+
+    def post(self, request, user_id):
+        reason = request.data.get("reason", "Account archived according to data retention policy.")
+        admin_id = getattr(request.user, "admin_employee_id", "SUPER_ADMIN")
+
+        users_col = get_collection("users")
+        user = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+        if not user:
+            return api_error("User not found", status_code=404)
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        users_col.update_one(
+            {"id": user["id"]},
+            {"$set": {"accountStatus": "ARCHIVED", "isActive": False, "is_archived": True, "updatedAt": now_iso}}
+        )
+        log_audit_event(
+            admin_id=admin_id,
+            action="ACCOUNT_ARCHIVED",
+            object_type="USER_ACCOUNT",
+            object_id=user["id"],
+            reason=reason
+        )
+        return api_success({"userId": user["id"], "accountStatus": "ARCHIVED"}, "Account has been archived.")
+
+
+class AdminUserRoleActionView(APIView):
+    """POST /api/v1/admin/users/<str:user_id>/role-action/"""
+    permission_classes = [IsXentroAdmin]
+
+    def post(self, request, user_id):
+        role = request.data.get("role", "Mentor")
+        action = request.data.get("action", "APPROVE").upper()
+        notes = request.data.get("notes", "")
+        admin_id = getattr(request.user, "admin_employee_id", "SUPER_ADMIN")
+
+        users_col = get_collection("users")
+        mentor_col = get_collection("mentor_profiles")
+        inv_col = get_collection("investor_profiles")
+        req_col = get_collection("role_requests")
+
+        user = users_col.find_one({"$or": [{"id": user_id}, {"_id": user_id}]})
+        if not user:
+            return api_error("User not found", status_code=404)
+
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+        if action == "APPROVE":
+            active_roles = list(user.get("activeRoles") or ["Explorer"])
+            if role not in active_roles:
+                active_roles.append(role)
+
+            users_col.update_one(
+                {"id": user["id"]},
+                {"$set": {"activeRoles": active_roles, "updatedAt": now_iso}}
+            )
+
+            if role == "Mentor":
+                mentor_col.update_one(
+                    {"userId": user["id"]},
+                    {"$set": {"status": "APPROVED", "approvedAt": now_iso, "approvedBy": admin_id}},
+                    upsert=True
+                )
+            elif role in ["Investor", "Individual Investor"]:
+                inv_col.update_one(
+                    {"userId": user["id"]},
+                    {"$set": {"status": "APPROVED", "approvedAt": now_iso, "approvedBy": admin_id}},
+                    upsert=True
+                )
+
+            req_col.update_many(
+                {"userId": user["id"], "requestedRole": role},
+                {"$set": {"status": "APPROVED", "decisionBy": admin_id, "decisionDate": now_iso, "adminNotes": notes}}
+            )
+            msg = f"{role} role approved for {user.get('email')}."
+        else:
+            if role == "Mentor":
+                mentor_col.update_one(
+                    {"userId": user["id"]},
+                    {"$set": {"status": "REJECTED", "rejectedAt": now_iso, "rejectedBy": admin_id}}
+                )
+            elif role in ["Investor", "Individual Investor"]:
+                inv_col.update_one(
+                    {"userId": user["id"]},
+                    {"$set": {"status": "REJECTED", "rejectedAt": now_iso, "rejectedBy": admin_id}}
+                )
+
+            req_col.update_many(
+                {"userId": user["id"], "requestedRole": role},
+                {"$set": {"status": "REJECTED", "decisionBy": admin_id, "decisionDate": now_iso, "adminNotes": notes}}
+            )
+            msg = f"{role} role application rejected."
+
+        log_audit_event(
+            admin_id=admin_id,
+            action=f"ROLE_UPGRADE_{action}",
+            object_type="USER_ROLE",
+            object_id=user["id"],
+            reason=notes or f"{role} role application {action.lower()} by admin."
+        )
+
+        return api_success({"userId": user["id"], "role": role, "action": action}, msg)
 
 
 class AdminEntitiesListView(APIView):

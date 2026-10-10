@@ -173,11 +173,32 @@ export const SignupForm: React.FC = () => {
     setIsSubmitting(true);
     try {
       const backendUrl = getBackendBaseUrl();
-      const resp = await fetch(`${backendUrl}/auth/signup/otp/send/`, {
+      const payload = {
+        fullName: formData.fullName.trim(),
+        email: formData.email.trim().toLowerCase(),
+        phoneNumber: formData.phoneNumber.trim(),
+        password: formData.password,
+        confirmPassword: formData.confirmPassword,
+        termsAccepted: formData.agreedToTerms,
+        privacyAccepted: formData.agreedToPrivacy,
+        identityConsentAccepted: formData.consentIdentityVerification,
+        role: "Explorer",
+        accountType: "Explorer",
+      };
+
+      let resp = await fetch(`${backendUrl}/auth/signup/step1/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: formData.email.trim().toLowerCase() }),
+        body: JSON.stringify(payload),
       });
+
+      if (!resp.ok && resp.status === 404) {
+        resp = await fetch(`${backendUrl}/auth/signup/otp/send/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
       const data = await resp.json();
 
       if (resp.status === 409) {
@@ -273,18 +294,13 @@ export const SignupForm: React.FC = () => {
 
     try {
       const backendUrl = getBackendBaseUrl();
-      const resp = await fetch(`${backendUrl}/auth/signup/`, {
+      const resp = await fetch(`${backendUrl}/auth/signup/otp/verify/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          fullName: formData.fullName.trim(),
           email: formData.email.trim().toLowerCase(),
-          phoneNumber: formData.phoneNumber.trim(),
-          password: formData.password,
           otp: otpCode.trim(),
-          role: "Explorer",
-          accountType: "Explorer",
-          userType: "Explorer",
+          code: otpCode.trim(),
         }),
       });
       const data = await resp.json();
@@ -301,12 +317,8 @@ export const SignupForm: React.FC = () => {
           sessionStorage.removeItem(SIGNUP_DRAFT_KEY);
         } catch (_) {}
 
-        if (data.data?.requiresApproval) {
-          setIsPendingApproval(true);
-        } else {
-          // Immediately advance directly to Step 3: Profile without routing back to start
-          router.push("/onboarding/profile");
-        }
+        // Advance directly to Step 3: Profile Setup
+        router.push("/onboarding/profile");
       } else {
         setGeneralError({
           message: data?.message || "Invalid or expired verification code. Please request a new code.",
