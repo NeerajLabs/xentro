@@ -35,6 +35,11 @@ import { isDevToolsEnabled } from '@/lib/devTools';
 import { notificationService, NOTIFICATIONS_UPDATED_EVENT } from '@/lib/notificationService';
 import { messagingService, CONVERSATIONS_UPDATED_EVENT } from '@/lib/messagingService';
 import { CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
+import {
+  entityContextService,
+  LinkedEntity,
+  ENTITY_CONTEXT_CHANGED_EVENT,
+} from '@/lib/entityContextService';
 
 export interface NavItem {
   id: string;
@@ -85,6 +90,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const [isDark, setIsDark] = useState(false);
   const [profile, setProfile] = useState<UserProfile>(getUserProfile());
+  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
+    entityContextService.getActiveEntity()
+  );
 
   useEffect(() => {
     const handleRoleChanged = (e: Event) => {
@@ -95,9 +103,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         setProfile(getUserProfile());
       }
     };
+    const handleEntitySwitch = (e: Event) => {
+      const ce = e as CustomEvent;
+      setActiveEntity(ce.detail?.entity || entityContextService.getActiveEntity());
+    };
     window.addEventListener('xentro-role-changed', handleRoleChanged);
+    window.addEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
     return () => {
       window.removeEventListener('xentro-role-changed', handleRoleChanged);
+      window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
     };
   }, []);
 
@@ -418,12 +432,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
               isExpanded ? 'opacity-100 max-w-[180px] ml-2' : 'opacity-0 max-w-0 pointer-events-none'
             }`}
           >
-            <div className="flex flex-col">
-              <span className="text-xs font-bold text-[#101212] dark:text-white transition-colors duration-200 leading-tight group-hover:text-[#9EBE12] dark:group-hover:text-[#D9FF3F]">
-                {isExplorer ? 'Personal Profile' : 'Preview Profile'}
+            <div className="flex flex-col text-left">
+              <span className="text-xs font-bold text-[#101212] dark:text-white transition-colors duration-200 leading-tight group-hover:text-[#9EBE12] dark:group-hover:text-[#D9FF3F] truncate">
+                {activeEntity ? activeEntity.name : isExplorer ? 'Personal Profile' : 'Preview Profile'}
               </span>
-              <span className="text-[10px] text-[#565B59] dark:text-[#B6B8B7] transition-colors duration-200 capitalize">
-                {profile.role} Identity
+              <span className="text-[10px] text-[#565B59] dark:text-[#B6B8B7] transition-colors duration-200 capitalize truncate">
+                {activeEntity ? `${activeEntity.entityType} Workspace` : `${profile.role} Identity`}
               </span>
             </div>
             <ChevronRight className="w-3.5 h-3.5 text-[#565B59] dark:text-[#B6B8B7] transition-all duration-200 group-hover:translate-x-0.5 group-hover:text-[#101212] dark:group-hover:text-[#D9FF3F]" />

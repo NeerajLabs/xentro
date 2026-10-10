@@ -26,6 +26,7 @@ import { getUserProfile, UserProfile } from '@/lib/userProfile';
 import { authService } from '@/lib/auth/authService';
 import { investorOrganizationService } from '@/lib/investorOrganizationService';
 import { InvestorOrganizationType } from '@/types/investorOrganization';
+import { entityContextService } from '@/lib/entityContextService';
 
 interface EntityAccountModalProps {
   isOpen: boolean;
@@ -202,12 +203,16 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
           }),
         });
         const sendData = await otpSendRes.json();
-        if (otpSendRes.ok && sendData.success) {
+        const hasChallenge = Boolean(sendData.challengeId || sendData.data?.challengeId);
+        if ((otpSendRes.ok && sendData.success) || hasChallenge || sendData.status === 'cooldown_active') {
           setStartupOtpStep(true);
-          setStartupChallengeId(sendData.challengeId || '');
+          setStartupChallengeId(sendData.challengeId || sendData.data?.challengeId || '');
           setMaskedStartupEmail(sendData.maskedEmail || targetEmail);
-          setStartupCountdown(60);
-          showToast(`6-digit verification code sent to ${sendData.maskedEmail || targetEmail}`, 'info');
+          setStartupCountdown(sendData.cooldownSeconds || 60);
+          showToast(
+            sendData.message || `6-digit verification code sent to ${sendData.maskedEmail || targetEmail}`,
+            'info'
+          );
         } else {
           showToast(sendData?.message || 'Failed to dispatch verification code.', 'error');
         }
@@ -259,7 +264,7 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
       const entityData = await entityRes.json();
       if (entityRes.ok && entityData.success) {
         const createdStartup = entityData.data?.entity || {
-          id: `org_startup_${Date.now()}`,
+          id: `ST-${Date.now().toString().slice(-6)}`,
           name: startupName.trim(),
           entityType: 'STARTUP',
           accountType: 'Startup',
@@ -267,20 +272,29 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
           stage: startupStage,
           pitch: startupPitch,
           website: startupWebsite,
-          ownerId: profile.id,
+          primaryOwnerId: profile.id,
           ownerEmail: profile.email,
           verificationStatus: 'Active',
           createdAt: new Date().toISOString(),
         };
 
-        try {
-          const stored = localStorage.getItem('xentro_user_linked_entities');
-          const list = stored ? JSON.parse(stored) : [];
-          list.push(createdStartup);
-          localStorage.setItem('xentro_user_linked_entities', JSON.stringify(list));
-        } catch (_) {}
+        // Link entity in context service and set as active workspace
+        entityContextService.linkEntity({
+          id: createdStartup.id,
+          name: createdStartup.name,
+          entityType: 'STARTUP',
+          accountType: 'Startup',
+          sector: startupSector,
+          stage: startupStage,
+          pitch: startupPitch,
+          website: startupWebsite,
+          officialEmail: targetEmail,
+          primaryOwnerId: profile.id,
+          verificationStatus: 'ACTIVE',
+          activationStatus: 'ACTIVE',
+        });
 
-        showToast(`Startup account created successfully!`, 'success');
+        showToast(`Startup account "${createdStartup.name}" created! Switched to startup workspace.`, 'success');
         if (onEntityCreated) onEntityCreated(createdStartup);
         onClose();
       } else {
@@ -327,12 +341,16 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
           }),
         });
         const sendData = await otpSendRes.json();
-        if (otpSendRes.ok && sendData.success) {
+        const hasChallenge = Boolean(sendData.challengeId || sendData.data?.challengeId);
+        if ((otpSendRes.ok && sendData.success) || hasChallenge || sendData.status === 'cooldown_active') {
           setInvestorOrgOtpStep(true);
-          setInvestorOrgChallengeId(sendData.challengeId || '');
+          setInvestorOrgChallengeId(sendData.challengeId || sendData.data?.challengeId || '');
           setMaskedOrgEmail(sendData.maskedEmail || targetEmail);
-          setInvestorOrgCountdown(60);
-          showToast(`6-digit verification code sent to ${sendData.maskedEmail || targetEmail}`, 'info');
+          setInvestorOrgCountdown(sendData.cooldownSeconds || 60);
+          showToast(
+            sendData.message || `6-digit verification code sent to ${sendData.maskedEmail || targetEmail}`,
+            'info'
+          );
         } else {
           showToast(sendData?.message || 'Failed to dispatch verification code.', 'error');
         }
@@ -396,12 +414,34 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
           ownerId: profile.id,
         } as any);
 
+        const createdOrg = entityData.data?.entity || {
+          id: `VCI-${Date.now().toString().slice(-6)}`,
+          name: orgName.trim(),
+          entityType: 'INVESTOR_ORG',
+          accountType: 'Investor Organization',
+          officialEmail: targetEmail,
+          primaryOwnerId: profile.id,
+          verificationStatus: 'PENDING',
+          activationStatus: 'PENDING_COMMERCIAL_ACTIVATION',
+        };
+
+        entityContextService.linkEntity({
+          id: createdOrg.id,
+          name: createdOrg.name,
+          entityType: 'INVESTOR_ORG',
+          accountType: 'Investor Organization',
+          officialEmail: targetEmail,
+          primaryOwnerId: profile.id,
+          verificationStatus: 'PENDING',
+          activationStatus: 'PENDING_COMMERCIAL_ACTIVATION',
+        });
+
         showToast(
           'Your Investor Organization has been registered. Your requested administrative permissions require verification by Xentro.',
           'info'
         );
 
-        if (onEntityCreated) onEntityCreated(entityData.data?.entity);
+        if (onEntityCreated) onEntityCreated(createdOrg);
         onClose();
       } else {
         showToast(entityData?.message || 'Failed to create investor organization.', 'error');

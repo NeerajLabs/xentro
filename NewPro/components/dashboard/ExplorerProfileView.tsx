@@ -26,6 +26,7 @@ import {
   ChevronDown,
   ChevronRight,
   ArrowRight,
+  Rocket,
 } from 'lucide-react';
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { messagingService } from '@/lib/messagingService';
@@ -33,6 +34,12 @@ import { useToast } from '@/components/ui/Toast';
 import { getUserProfile, UserProfile, saveUserProfile } from '@/lib/userProfile';
 import { PersonalUpgradeModal } from './PersonalUpgradeModal';
 import { EntityAccountModal } from './EntityAccountModal';
+import { EntityAccountSwitcher } from './EntityAccountSwitcher';
+import {
+  entityContextService,
+  LinkedEntity,
+  ENTITY_CONTEXT_CHANGED_EVENT,
+} from '@/lib/entityContextService';
 
 interface ExplorerProfileViewProps {
   explorerId?: string;
@@ -253,6 +260,39 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
   const [isEntityModalOpen, setIsEntityModalOpen] = useState(false);
   const [isActionsModalOpen, setIsActionsModalOpen] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>(() =>
+    entityContextService.getLinkedEntities()
+  );
+
+  useEffect(() => {
+    if (isOwn) {
+      const u = getUserProfile();
+      if (u.id) {
+        entityContextService.fetchLinkedEntities(u.id).then((list) => {
+          setLinkedEntities(list);
+        });
+      }
+
+      const handleLinked = (e: Event) => {
+        const ce = e as CustomEvent;
+        setLinkedEntities(ce.detail?.entities || entityContextService.getLinkedEntities());
+      };
+
+      const handleOpenEntity = () => {
+        setIsEntityModalOpen(true);
+      };
+
+      window.addEventListener('xentro-linked-entities-updated', handleLinked);
+      window.addEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleLinked);
+      window.addEventListener('xentro-open-entity-modal', handleOpenEntity);
+
+      return () => {
+        window.removeEventListener('xentro-linked-entities-updated', handleLinked);
+        window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleLinked);
+        window.removeEventListener('xentro-open-entity-modal', handleOpenEntity);
+      };
+    }
+  }, [isOwn]);
   const [editFormData, setEditFormData] = useState({
     name: '',
     headline: '',
@@ -521,6 +561,9 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
               </div>
             ) : (
               <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                {/* Account / Workspace Switcher */}
+                <EntityAccountSwitcher onOpenEntityModal={() => setIsEntityModalOpen(true)} />
+
                 <button
                   type="button"
                   onClick={handleOpenEditModal}
@@ -542,6 +585,45 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
               </div>
             )}
           </div>
+
+          {/* Linked Organizations Banner */}
+          {isOwn && linkedEntities.length > 0 && (
+            <div className="mt-3 mb-2 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fade-slide">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shrink-0">
+                  <Rocket className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-2">
+                    <span>Registered Entity Workspace ({linkedEntities.length})</span>
+                    <span className="px-2 py-0.2 rounded-full text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
+                      RBAC Active
+                    </span>
+                  </h4>
+                  <p className="text-[11px] text-[#565B59] dark:text-[#8E9290]">
+                    Manage dedicated company dashboards, revenue metrics, team seats, and investor diligence vaults.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {linkedEntities.map((ent) => (
+                  <button
+                    key={ent.id}
+                    type="button"
+                    onClick={() => {
+                      entityContextService.setActiveEntityId(ent.id);
+                      showToast(`Switched active workspace to ${ent.name}!`, 'success');
+                    }}
+                    className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    <span>Switch to {ent.name}</span>
+                    <ArrowRight className="w-3 h-3" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Bio */}
           {profile.bio && (

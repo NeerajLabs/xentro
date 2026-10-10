@@ -73,17 +73,36 @@ export async function POST(req: NextRequest) {
       consumed: false,
     });
 
-    if (existingChallenge?.resendAvailableAt && new Date(existingChallenge.resendAvailableAt).getTime() > now) {
-      const waitSeconds = Math.ceil((new Date(existingChallenge.resendAvailableAt).getTime() - now) / 1000);
-      return NextResponse.json(
-        {
-          success: false,
-          status: 'cooldown_active',
-          message: `Please wait ${waitSeconds} seconds before requesting a new code.`,
-          resendAvailableAt: existingChallenge.resendAvailableAt,
-        },
-        { status: 429 }
-      );
+    // If challenge is active, unexpired, and in resend cooldown (60 seconds):
+    // Return HTTP 200 with active challengeId so the UI immediately advances to the OTP screen!
+    if (existingChallenge && !existingChallenge.verified && !existingChallenge.consumed) {
+      const isUnexpired = existingChallenge.expiresAt && new Date(existingChallenge.expiresAt).getTime() > now;
+      const isCooldown = existingChallenge.resendAvailableAt && new Date(existingChallenge.resendAvailableAt).getTime() > now;
+
+      if (isUnexpired && isCooldown) {
+        const waitSeconds = Math.ceil((new Date(existingChallenge.resendAvailableAt).getTime() - now) / 1000);
+        return NextResponse.json(
+          {
+            success: true,
+            status: 'otp_required',
+            challengeId: existingChallenge.challengeId,
+            purpose,
+            email,
+            maskedEmail: maskEmail(email),
+            resendAvailableAt: existingChallenge.resendAvailableAt,
+            cooldownSeconds: waitSeconds,
+            message: `Verification code already sent to ${maskEmail(email)}. Please enter it below.`,
+            data: {
+              email,
+              maskedEmail: maskEmail(email),
+              challengeId: existingChallenge.challengeId,
+              purpose,
+              expiresIn: Math.ceil((new Date(existingChallenge.expiresAt).getTime() - now) / 1000),
+            },
+          },
+          { status: 200 }
+        );
+      }
     }
 
     // Generate 6-digit secure code and unique challenge reference

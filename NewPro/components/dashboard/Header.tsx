@@ -8,6 +8,7 @@ import { logoutFromNewPro } from '@/lib/authGuard';
 import { isDevToolsEnabled } from '@/lib/devTools';
 import { notificationService, NOTIFICATIONS_UPDATED_EVENT, NotificationItem } from '@/lib/notificationService';
 import { CONVERSATIONS_UPDATED_EVENT } from '@/lib/messagingService';
+import { EntityAccountSwitcher } from './EntityAccountSwitcher';
 
 interface HeaderProps {
   searchQuery: string;
@@ -219,6 +220,9 @@ export const Header: React.FC<HeaderProps> = ({
           <LifeBuoy className="w-4 h-4 text-emerald-700 dark:text-[#D9FF3F] transition-transform duration-200 group-hover:rotate-12" />
           <span className="hidden sm:inline font-medium">Support</span>
         </button>
+
+        {/* Entity Account & Workspace Switcher */}
+        <EntityAccountSwitcher />
 
         {/* Dark / Light Theme Toggle Button */}
         <button

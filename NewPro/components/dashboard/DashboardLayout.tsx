@@ -32,6 +32,11 @@ import { DynamicDashboardView } from './DynamicDashboardView';
 import { RoleRequestModal } from './RoleRequestModal';
 import { SupportPageView } from './SupportPageView';
 import { AccountsAndRolesManager } from './AccountsAndRolesManager';
+import {
+  entityContextService,
+  LinkedEntity,
+  ENTITY_CONTEXT_CHANGED_EVENT,
+} from '@/lib/entityContextService';
 
 export const DashboardLayout: React.FC = () => {
   const [activeNavTab, setActiveNavTab] = useState('feed');
@@ -40,6 +45,9 @@ export const DashboardLayout: React.FC = () => {
   const [isMessagesOpen, setIsMessagesOpen] = useState(false);
   const [isSignupOpen, setIsSignupOpen] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile>(getUserProfile());
+  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
+    entityContextService.getActiveEntity()
+  );
 
   const [selectedProfile, setSelectedProfile] = useState<{
     type: 'startup' | 'mentor' | 'investor' | 'esp' | 'explorer';
@@ -47,10 +55,22 @@ export const DashboardLayout: React.FC = () => {
     data?: any;
   } | null>(null);
 
+  // Sync active entity context
+  React.useEffect(() => {
+    const handleEntitySwitch = (e: Event) => {
+      const ce = e as CustomEvent;
+      setActiveEntity(ce.detail?.entity || entityContextService.getActiveEntity());
+    };
+    window.addEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
+    return () => {
+      window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
+    };
+  }, []);
+
   const handleSelectNavTab = (tabId: string) => {
     setSelectedProfile(null);
     let resolvedTab = tabId;
-    if (resolvedTab === 'dashboard' && userProfile.role === 'explorer') {
+    if (resolvedTab === 'dashboard' && userProfile.role === 'explorer' && !activeEntity) {
       resolvedTab = 'profile';
     }
     if (activeNavTab !== 'dashboard' && resolvedTab === 'dashboard') {
@@ -304,7 +324,22 @@ export const DashboardLayout: React.FC = () => {
               ) : activeNavTab === 'notifications' ? (
                 <NotificationsView onBackToFeed={() => setActiveNavTab('feed')} />
               ) : activeNavTab === 'profile' ? (
-                userProfile.role === 'explorer' ? (
+                activeEntity?.entityType === 'STARTUP' ? (
+                  <StartupProfileView
+                    startupId={activeEntity.id}
+                    startupData={activeEntity as any}
+                    isOwnProfile={true}
+                    onBackToFeed={() => setActiveNavTab('feed')}
+                    onManageInDashboard={() => setActiveNavTab('dashboard')}
+                  />
+                ) : activeEntity?.entityType === 'INVESTOR_ORG' ? (
+                  <InvestorOrgProfileView
+                    organizationId={activeEntity.id}
+                    onBackToFeed={() => setActiveNavTab('feed')}
+                    onBackToDashboard={() => setActiveNavTab('dashboard')}
+                    isOwnProfile={true}
+                  />
+                ) : userProfile.role === 'explorer' ? (
                   <ExplorerProfileView
                     explorerId={userProfile.id}
                     explorerData={userProfile}
@@ -387,7 +422,7 @@ export const DashboardLayout: React.FC = () => {
                   />
                 </div>
               ) : activeNavTab === 'dashboard' ? (
-                userProfile.role === 'explorer' ? (
+                (!activeEntity && userProfile.role === 'explorer') ? (
                   <ExplorerProfileView
                     explorerId={userProfile.id}
                     explorerData={userProfile}

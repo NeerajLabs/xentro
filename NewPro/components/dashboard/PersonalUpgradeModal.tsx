@@ -142,12 +142,16 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
       });
 
       const data = await res.json();
-      if (res.ok && data.success) {
+      const hasChallenge = Boolean(data.challengeId || data.data?.challengeId);
+      if ((res.ok && data.success) || hasChallenge || data.status === 'cooldown_active') {
         setOtpStep(true);
-        setChallengeId(data.challengeId || '');
+        setChallengeId(data.challengeId || data.data?.challengeId || '');
         setMaskedEmail(data.maskedEmail || targetEmail);
-        setCountdown(60);
-        showToast(`Verification code sent to ${data.maskedEmail || targetEmail}`, 'info');
+        setCountdown(data.cooldownSeconds || 60);
+        showToast(
+          data.message || `Verification code sent to ${data.maskedEmail || targetEmail}`,
+          'info'
+        );
       } else {
         showToast(data?.message || 'Failed to dispatch verification code.', 'error');
       }
