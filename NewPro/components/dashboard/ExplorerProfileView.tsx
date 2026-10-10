@@ -1123,34 +1123,32 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
             {/* Options List */}
             <div className="p-6 sm:p-7 space-y-3.5">
               {/* Option 1: Upgrade Personal Account */}
-              {String(profile.role || 'explorer').toLowerCase() === 'explorer' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsActionsModalOpen(false);
-                    setIsUpgradeModalOpen(true);
-                  }}
-                  className="w-full text-left p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] hover:border-[#D9FF3F] dark:hover:border-[#D9FF3F] transition-all flex items-start gap-4 group cursor-pointer shadow-sm hover:shadow-md"
-                >
-                  <div className="p-3 rounded-2xl bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F] border border-[#D9FF3F]/30 group-hover:scale-105 transition-transform shrink-0 mt-0.5">
-                    <Sparkles className="w-5 h-5 fill-current" />
+              <button
+                type="button"
+                onClick={() => {
+                  setIsActionsModalOpen(false);
+                  setIsUpgradeModalOpen(true);
+                }}
+                className="w-full text-left p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] hover:border-[#D9FF3F] dark:hover:border-[#D9FF3F] transition-all flex items-start gap-4 group cursor-pointer shadow-sm hover:shadow-md"
+              >
+                <div className="p-3 rounded-2xl bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F] border border-[#D9FF3F]/30 group-hover:scale-105 transition-transform shrink-0 mt-0.5">
+                  <Sparkles className="w-5 h-5 fill-current" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-bold text-[#101212] dark:text-white group-hover:text-[#9EBE12] dark:group-hover:text-[#D9FF3F] transition-colors">
+                      Upgrade Personal Account
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F]">
+                      Personal
+                    </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-bold text-[#101212] dark:text-white group-hover:text-[#9EBE12] dark:group-hover:text-[#D9FF3F] transition-colors">
-                        Upgrade Personal Account
-                      </span>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F]">
-                        Personal
-                      </span>
-                    </div>
-                    <p className="text-xs text-[#565B59] dark:text-[#8E9290] leading-relaxed">
-                      Permanently convert to a <strong>Mentor</strong> or <strong>Individual Investor</strong>. Pre-fill your profile details and unlock dedicated role dashboards upon verification.
-                    </p>
-                  </div>
-                  <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-[#101212] dark:group-hover:text-[#D9FF3F] group-hover:translate-x-1 transition-all shrink-0 mt-2" />
-                </button>
-              )}
+                  <p className="text-xs text-[#565B59] dark:text-[#8E9290] leading-relaxed">
+                    Permanently convert to a <strong>Mentor</strong> or <strong>Individual Investor</strong>. Pre-fill your profile details and unlock dedicated role dashboards upon verification.
+                  </p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-[#101212] dark:group-hover:text-[#D9FF3F] group-hover:translate-x-1 transition-all shrink-0 mt-2" />
+              </button>
 
               {/* Option 2: Create Entity Account */}
               <button
