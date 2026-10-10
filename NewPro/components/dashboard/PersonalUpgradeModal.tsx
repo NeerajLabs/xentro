@@ -19,7 +19,7 @@ import {
   Info,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
-import { getUserProfile, UserProfile } from '@/lib/userProfile';
+import { getUserProfile, UserProfile, saveUserProfile } from '@/lib/userProfile';
 import { investorOrganizationService } from '@/lib/investorOrganizationService';
 
 interface PersonalUpgradeModalProps {
@@ -93,41 +93,10 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
       const memberships = investorOrganizationService.getAllMemberships();
       const activeInvestorMemberships = memberships.filter((m) => m.status === 'active');
       setHasInvestorOrgConflict(activeInvestorMemberships.length > 0);
-
-      fetchExistingApplications(p);
     }
   }, [isOpen, currentUserProfile]);
 
-  const fetchExistingApplications = async (p: UserProfile) => {
-    setIsLoadingRequests(true);
-    try {
-      const params = new URLSearchParams();
-      if (p.id) params.set('userId', p.id);
-      if (p.email) params.set('email', p.email);
-      const res = await fetch(`/api/roles/request?${params.toString()}`);
-      if (res.ok) {
-        const json = await res.json();
-        const list = json?.data?.requests || json?.requests || [];
-        setExistingRequests(list);
-      }
-    } catch (e) {
-      console.warn('Failed to fetch role requests:', e);
-    } finally {
-      setIsLoadingRequests(false);
-    }
-  };
-
   if (!isOpen) return null;
-
-  // Find status for current target role
-  const targetReq = existingRequests.find((r) =>
-    selectedTarget === 'mentor'
-      ? r.requestedRole.toLowerCase().includes('mentor')
-      : r.requestedRole.toLowerCase().includes('investor')
-  );
-
-  const isPending = targetReq?.status === 'PENDING';
-  const isApproved = targetReq?.status === 'APPROVED';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -140,39 +109,27 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
       return;
     }
 
-    if (isPending) {
-      showToast('You already have a pending application under administrative review.', 'info');
-      return;
-    }
-
     setIsSubmitting(true);
     try {
       const targetRoleTitle = selectedTarget === 'mentor' ? 'Mentor' : 'Investor';
-      const reasonText =
-        selectedTarget === 'mentor'
-          ? `Mentor Conversion Request: ${mentorExpertise}. Experience: ${yearsExperience}. Motivation: ${mentorshipMotivation}`
-          : `Individual Investor Conversion Request: Cheque size: ${chequeSize}, Preferred stage: ${preferredStage}, Sectors: ${sectorsOfInterest}`;
+      const roleLabel = selectedTarget === 'mentor' ? 'Mentor' : 'Individual Investor';
 
       const payload = {
         userId: profile.id,
         userEmail: email.trim().toLowerCase(),
         userName: fullName.trim(),
-        currentRole: 'Explorer',
-        requestedRole: targetRoleTitle,
-        reason: reasonText,
-        entityDetails: {
-          headline,
-          bio,
-          currentRole,
-          currentOrganization: currentOrg,
-          skills,
-          linkedin,
-          mentorDetails: selectedTarget === 'mentor' ? { mentorExpertise, yearsExperience, mentorshipMotivation } : undefined,
-          investorDetails: selectedTarget === 'investor' ? { chequeSize, preferredStage, sectorsOfInterest } : undefined,
-        },
+        targetRole: targetRoleTitle,
+        headline,
+        bio,
+        currentRole,
+        currentOrganization: currentOrg,
+        skills,
+        linkedin,
+        mentorDetails: selectedTarget === 'mentor' ? { mentorExpertise, yearsExperience, mentorshipMotivation } : undefined,
+        investorDetails: selectedTarget === 'investor' ? { chequeSize, preferredStage, sectorsOfInterest } : undefined,
       };
 
-      const res = await fetch('/api/roles/request', {
+      const res = await fetch('/api/roles/convert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -180,17 +137,50 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
 
       const data = await res.json();
       if (res.ok && data.success) {
+        // Direct permanent conversion successful: update active session and profile
+        const newRole = selectedTarget;
+        const updatedProfile = {
+          ...profile,
+          role: newRole,
+          roleTitle: roleLabel,
+          headline: headline || profile.headline,
+          bio: bio || profile.bio,
+        };
+
+        saveUserProfile(updatedProfile);
+        try {
+          localStorage.setItem('xentro_active_role', newRole);
+          const rawUser = localStorage.getItem('xentro_current_user');
+          if (rawUser) {
+            const parsed = JSON.parse(rawUser);
+            parsed.role = newRole;
+            parsed.accountType = targetRoleTitle;
+            parsed.primaryRole = targetRoleTitle;
+            parsed.roleTitle = roleLabel;
+            parsed.activeRoles = [targetRoleTitle];
+            localStorage.setItem('xentro_current_user', JSON.stringify(parsed));
+          }
+        } catch (_) {}
+
+        window.dispatchEvent(new CustomEvent('xentro-role-changed', { detail: { role: newRole, profile: updatedProfile } }));
+
         showToast(
-          `Application for ${targetRoleTitle} submitted successfully! Our compliance team will review your dossier.`,
+          `${roleLabel} account activated successfully! Redirecting to ${roleLabel} Dashboard...`,
           'success'
         );
+
         if (onApplicationSubmitted) onApplicationSubmitted();
-        await fetchExistingApplications(profile);
+        onClose();
+
+        // Redirect directly to the newly activated role dashboard
+        setTimeout(() => {
+          window.location.href = '/?tab=dashboard';
+        }, 600);
       } else {
-        showToast(data?.message || 'Failed to submit application. Please retry.', 'error');
+        showToast(data?.message || 'Failed to activate account. Please retry.', 'error');
       }
     } catch {
-      showToast('A network error occurred while submitting application.', 'error');
+      showToast('A network error occurred while activating your account.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -251,39 +241,18 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
 
         {/* Form Body */}
         <div className="p-6 sm:p-7 space-y-6">
-          {/* Status Banner if application already exists */}
-          {targetReq && (
-            <div
-              className={`p-4 rounded-2xl border text-xs flex items-start gap-3 ${
-                isPending
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
-                  : isApproved
-                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
-                  : 'bg-rose-500/10 border-rose-500/30 text-rose-600 dark:text-rose-400'
-              }`}
-            >
-              {isPending ? (
-                <Clock className="w-4 h-4 shrink-0 mt-0.5" />
-              ) : isApproved ? (
-                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
-              ) : (
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-              )}
-              <div className="flex-1">
-                <div className="font-bold">
-                  Application Status: {targetReq.status} (Ref #{targetReq.requestId})
-                </div>
-                <p className="mt-0.5 text-[11px] opacity-90">
-                  {isPending &&
-                    'Your application has been received and is currently under administrative compliance review. You will receive an email upon decision.'}
-                  {isApproved &&
-                    'This role upgrade has been approved. Your dedicated workspace is active.'}
-                  {targetReq.status === 'REJECTED' &&
-                    `Application not approved: ${targetReq.adminNotes || 'Requirements not met at this time.'}`}
-                </p>
-              </div>
+          {/* Direct Activation Notice */}
+          <div className="p-4 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/30 text-xs flex items-start gap-3">
+            <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-[#101212] dark:text-[#D9FF3F]" />
+            <div className="flex-1">
+              <span className="font-bold text-[#101212] dark:text-white block">
+                Immediate Account Activation ({selectedTarget === 'mentor' ? 'Mentor' : 'Individual Investor'})
+              </span>
+              <p className="mt-0.5 text-[11px] text-[#565B59] dark:text-[#8E9290] leading-relaxed">
+                Submitting this form permanently converts your personal Explorer account into a {selectedTarget === 'mentor' ? 'Mentor' : 'Individual Investor'}. No general administrative approval stage required — your dedicated role dashboard activates directly upon submission.
+              </p>
             </div>
-          )}
+          </div>
 
           {/* Conflict Alert for Mentors belonging to Investor Orgs */}
           {selectedTarget === 'mentor' && hasInvestorOrgConflict && (
@@ -463,8 +432,13 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
               </>
             )}
 
+            {/* Permanent Conversion Warning */}
+            <div className="pt-2 text-[11px] text-[#565B59] dark:text-[#8E9290]">
+              <span className="font-semibold text-amber-600 dark:text-amber-400">Important:</span> This account conversion is permanent. Your personal User ID, profile details, messages, and connections are preserved as your {selectedTarget === 'mentor' ? 'Mentor' : 'Individual Investor'} dashboard is activated.
+            </div>
+
             {/* Actions */}
-            <div className="pt-4 border-t border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-end gap-3">
+            <div className="pt-3 border-t border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={onClose}
@@ -475,23 +449,23 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
 
               <button
                 type="submit"
-                disabled={isSubmitting || isPending || (selectedTarget === 'mentor' && hasInvestorOrgConflict)}
+                disabled={isSubmitting || (selectedTarget === 'mentor' && hasInvestorOrgConflict)}
                 className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 cursor-pointer shadow-md"
               >
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Submitting Application...</span>
+                    <span>Activating Account...</span>
                   </>
-                ) : isPending ? (
+                ) : selectedTarget === 'mentor' ? (
                   <>
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Application Under Review</span>
+                    <GraduationCap className="w-3.5 h-3.5" />
+                    <span>Activate Mentor Account</span>
                   </>
                 ) : (
                   <>
-                    <Send className="w-3.5 h-3.5" />
-                    <span>Submit Conversion Application</span>
+                    <TrendingUp className="w-3.5 h-3.5" />
+                    <span>Activate Investor Account</span>
                   </>
                 )}
               </button>

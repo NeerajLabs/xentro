@@ -113,6 +113,9 @@ export async function POST(req: NextRequest) {
 
     await entitiesCol.insertOne(entityDoc);
 
+    const isPrivilegedOrg = canonicalType === 'INVESTOR_ORG';
+    const requestedOrgRole = body.requestedRole || roleInOrg;
+
     const membershipDoc = {
       id: `MEM-${Date.now().toString().slice(-6)}`,
       entityId,
@@ -120,14 +123,36 @@ export async function POST(req: NextRequest) {
       entityType: canonicalType,
       userId: user.id,
       userEmail: user.email,
-      role: roleInOrg,
-      permissions: ['OWNER', 'ADMIN', 'MANAGE_TEAM'],
-      status: 'ACTIVE',
+      role: requestedOrgRole,
+      permissions: isPrivilegedOrg ? ['VIEW_ONLY'] : ['OWNER', 'ADMIN', 'MANAGE_TEAM'],
+      status: isPrivilegedOrg ? 'PENDING_ADMIN_VERIFICATION' : 'ACTIVE',
       createdAt: nowIso,
       updatedAt: nowIso,
     };
 
     await membershipsCol.insertOne(membershipDoc);
+
+    // If privileged Investor Organization role, create specific role verification ticket for Admin Console review
+    if (isPrivilegedOrg) {
+      try {
+        const roleReqCol = db.collection('role_requests');
+        await roleReqCol.insertOne({
+          id: `REQ-${Date.now().toString().slice(-6)}`,
+          requestId: `REQ-${Date.now().toString().slice(-6)}`,
+          userId: user.id,
+          userEmail: user.email,
+          userName: user.fullName || user.name || 'Member',
+          currentRole: user.accountType || 'Explorer',
+          requestedRole: `Investor Org Privileged Role: ${requestedOrgRole} (${entityName})`,
+          reason: `Privileged administrative verification for Investor Organization ${entityName}`,
+          entityId,
+          entityName,
+          status: 'PENDING',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+      } catch (_) {}
+    }
 
     delete (entityDoc as any)._id;
     delete (membershipDoc as any)._id;

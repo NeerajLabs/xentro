@@ -59,16 +59,23 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
 
   // Startup form
   const [startupName, setStartupName] = useState('');
+  const [startupEmail, setStartupEmail] = useState('');
   const [startupSector, setStartupSector] = useState('Fintech');
   const [startupStage, setStartupStage] = useState('MVP');
   const [startupPitch, setStartupPitch] = useState('');
   const [startupWebsite, setStartupWebsite] = useState('');
+  const [startupOtpStep, setStartupOtpStep] = useState(false);
+  const [startupOtpCode, setStartupOtpCode] = useState('');
 
   // Investor Org form
   const [orgName, setOrgName] = useState('');
+  const [orgEmail, setOrgEmail] = useState('');
+  const [orgRole, setOrgRole] = useState<'Owner / Managing Partner' | 'Admin'>('Owner / Managing Partner');
   const [orgType, setOrgType] = useState<InvestorOrganizationType>('Venture Capital Fund');
   const [targetAum, setTargetAum] = useState('$5M - $25M');
   const [orgWebsite, setOrgWebsite] = useState('');
+  const [investorOrgOtpStep, setInvestorOrgOtpStep] = useState(false);
+  const [investorOrgOtpCode, setInvestorOrgOtpCode] = useState('');
 
   // ESP form
   const [espName, setEspName] = useState('');
@@ -81,6 +88,12 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
       const p = currentUserProfile || getUserProfile();
       setProfile(p);
       setNameAsPerId(p.name || '');
+      setStartupEmail(p.email || '');
+      setOrgEmail(p.email || '');
+      setStartupOtpStep(false);
+      setStartupOtpCode('');
+      setInvestorOrgOtpStep(false);
+      setInvestorOrgOtpCode('');
 
       // Check Government Identity Status from authService and profile
       const idRecord = authService.getIdentityVerification();
@@ -138,51 +151,112 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
     }
   };
 
-  // Submit Startup Entity
+  // Submit Startup Entity (Two-Step: Details -> Email OTP -> MongoDB Entity Creation)
   const handleCreateStartup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!startupName.trim()) {
       showToast('Startup name is required.', 'error');
       return;
     }
+    const targetEmail = (startupEmail || profile.email || '').trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      showToast('Valid official startup email is required.', 'error');
+      return;
+    }
 
     setIsSubmittingEntity(true);
     try {
-      const startupId = `org_startup_${Date.now().toString().slice(-6)}`;
-      const newStartup = {
-        id: startupId,
-        name: startupName.trim(),
-        entityType: 'STARTUP',
-        accountType: 'Startup',
-        sector: startupSector,
-        stage: startupStage,
-        pitch: startupPitch,
-        website: startupWebsite,
-        ownerId: profile.id,
-        ownerEmail: profile.email,
-        verificationStatus: 'Active',
-        createdAt: new Date().toISOString(),
-      };
+      // Step 1: Request OTP if not yet in OTP step
+      if (!startupOtpStep) {
+        const otpSendRes = await fetch('/api/auth/otp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: targetEmail, entityName: startupName.trim() }),
+        });
+        const sendData = await otpSendRes.json();
+        if (otpSendRes.ok && sendData.success) {
+          setStartupOtpStep(true);
+          showToast(`6-digit verification code sent to ${targetEmail}`, 'info');
+        } else {
+          showToast(sendData?.message || 'Failed to dispatch verification code.', 'error');
+        }
+        return;
+      }
 
-      // Store in user linked entities
-      try {
-        const stored = localStorage.getItem('xentro_user_linked_entities');
-        const list = stored ? JSON.parse(stored) : [];
-        list.push(newStartup);
-        localStorage.setItem('xentro_user_linked_entities', JSON.stringify(list));
-      } catch (_) {}
+      // Step 2: Verify OTP and create entity in MongoDB Atlas
+      if (!startupOtpCode || startupOtpCode.trim().length !== 6) {
+        showToast('Please enter the 6-digit verification code sent to your official email.', 'error');
+        return;
+      }
 
-      showToast(`Startup entity "${startupName}" created successfully!`, 'success');
-      if (onEntityCreated) onEntityCreated(newStartup);
-      onClose();
+      const verifyRes = await fetch('/api/auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail, code: startupOtpCode.trim() }),
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.success) {
+        showToast(verifyData?.message || 'Invalid or expired verification code.', 'error');
+        return;
+      }
+
+      // Create separate Startup entity in MongoDB
+      const entityRes = await fetch('/api/entities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: startupName.trim(),
+          entityType: 'STARTUP',
+          officialEmail: targetEmail,
+          userId: profile.id,
+          userEmail: profile.email,
+          details: {
+            sector: startupSector,
+            stage: startupStage,
+            pitch: startupPitch,
+            website: startupWebsite,
+          },
+        }),
+      });
+
+      const entityData = await entityRes.json();
+      if (entityRes.ok && entityData.success) {
+        const createdStartup = entityData.data?.entity || {
+          id: `org_startup_${Date.now()}`,
+          name: startupName.trim(),
+          entityType: 'STARTUP',
+          accountType: 'Startup',
+          sector: startupSector,
+          stage: startupStage,
+          pitch: startupPitch,
+          website: startupWebsite,
+          ownerId: profile.id,
+          ownerEmail: profile.email,
+          verificationStatus: 'Active',
+          createdAt: new Date().toISOString(),
+        };
+
+        try {
+          const stored = localStorage.getItem('xentro_user_linked_entities');
+          const list = stored ? JSON.parse(stored) : [];
+          list.push(createdStartup);
+          localStorage.setItem('xentro_user_linked_entities', JSON.stringify(list));
+        } catch (_) {}
+
+        showToast(`Startup account created successfully!`, 'success');
+        if (onEntityCreated) onEntityCreated(createdStartup);
+        onClose();
+      } else {
+        showToast(entityData?.message || 'Failed to create startup entity.', 'error');
+      }
     } catch {
-      showToast('Failed to create startup entity.', 'error');
+      showToast('Network error while creating startup account.', 'error');
     } finally {
       setIsSubmittingEntity(false);
     }
   };
 
-  // Submit Investor Organization
+  // Submit Investor Organization (Two-Step: Details -> Email OTP -> MongoDB Record)
   const handleCreateInvestorOrg = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!orgName.trim()) {
@@ -195,27 +269,92 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
       return;
     }
 
+    const targetEmail = (orgEmail || profile.email || '').trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      showToast('Valid official organization email is required.', 'error');
+      return;
+    }
+
     setIsSubmittingEntity(true);
     try {
-      const newOrg = investorOrganizationService.createInvestorOrganization({
-        name: orgName.trim(),
-        organizationType: orgType,
-        website: orgWebsite.trim() || 'https://xentro.in',
-        officialEmail: profile.email || 'investor@org.com',
-        headquarters: {
-          city: 'Bengaluru',
-          country: 'India',
-        },
-        legalName: orgName.trim(),
-        fundSize: targetAum,
-        aum: targetAum,
-        verified: false,
-        ownerId: profile.id,
-      } as any);
+      // Step 1: Request OTP
+      if (!investorOrgOtpStep) {
+        const otpSendRes = await fetch('/api/auth/otp/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: targetEmail, entityName: orgName.trim() }),
+        });
+        const sendData = await otpSendRes.json();
+        if (otpSendRes.ok && sendData.success) {
+          setInvestorOrgOtpStep(true);
+          showToast(`6-digit verification code sent to ${targetEmail}`, 'info');
+        } else {
+          showToast(sendData?.message || 'Failed to dispatch verification code.', 'error');
+        }
+        return;
+      }
 
-      showToast(`Investor Organization "${orgName}" formed successfully!`, 'success');
-      if (onEntityCreated) onEntityCreated(newOrg);
-      onClose();
+      // Step 2: Verify OTP and create Investor Org record
+      if (!investorOrgOtpCode || investorOrgOtpCode.trim().length !== 6) {
+        showToast('Please enter the 6-digit verification code.', 'error');
+        return;
+      }
+
+      const verifyRes = await fetch('/api/auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: targetEmail, code: investorOrgOtpCode.trim() }),
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.success) {
+        showToast(verifyData?.message || 'Invalid or expired verification code.', 'error');
+        return;
+      }
+
+      const entityRes = await fetch('/api/entities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: orgName.trim(),
+          entityType: 'INVESTOR_ORG',
+          officialEmail: targetEmail,
+          userId: profile.id,
+          userEmail: profile.email,
+          requestedRole: orgRole,
+          details: {
+            organizationType: orgType,
+            fundSize: targetAum,
+            website: orgWebsite,
+          },
+        }),
+      });
+
+      const entityData = await entityRes.json();
+      if (entityRes.ok && entityData.success) {
+        // Also register locally in service
+        investorOrganizationService.createInvestorOrganization({
+          name: orgName.trim(),
+          organizationType: orgType,
+          website: orgWebsite.trim() || 'https://xentro.in',
+          officialEmail: targetEmail,
+          headquarters: { city: 'Bengaluru', country: 'India' },
+          legalName: orgName.trim(),
+          fundSize: targetAum,
+          aum: targetAum,
+          verified: false,
+          ownerId: profile.id,
+        } as any);
+
+        showToast(
+          'Your Investor Organization has been registered. Your requested administrative permissions require verification by Xentro.',
+          'info'
+        );
+
+        if (onEntityCreated) onEntityCreated(entityData.data?.entity);
+        onClose();
+      } else {
+        showToast(entityData?.message || 'Failed to create investor organization.', 'error');
+      }
     } catch {
       showToast('Failed to form investor organization.', 'error');
     } finally {
@@ -223,7 +362,7 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
     }
   };
 
-  // Submit ESP / Institution Account Request
+  // Submit ESP / Institution Account Request (Preserves Admin-Assisted Workflow)
   const handleCreateEspRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!espName.trim()) {
@@ -261,7 +400,10 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
 
       const data = await res.json();
       if (res.ok && data.success) {
-        showToast(`ESP / Institution request for "${espName}" submitted for compliance review!`, 'success');
+        showToast(
+          'Your request has been submitted to the Xentro team. You will be contacted regarding verification and onboarding.',
+          'success'
+        );
         onClose();
       } else {
         showToast(data?.message || 'Failed to submit request.', 'error');
@@ -655,39 +797,93 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
 
                   <div>
                     <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                      Official Startup / Entity Email *
+                    </label>
+                    <input
+                      type="email"
+                      required
+                      disabled={startupOtpStep}
+                      value={startupEmail}
+                      onChange={(e) => setStartupEmail(e.target.value)}
+                      placeholder="e.g. founder@horizonai.com or hello@startup.io"
+                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
                       Short One-Line Pitch
                     </label>
                     <input
                       type="text"
+                      disabled={startupOtpStep}
                       value={startupPitch}
                       onChange={(e) => setStartupPitch(e.target.value)}
                       placeholder="e.g. Autonomous workflow automation for enterprise financial teams"
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
                     />
                   </div>
+
+                  {/* Step 2: OTP Verification Field */}
+                  {startupOtpStep && (
+                    <div className="p-4 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/30 space-y-2 animate-fade-slide">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-[#101212] dark:text-[#D9FF3F]">
+                          Enter 6-Digit Email Verification Code *
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setStartupOtpStep(false)}
+                          className="text-[11px] text-[#565B59] hover:underline cursor-pointer"
+                        >
+                          Change Email
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        required
+                        value={startupOtpCode}
+                        onChange={(e) => setStartupOtpCode(e.target.value.replace(/\D/g, ''))}
+                        placeholder="123456"
+                        className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border border-[#D9FF3F] text-[#101212] dark:text-white font-bold"
+                      />
+                      <p className="text-[10px] text-[#565B59] dark:text-[#8E9290]">
+                        We sent a 6-digit verification code to <strong>{startupEmail}</strong>. Verify email ownership to finalize startup registration.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="pt-3 flex justify-end gap-2.5">
                     <button
                       type="button"
-                      onClick={() => setSelectedEntityChoice(null)}
-                      className="px-4 py-2 rounded-xl text-xs font-semibold text-[#565B59]"
+                      onClick={() => {
+                        if (startupOtpStep) setStartupOtpStep(false);
+                        else setSelectedEntityChoice(null);
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-[#565B59] cursor-pointer"
                     >
-                      Back
+                      {startupOtpStep ? 'Back to Edit' : 'Back'}
                     </button>
                     <button
                       type="submit"
                       disabled={isSubmittingEntity}
-                      className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-colors flex items-center gap-2 cursor-pointer"
+                      className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
                     >
                       {isSubmittingEntity ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Creating Startup...</span>
+                          <span>{startupOtpStep ? 'Verifying & Registering...' : 'Sending Code...'}</span>
+                        </>
+                      ) : startupOtpStep ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Verify &amp; Create Startup</span>
                         </>
                       ) : (
                         <>
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Create Startup Entity</span>
+                          <Rocket className="w-3.5 h-3.5" />
+                          <span>Create Startup Account</span>
                         </>
                       )}
                     </button>
@@ -719,10 +915,11 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                     <input
                       type="text"
                       required
+                      disabled={investorOrgOtpStep}
                       value={orgName}
                       onChange={(e) => setOrgName(e.target.value)}
                       placeholder="e.g. Nexus Apex Capital"
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12] disabled:opacity-60"
                     />
                   </div>
 
@@ -732,9 +929,10 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                         Organization Type
                       </label>
                       <select
+                        disabled={investorOrgOtpStep}
                         value={orgType}
                         onChange={(e) => setOrgType(e.target.value as any)}
-                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
                       >
                         <option value="Venture Capital Fund">Venture Capital Fund</option>
                         <option value="Angel Network">Angel Network / Syndicate</option>
@@ -748,14 +946,47 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                         Target AUM / Pool Bracket
                       </label>
                       <select
+                        disabled={investorOrgOtpStep}
                         value={targetAum}
                         onChange={(e) => setTargetAum(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
                       >
                         <option value="Under $5M">Under $5M</option>
                         <option value="$5M - $25M">$5M - $25M</option>
                         <option value="$25M - $100M">$25M - $100M</option>
                         <option value="$100M+">$100M+</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                        Official Organization Domain Email *
+                      </label>
+                      <input
+                        type="email"
+                        required
+                        disabled={investorOrgOtpStep}
+                        value={orgEmail}
+                        onChange={(e) => setOrgEmail(e.target.value)}
+                        placeholder="e.g. partner@nexuscapital.com"
+                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                        Requested Administrative Role *
+                      </label>
+                      <select
+                        disabled={investorOrgOtpStep}
+                        value={orgRole}
+                        onChange={(e) => setOrgRole(e.target.value as any)}
+                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
+                      >
+                        <option value="Owner / Managing Partner">Owner / Managing Partner</option>
+                        <option value="Admin">Admin</option>
                       </select>
                     </div>
                   </div>
@@ -766,35 +997,74 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                     </label>
                     <input
                       type="url"
+                      disabled={investorOrgOtpStep}
                       value={orgWebsite}
                       onChange={(e) => setOrgWebsite(e.target.value)}
                       placeholder="https://nexuscapital.com"
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
                     />
                   </div>
+
+                  {/* Step 2: Investor Org OTP Verification */}
+                  {investorOrgOtpStep && (
+                    <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 space-y-2 animate-fade-slide">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-[#101212] dark:text-white">
+                          Enter 6-Digit Email Verification Code *
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setInvestorOrgOtpStep(false)}
+                          className="text-[11px] text-blue-500 hover:underline cursor-pointer"
+                        >
+                          Change Email
+                        </button>
+                      </div>
+                      <input
+                        type="text"
+                        maxLength={6}
+                        required
+                        value={investorOrgOtpCode}
+                        onChange={(e) => setInvestorOrgOtpCode(e.target.value.replace(/\D/g, ''))}
+                        placeholder="123456"
+                        className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border border-blue-500 text-[#101212] dark:text-white font-bold"
+                      />
+                      <p className="text-[10px] text-[#565B59] dark:text-[#8E9290]">
+                        Verification code sent to <strong>{orgEmail}</strong>. Owner/Admin privileges will be submitted for Xentro verification upon confirmation.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="pt-3 flex justify-end gap-2.5">
                     <button
                       type="button"
-                      onClick={() => setSelectedEntityChoice(null)}
-                      className="px-4 py-2 rounded-xl text-xs font-semibold text-[#565B59]"
+                      onClick={() => {
+                        if (investorOrgOtpStep) setInvestorOrgOtpStep(false);
+                        else setSelectedEntityChoice(null);
+                      }}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-[#565B59] cursor-pointer"
                     >
-                      Back
+                      {investorOrgOtpStep ? 'Back to Edit' : 'Back'}
                     </button>
                     <button
                       type="submit"
                       disabled={isSubmittingEntity}
-                      className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-colors flex items-center gap-2 cursor-pointer"
+                      className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
                     >
                       {isSubmittingEntity ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>Forming Organization...</span>
+                          <span>{investorOrgOtpStep ? 'Verifying & Registering...' : 'Sending Code...'}</span>
+                        </>
+                      ) : investorOrgOtpStep ? (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>Verify &amp; Create Organization</span>
                         </>
                       ) : (
                         <>
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Form Investor Org</span>
+                          <Building className="w-3.5 h-3.5" />
+                          <span>Create Investor Organization</span>
                         </>
                       )}
                     </button>
@@ -890,7 +1160,7 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                     <button
                       type="submit"
                       disabled={isSubmittingEntity}
-                      className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-colors flex items-center gap-2 cursor-pointer"
+                      className="px-6 py-2.5 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-colors flex items-center gap-2 cursor-pointer shadow-sm"
                     >
                       {isSubmittingEntity ? (
                         <>
@@ -899,8 +1169,8 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                         </>
                       ) : (
                         <>
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>Submit Institution Request</span>
+                          <Grid2X2 className="w-3.5 h-3.5" />
+                          <span>Submit Organization Request</span>
                         </>
                       )}
                     </button>
