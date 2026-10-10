@@ -46,7 +46,7 @@ const INITIAL_ESP_DATA: AdminEspRecord[] = [];
 const INITIAL_ESP_REQUESTS: EspRequestQueueItem[] = [];
 
 export const AdminEspOpsView: React.FC = () => {
-  const [esps] = useState<AdminEspRecord[]>(INITIAL_ESP_DATA);
+  const [esps, setEsps] = useState<AdminEspRecord[]>([]);
   const [requests, setRequests] = useState<EspRequestQueueItem[]>(INITIAL_ESP_REQUESTS);
   const [activeTab, setActiveTab] = useState<'Active ESPs' | 'Account Requests Queue' | 'Verified'>('Active ESPs');
   const [searchQuery, setSearchQuery] = useState('');
@@ -54,8 +54,38 @@ export const AdminEspOpsView: React.FC = () => {
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
   React.useEffect(() => {
-    // Fetch live pending registrations from backend
-    const loadPending = async () => {
+    const loadData = async () => {
+      // 1. Load active ESP entities from MongoDB Atlas
+      try {
+        const resp = await fetch('/api/admin/entities');
+        if (resp.ok) {
+          const d = await resp.json();
+          const ents = d?.data?.entities || [];
+          const espEnts: AdminEspRecord[] = ents
+            .filter((e: any) => e.type === 'ESP')
+            .map((e: any) => ({
+              id: e.id,
+              name: e.name,
+              institutionType: 'Incubator',
+              location: 'India',
+              officialEmail: e.officialEmail || '',
+              domain: e.domain || (e.officialEmail ? e.officialEmail.split('@')[1] : 'xentro.in'),
+              authorizedRep: {
+                name: e.primaryOwner?.name || 'Director',
+                designation: 'Director / Program Lead',
+                email: e.primaryOwner?.email || e.officialEmail || '',
+              },
+              verificationStatus: e.verificationStatus === 'Verified' ? 'Verified' : 'Under Review',
+              activeCohortsCount: 2,
+              supportedStartupsCount: e.capacity?.usedCapacity || 0,
+              activeEndorsementsCount: e.capacity?.usedCapacity || 0,
+              status: 'Active',
+            }));
+          setEsps(espEnts);
+        }
+      } catch (_) {}
+
+      // 2. Load pending ESP account requests
       try {
         const backendUrl = getBackendBaseUrl();
         const resp = await fetch(`${backendUrl}/admin/registration-requests/`);
@@ -77,14 +107,12 @@ export const AdminEspOpsView: React.FC = () => {
               status: lr.status === "ACTIVE" ? "Approved" : (lr.status === "REJECTED" ? "Declined" : "In Queue")
             }));
           setRequests(mapped);
-        } else {
-          setRequests([]);
         }
       } catch (err) {
         console.warn("Could not fetch live ESP requests:", err);
       }
     };
-    loadPending();
+    loadData();
   }, []);
 
   const showToast = (msg: string) => {

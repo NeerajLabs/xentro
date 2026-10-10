@@ -123,36 +123,51 @@ export const AdminPersonalAccountsView: React.FC = () => {
   };
 
   const loadData = async () => {
+    let usersList: any[] = [];
     try {
       const backendUrl = getBackendBaseUrl();
       const resp = await fetch(`${backendUrl}/admin/users/`);
       if (resp.ok) {
         const data = await resp.json();
         if (data?.success && data?.data?.users) {
-          const backendUsers: AdminPersonalAccount[] = data.data.users.map((u: any) => ({
-            id: u.id,
-            name: u.name,
-            email: u.email,
-            phone: u.phone,
-            avatar: u.avatar || u.photoUrl || '',
-            identityStatus: u.identityStatus as any,
-            participationModes: u.participationModes || ['Personal Account'],
-            entityMemberships: u.entityMemberships || [],
-            accountStatus: u.isActive ? 'Active' : (u.accountStatus === 'REJECTED' ? 'Restricted' : 'Pending Verification'),
-            createdDate: u.createdDate,
-            lastActive: u.lastActive || 'Unavailable',
-            connectionsCount: u.connectionsCount || 0,
-            bio: u.bio || ''
-          }));
-
-          setAccounts(backendUsers);
-        } else {
-          setAccounts([]);
+          usersList = data.data.users;
         }
-      } else {
-        setAccounts([]);
       }
-    } catch {
+    } catch (e) {
+      console.warn('Could not fetch users from primary backend, falling back to local DB sync:', e);
+    }
+
+    if (!usersList.length) {
+      try {
+        const localResp = await fetch('/api/admin/users');
+        if (localResp.ok) {
+          const localData = await localResp.json();
+          if (localData?.success && localData?.data?.users) {
+            usersList = localData.data.users;
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (usersList.length > 0) {
+      const backendUsers: AdminPersonalAccount[] = usersList.map((u: any) => ({
+        id: u.id,
+        name: u.name,
+        email: u.email,
+        phone: u.phone,
+        avatar: u.avatar || u.photoUrl || '',
+        identityStatus: u.identityStatus as any,
+        participationModes: u.participationModes || ['Explorer'],
+        entityMemberships: u.entityMemberships || [],
+        accountStatus: u.accountStatus || (u.isActive ? 'Active' : 'Pending Verification'),
+        createdDate: u.createdDate,
+        lastActive: u.lastActive || 'Unavailable',
+        connectionsCount: u.connectionsCount || 0,
+        bio: u.bio || ''
+      }));
+
+      setAccounts(backendUsers);
+    } else {
       setAccounts([]);
     }
 

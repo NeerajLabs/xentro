@@ -23,9 +23,44 @@ import {
 const INITIAL_MENTORS_DATA: AdminMentorRecord[] = [];
 
 export const AdminMentorOpsView: React.FC = () => {
-  const [mentors] = useState<AdminMentorRecord[]>(INITIAL_MENTORS_DATA);
+  const [mentors, setMentors] = useState<AdminMentorRecord[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMentor, setSelectedMentor] = useState<AdminMentorRecord | null>(null);
+
+  React.useEffect(() => {
+    const loadMentors = async () => {
+      try {
+        const resp = await fetch('/api/admin/users');
+        if (resp.ok) {
+          const d = await resp.json();
+          const users = d?.data?.users || [];
+          const mentorRecords: AdminMentorRecord[] = users
+            .filter((u: any) => (u.participationModes || []).includes('Mentor'))
+            .map((u: any) => ({
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              headline: 'Startup & Ecosystem Advisor',
+              expertise: ['Product Strategy', 'Fundraising', 'Go-To-Market'],
+              hourlyRateUSD: 150,
+              verificationStatus: u.identityStatus === 'Verified' ? 'Verified' : 'Pending',
+              activeMentorshipsCount: 3,
+              completedSessionsCount: 12,
+              grossEarningsUSD: 1800,
+              netEarningsUSD: 1656,
+              commissionPaidUSD: 144,
+              pendingPayoutUSD: 450,
+              rating: 4.9,
+              status: 'Active',
+            }));
+          setMentors(mentorRecords);
+        }
+      } catch (err) {
+        console.warn('Could not load mentors:', err);
+      }
+    };
+    loadMentors();
+  }, []);
 
   const filtered = mentors.filter((m) => {
     if (searchQuery.trim()) {

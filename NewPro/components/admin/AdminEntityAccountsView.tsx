@@ -43,19 +43,29 @@ export const AdminEntityAccountsView: React.FC = () => {
   const [transferReason, setTransferReason] = useState('');
 
   const loadData = async () => {
+    let entitiesList: any[] = [];
     try {
       const backendUrl = getBackendBaseUrl();
       const resp = await fetch(`${backendUrl}/admin/entities/`);
       if (resp.ok) {
         const d = await resp.json();
-        const live = d?.data?.entities || [];
-        setEntities(live);
-        return;
+        entitiesList = d?.data?.entities || [];
       }
     } catch (e) {
-      console.warn('Could not fetch entities from backend:', e);
+      console.warn('Could not fetch entities from primary backend, falling back to local DB sync:', e);
     }
-    setEntities([]);
+
+    if (!entitiesList.length) {
+      try {
+        const localResp = await fetch('/api/admin/entities');
+        if (localResp.ok) {
+          const localData = await localResp.json();
+          entitiesList = localData?.data?.entities || [];
+        }
+      } catch (_) {}
+    }
+
+    setEntities(entitiesList);
   };
 
   const handleDeleteEntity = async (entity: AdminEntityAccount) => {

@@ -37,9 +37,51 @@ export const AdminMembershipsView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [toastMsg, setToastMsg] = useState<string | null>(null);
 
-  const loadData = () => {
-    setMemberships(adminDomainService.getMemberships());
-    setOwnerships(adminDomainService.getOwnershipRecords());
+  const loadData = async () => {
+    try {
+      const resp = await fetch('/api/admin/users');
+      if (resp.ok) {
+        const d = await resp.json();
+        const users = d?.data?.users || [];
+        const realMemberships: AdminEntityMembership[] = [];
+        const realOwnerships: AdminOwnershipRecord[] = [];
+
+        users.forEach((u: any) => {
+          (u.entityMemberships || []).forEach((m: any, idx: number) => {
+            const entType: EntityType = m.entityType === 'ESP' ? 'ESP' : m.entityType === 'Investor Organization' ? 'Investor Organization' : 'Startup';
+            realMemberships.push({
+              id: `${u.id}_${m.entityId || idx}`,
+              personName: u.name,
+              personEmail: u.email,
+              entityId: m.entityId || `ent_${idx}`,
+              entityName: m.entityName,
+              entityType: entType,
+              role: m.role || 'Member',
+              permissionSet: ['view', 'participate'],
+              status: m.status === 'Active' || m.status === 'ACTIVE' ? 'Active' : 'Suspended',
+              joinedDate: m.dateAdded || u.createdDate || 'Recently',
+              invitedBy: 'Founding Lead',
+            });
+            if (m.role?.includes('Owner') || m.role?.includes('Founder')) {
+              realOwnerships.push({
+                entityId: m.entityId || `ent_${idx}`,
+                entityName: m.entityName,
+                entityType: entType,
+                currentOwnerName: u.name,
+                currentOwnerEmail: u.email,
+                assignedDate: m.dateAdded || u.createdDate || 'Recently',
+                disputeStatus: 'None',
+              });
+            }
+          });
+        });
+        if (realMemberships.length > 0) setMemberships(realMemberships);
+        if (realOwnerships.length > 0) setOwnerships(realOwnerships);
+      }
+    } catch (_) {
+      setMemberships(adminDomainService.getMemberships());
+      setOwnerships(adminDomainService.getOwnershipRecords());
+    }
   };
 
   useEffect(() => {

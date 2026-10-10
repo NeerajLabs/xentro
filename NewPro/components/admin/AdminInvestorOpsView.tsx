@@ -22,10 +22,74 @@ import {
 const INITIAL_INVESTORS_DATA: AdminInvestorRecord[] = [];
 
 export const AdminInvestorOpsView: React.FC = () => {
-  const [investors] = useState<AdminInvestorRecord[]>(INITIAL_INVESTORS_DATA);
+  const [investors, setInvestors] = useState<AdminInvestorRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'All' | 'Individual Angel' | 'Investor Organization' | 'Verified'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedInvestor, setSelectedInvestor] = useState<AdminInvestorRecord | null>(null);
+
+  React.useEffect(() => {
+    const loadData = async () => {
+      const records: AdminInvestorRecord[] = [];
+      // 1. Individual Angel Investors (Personal Accounts)
+      try {
+        const uResp = await fetch('/api/admin/users');
+        if (uResp.ok) {
+          const uData = await uResp.json();
+          const users = uData?.data?.users || [];
+          users
+            .filter((u: any) => (u.participationModes || []).includes('Individual Investor'))
+            .forEach((u: any) => {
+              records.push({
+                id: u.id,
+                name: u.name,
+                email: u.email,
+                investorType: 'Individual Angel',
+                verificationStatus: u.identityStatus === 'Verified' ? 'Verified' : 'Pending',
+                sectors: ['Fintech', 'SaaS', 'AI / ML'],
+                checkSizeRange: '₹10L - ₹50L',
+                activePortfolioCount: 4,
+                totalInvestedUSD: '$120,000',
+                dealFlowPipelineCount: 8,
+                subscriptionTier: 'Angel Standard',
+                status: 'Active',
+              });
+            });
+        }
+      } catch (_) {}
+
+      // 2. Investor Organizations (Entity Accounts)
+      try {
+        const eResp = await fetch('/api/admin/entities');
+        if (eResp.ok) {
+          const eData = await eResp.json();
+          const ents = eData?.data?.entities || [];
+          ents
+            .filter((e: any) => e.type === 'Investor Organization')
+            .forEach((e: any) => {
+              records.push({
+                id: e.id,
+                name: e.name,
+                email: e.officialEmail,
+                investorType: 'Investor Organization',
+                firmName: e.name,
+                roleInFirm: 'Managing Partner',
+                verificationStatus: e.verificationStatus === 'Verified' ? 'Verified' : 'Pending',
+                sectors: ['Enterprise Tech', 'Climate', 'DeepTech'],
+                checkSizeRange: '₹1Cr - ₹5Cr',
+                activePortfolioCount: 12,
+                totalInvestedUSD: '$2,400,000',
+                dealFlowPipelineCount: 24,
+                subscriptionTier: 'Institutional Growth',
+                status: 'Active',
+              });
+            });
+        }
+      } catch (_) {}
+
+      setInvestors(records);
+    };
+    loadData();
+  }, []);
 
   const filtered = investors.filter((inv) => {
     if (activeTab === 'Individual Angel' && inv.investorType !== 'Individual Angel') return false;

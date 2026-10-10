@@ -215,6 +215,17 @@ export const RolesPermissionsTab: React.FC<RolesPermissionsTabProps> = ({ member
         { key: 'archiveStartup', label: 'Archive Venture' },
       ],
     },
+    {
+      id: 'affiliate',
+      label: 'Affiliate Management',
+      permissions: [
+        { key: 'viewAffiliations', label: 'View Affiliations' },
+        { key: 'previewAffiliation', label: 'Preview Affiliate Invitation' },
+        { key: 'acceptAffiliation', label: 'Accept Affiliate Invitation' },
+        { key: 'viewAffiliationHistory', label: 'View Affiliation History' },
+        { key: 'viewProEntitlement', label: 'View Pro Entitlement' },
+      ],
+    },
   ];
 
   return (
@@ -231,7 +242,7 @@ export const RolesPermissionsTab: React.FC<RolesPermissionsTabProps> = ({ member
           <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
             In Xentro, <span className="font-semibold text-[#101212] dark:text-white">Role = preset</span>, while{' '}
             <span className="font-semibold text-[#101212] dark:text-white">Permissions = actual granular capabilities</span>.
-            Assigning a role equips standard defaults, but individual members can have customized access overrides. Sensitive domains require explicit confirmation.
+            Granted (<span className="text-emerald-500 font-bold">G</span>), Scoped (<span className="text-blue-500 font-bold">S</span>), or Restricted (<span className="text-gray-400 font-bold">R</span>) authority is evaluated centrally.
           </p>
         </div>
       </div>
@@ -246,9 +257,16 @@ export const RolesPermissionsTab: React.FC<RolesPermissionsTabProps> = ({ member
           <div className="space-y-2">
             {systemRoles.map((r) => {
               const isSelected = selectedRole === r.id;
-              const countInRole = members.filter(
-                (m) => m.dashboardRole === r.id && m.dashboardAccessEnabled
-              ).length;
+              const countInRole = members.filter((m) => {
+                const roleNorm = (m.dashboardRole || m.role || '').toLowerCase().replace(/[\s\/-]+/g, '_');
+                const targetNorm = r.id.toLowerCase().replace(/[\s\/-]+/g, '_');
+                return (
+                  roleNorm === targetNorm ||
+                  (targetNorm === 'owner' && (roleNorm.includes('founder') || roleNorm.includes('owner'))) ||
+                  (targetNorm === 'finance' && roleNorm.includes('finance')) ||
+                  (targetNorm === 'operations' && (roleNorm.includes('operation') || roleNorm.includes('ops')))
+                );
+              }).length;
 
               return (
                 <div
@@ -301,12 +319,12 @@ export const RolesPermissionsTab: React.FC<RolesPermissionsTabProps> = ({ member
                 )}
               </div>
               <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] mt-0.5">
-                Inspect granted capabilities across the 10 security domain groups.
+                Inspect granted capabilities across the security domain groups.
               </p>
             </div>
           </div>
 
-          {/* 10 Domain Groups Grid */}
+          {/* Domain Groups Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {permissionGroupsList.map((group) => {
               const groupPerms = activeRolePreset[group.id] || {};
@@ -331,20 +349,27 @@ export const RolesPermissionsTab: React.FC<RolesPermissionsTabProps> = ({ member
 
                   <div className="space-y-1.5 pt-1">
                     {group.permissions.map((p) => {
-                      const isGranted = (groupPerms as any)[p.key] === true;
+                      const rawVal = (groupPerms as any)[p.key];
+                      const isGranted = rawVal === true || rawVal === 'G';
+                      const isScoped = rawVal === 'S';
 
                       return (
                         <div
                           key={p.key}
                           className="flex items-center justify-between text-[11px] py-1 border-b border-gray-200/50 dark:border-[#262A29] last:border-0"
                         >
-                          <span className={isGranted ? 'text-[#101212] dark:text-white font-medium' : 'text-gray-400'}>
+                          <span className={isGranted || isScoped ? 'text-[#101212] dark:text-white font-medium' : 'text-gray-400'}>
                             {p.label}
                           </span>
                           {isGranted ? (
                             <span className="flex items-center gap-1 font-bold text-emerald-600 dark:text-emerald-400">
                               <Check className="w-3 h-3" />
                               <span>Granted</span>
+                            </span>
+                          ) : isScoped ? (
+                            <span className="flex items-center gap-1 font-bold text-blue-600 dark:text-blue-400 text-[10px]">
+                              <ShieldCheck className="w-3 h-3 text-blue-500" />
+                              <span>Scoped</span>
                             </span>
                           ) : (
                             <span className="text-gray-400 text-[10px]">Restricted</span>

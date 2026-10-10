@@ -1074,27 +1074,20 @@ class AdminUsersListView(APIView):
                         "status": "Active"
                     })
 
-            # Real Participation Modes (Explorer is canonical base)
-            participation_modes = ["Explorer"]
+            # Section 4 Directive: Display exactly one current personal account type:
+            # - Explorer, Mentor, Individual Investor
+            # A converted Mentor or Individual Investor must NOT continue to appear as an active Explorer.
+            acct_type = str(u.get("accountType") or "").strip()
+            role_title = str(u.get("roleTitle") or "").strip()
             m_prof = mentor_col.find_one({"userId": u_id, "status": {"$in": ["ACTIVE", "APPROVED", "Active"]}})
-            if m_prof or "Mentor" in (u.get("activeRoles") or []):
-                participation_modes.append("Mentor")
-
             i_prof = inv_col.find_one({"userId": u_id, "status": {"$in": ["ACTIVE", "APPROVED", "Active"]}})
-            if i_prof or "Investor" in (u.get("activeRoles") or []) or "Individual Investor" in (u.get("activeRoles") or []):
-                participation_modes.append("Individual Investor")
 
-            has_startup = any(str(e.get("entityType", "")).upper() == "STARTUP" for e in entity_memberships)
-            if has_startup or "Startup Founder" in (u.get("activeRoles") or []) or "Founder @ Startup" in (u.get("activeRoles") or []):
-                participation_modes.append("Founder @ Startup")
-
-            has_vc = any(str(e.get("entityType", "")).upper() in ["INVESTOR", "INVESTOR_ORG", "VCI"] for e in entity_memberships)
-            if has_vc or "Partner @ VC" in (u.get("activeRoles") or []):
-                participation_modes.append("Partner @ VC")
-
-            has_esp = any(str(e.get("entityType", "")).upper() == "ESP" for e in entity_memberships)
-            if has_esp or "Member @ ESP" in (u.get("activeRoles") or []):
-                participation_modes.append("Member @ ESP")
+            if acct_type == "Mentor" or role_title == "Mentor" or m_prof or "Mentor" in (u.get("activeRoles") or []):
+                participation_modes = ["Mentor"]
+            elif acct_type in ["Individual Investor", "Investor"] or role_title in ["Individual Investor", "Investor"] or i_prof or "Individual Investor" in (u.get("activeRoles") or []) or "Investor" in (u.get("activeRoles") or []):
+                participation_modes = ["Individual Investor"]
+            else:
+                participation_modes = ["Explorer"]
 
             # Real Connections Count
             conn_count = conn_col.count_documents({
@@ -1389,10 +1382,15 @@ class AdminEntitiesListView(APIView):
             "is_deleted": {"$ne": True},
             "deleted": {"$ne": True}
         }
+        mem_col = get_collection("memberships")
+        sub_col = get_collection("subscriptions")
+        aff_col = get_collection("affiliations")
+
         all_entities = list(entities_col.find(query, sort=[("createdAt", -1)], limit=200))
         results = []
         for e in all_entities:
             e.pop("_id", None)
+            e_id = e.get("id")
             owner_id = e.get("primaryOwnerId") or e.get("founderPersonalAccountId")
             owner_name = e.get("primaryOwnerName") or e.get("founderName") or "Founder"
             owner_email = e.get("officialEmail") or ""
@@ -1409,28 +1407,72 @@ class AdminEntitiesListView(APIView):
                 ui_type = "Startup"
             elif str(e_type).upper() == "ESP":
                 ui_type = "ESP"
-            elif str(e_type).upper() == "INVESTOR":
+            elif str(e_type).upper() in ["INVESTOR", "INVESTOR_ORG", "VCI"]:
                 ui_type = "Investor Organization"
             else:
                 ui_type = e_type
 
+            # Derive real memberships count
+            real_member_count = mem_col.count_documents({
+                "entityId": e_id,
+                "status": {"$in": ["ACTIVE", "APPROVED", "Active"]}
+            })
+            total_members = max(1, real_member_count)
+
+            # Entitlement & Pro Status (Paid vs ESP Affiliation)
+            active_sub = sub_col.find_one({"entityId": e_id, "status": "Active"})
+            active_aff = aff_col.find_one({"startupEntityId": e_id, "status": "Active"})
+            
+            if active_sub and "Pro" in active_sub.get("planName", ""):
+                entitlement_tier = "Startup Pro"
+                entitlement_source = "Paid Subscription"
+            elif active_aff:
+                entitlement_tier = "Startup Pro"
+                entitlement_source = f"ESP Affiliation ({active_aff.get('issuingOrgName', 'ESP')})"
+            else:
+                entitlement_tier = "Startup Free"
+                entitlement_source = "Complimentary Access"
+
+            # Capacity calculation for ESP
+            capacity_data = None
+            if ui_type == "ESP":
+                used_capacity = aff_col.count_documents({"issuingEntityId": e_id, "status": "Active"})
+                capacity_data = {
+                    "includedCapacity": 250,
+                    "usedCapacity": used_capacity,
+                    "remainingCapacity": max(0, 250 - used_capacity)
+                }
+
+            # Verification status (independent of email OTP)
+            raw_verif = str(e.get("verificationStatus", "")).upper()
+            if raw_verif in ["VERIFIED", "APPROVED"]:
+                ui_verif = "Verified"
+            elif raw_verif in ["UNDER_REVIEW", "IN_REVIEW"]:
+                ui_verif = "Under Review"
+            else:
+                ui_verif = "Pending"
+
             results.append({
-                "id": e.get("id"),
+                "id": e_id,
                 "name": e.get("name") or e.get("startupName") or "Entity",
-                "legalName": e.get("name") or "Entity Legal",
+                "legalName": e.get("legalName") or e.get("name") or "Entity Legal",
                 "type": ui_type,
                 "domain": e.get("officialDomain") or e.get("website") or "",
                 "officialEmail": owner_email or e.get("officialEmail") or "",
                 "status": "Active" if e.get("isActive", True) else "Suspended",
-                "verificationStatus": "Verified" if str(e.get("verificationStatus", "")).upper() == "VERIFIED" else "Pending",
+                "verificationStatus": ui_verif,
+                "ownerApprovalStatus": e.get("ownerApprovalStatus", "APPROVED"),
                 "primaryOwner": {
                     "id": owner_id or "",
                     "name": owner_name,
                     "email": owner_email,
                     "role": "Founder / Owner"
                 },
-                "totalMembers": 1,
+                "totalMembers": total_members,
                 "workspacesCount": 1,
+                "entitlementTier": entitlement_tier,
+                "entitlementSource": entitlement_source,
+                "capacity": capacity_data,
                 "createdAt": e.get("createdAt", ""),
                 "createdDate": (e.get("createdAt") or "")[:10]
             })

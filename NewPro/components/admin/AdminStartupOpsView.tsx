@@ -23,13 +23,47 @@ import {
   Ghost,
 } from 'lucide-react';
 
-const INITIAL_STARTUP_OPS_DATA: AdminStartupRecord[] = [];
-
 export const AdminStartupOpsView: React.FC = () => {
-  const [startups] = useState<AdminStartupRecord[]>(INITIAL_STARTUP_OPS_DATA);
+  const [startups, setStartups] = useState<AdminStartupRecord[]>([]);
   const [activeTab, setActiveTab] = useState<'All' | 'Verified' | 'Pending Verification' | 'Ghost Mode' | 'Endorsed' | 'Pro Entitled'>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStartup, setSelectedStartup] = useState<AdminStartupRecord | null>(null);
+
+  React.useEffect(() => {
+    const loadStartups = async () => {
+      try {
+        const resp = await fetch('/api/admin/entities');
+        if (resp.ok) {
+          const d = await resp.json();
+          const ents = d?.data?.entities || [];
+          const startupEnts: AdminStartupRecord[] = ents
+            .filter((e: any) => e.type === 'Startup')
+            .map((e: any) => ({
+              id: e.id,
+              name: e.name,
+              legalName: e.legalName || e.name,
+              founderName: e.primaryOwner?.name || 'Founder',
+              founderEmail: e.primaryOwner?.email || e.officialEmail || '',
+              sector: 'Ecosystem Venture',
+              stage: 'Seed / Early Stage',
+              location: 'India',
+              verificationStatus: e.verificationStatus === 'Verified' ? 'Verified' : 'Pending',
+              visibility: 'Public',
+              entitlementTier: e.entitlementTier || 'Startup Free',
+              subscriptionPlan: e.entitlementTier || 'Startup Free',
+              endorsements: [],
+              ddLockerFilesCount: 4,
+              status: 'Active',
+              createdDate: e.createdDate || 'Recently',
+            }));
+          setStartups(startupEnts);
+        }
+      } catch (err) {
+        console.warn('Could not load startups for ops view:', err);
+      }
+    };
+    loadStartups();
+  }, []);
 
   const filtered = startups.filter((s) => {
     if (activeTab === 'Verified' && s.verificationStatus !== 'Verified') return false;

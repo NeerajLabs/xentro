@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 
 export const AdminVerificationView: React.FC = () => {
-  const [requests, setRequests] = useState<VerificationRequest[]>(MOCK_VERIFICATION_REQUESTS);
+  const [requests, setRequests] = useState<VerificationRequest[]>([]);
   const [activeTab, setActiveTab] = useState<'all' | 'pending' | 'reviewed'>('pending');
   const [queueFilter, setQueueFilter] = useState<string>('All Queues');
   const [searchQuery, setSearchQuery] = useState('');
@@ -33,6 +33,23 @@ export const AdminVerificationView: React.FC = () => {
   const [reviewNote, setReviewNote] = useState('');
   const [previewDoc, setPreviewDoc] = useState<{ name: string; type: string } | null>(null);
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+
+  const loadRequests = async () => {
+    try {
+      const resp = await fetch('/api/admin/verification');
+      if (resp.ok) {
+        const d = await resp.json();
+        const live = d?.data?.requests || [];
+        setRequests(live);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch verification requests from DB:', err);
+    }
+  };
+
+  React.useEffect(() => {
+    loadRequests();
+  }, []);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -59,44 +76,37 @@ export const AdminVerificationView: React.FC = () => {
     return true;
   });
 
-  const handleUpdateStatus = (
+  const handleUpdateStatus = async (
     reqId: string,
     newStatus: VerificationRequest['status'],
     customNote?: string
   ) => {
-    setRequests((prev) =>
-      prev.map((r) => {
-        if (r.id === reqId) {
-          const notes = [...(r.notes || [])];
-          if (customNote && customNote.trim()) {
-            notes.push(`[${new Date().toISOString().slice(0, 10)}] ${customNote}`);
-          }
-          return {
-            ...r,
-            status: newStatus,
-            reviewer: 'Karunya Kranthi Kumar',
-            notes,
-          };
+    const action = newStatus === 'Verified' ? 'APPROVE' : 'REJECT';
+    try {
+      const resp = await fetch('/api/admin/verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: reqId,
+          action,
+          notes: customNote || reviewNote,
+          reviewerName: session?.name || 'Super Admin',
+        }),
+      });
+      const data = await resp.json();
+      if (resp.ok && data?.success) {
+        showToast(data.message || `Verification marked as ${newStatus}`);
+        loadRequests();
+        if (selectedReq && selectedReq.id === reqId) {
+          setSelectedReq(null);
         }
-        return r;
-      })
-    );
-
-    if (selectedReq && selectedReq.id === reqId) {
-      setSelectedReq((prev) =>
-        prev
-          ? {
-              ...prev,
-              status: newStatus,
-              reviewer: 'Karunya Kranthi Kumar',
-              notes: customNote ? [...(prev.notes || []), customNote] : prev.notes,
-            }
-          : null
-      );
+      } else {
+        showToast(data?.message || 'Failed to update verification status.');
+      }
+    } catch {
+      showToast('Network error while updating verification status.');
     }
-
     setReviewNote('');
-    showToast(`Verification marked as ${newStatus}`);
   };
 
   const getRiskBadge = (risk: string) => {

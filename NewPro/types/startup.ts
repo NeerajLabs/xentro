@@ -174,81 +174,90 @@ export interface StartupMemberPublicFields {
   xentroProfile: boolean;
 }
 
+export type StartupCapabilityState = boolean | 'G' | 'S' | 'R';
+
 export interface StartupPermissionSet {
   profile: {
-    viewProfileManagement: boolean;
-    editBasicInfo: boolean;
-    editPitch: boolean;
-    manageTeam: boolean;
-    manageTalentAsk: boolean;
-    managePublicVisibility: boolean;
-    publishProfile: boolean;
+    viewProfileManagement: StartupCapabilityState;
+    editBasicInfo: StartupCapabilityState;
+    editPitch: StartupCapabilityState;
+    manageTeam: StartupCapabilityState;
+    manageTalentAsk: StartupCapabilityState;
+    managePublicVisibility: StartupCapabilityState;
+    publishProfile: StartupCapabilityState;
   };
   opportunities: {
-    viewOpportunities: boolean;
-    saveOpportunities: boolean;
-    applyOpportunities: boolean;
-    manageApplications: boolean;
+    viewOpportunities: StartupCapabilityState;
+    saveOpportunities: StartupCapabilityState;
+    applyOpportunities: StartupCapabilityState;
+    manageApplications: StartupCapabilityState;
   };
   connections: {
-    viewConnections: boolean;
-    manageConnections: boolean;
-    messageConnections: boolean;
-    scheduleMeetings: boolean;
+    viewConnections: StartupCapabilityState;
+    manageConnections: StartupCapabilityState;
+    messageConnections: StartupCapabilityState;
+    scheduleMeetings: StartupCapabilityState;
   };
   ask: {
-    viewAsks: boolean;
-    createAsk: boolean;
-    editAsk: boolean;
-    publishAsk: boolean;
-    closeAsk: boolean;
-    manageAskResponses: boolean;
+    viewAsks: StartupCapabilityState;
+    createAsk: StartupCapabilityState;
+    editAsk: StartupCapabilityState;
+    publishAsk: StartupCapabilityState;
+    closeAsk: StartupCapabilityState;
+    manageAskResponses: StartupCapabilityState;
   };
   finance: {
-    viewFinancials: boolean;
-    uploadFinancialData: boolean;
-    editFinancialData: boolean;
-    exportFinancialData: boolean;
-    manageFinancialVisibility: boolean;
+    viewFinancials: StartupCapabilityState;
+    uploadFinancialData: StartupCapabilityState;
+    editFinancialData: StartupCapabilityState;
+    exportFinancialData: StartupCapabilityState;
+    manageFinancialVisibility: StartupCapabilityState;
   };
   ddLocker: {
-    viewDDLocker: boolean;
-    uploadDocuments: boolean;
-    deleteDocuments: boolean;
-    manageFolders: boolean;
-    approveAccess: boolean;
-    revokeAccess: boolean;
-    viewActivityLogs: boolean;
+    viewDDLocker: StartupCapabilityState;
+    uploadDocuments: StartupCapabilityState;
+    deleteDocuments: StartupCapabilityState;
+    manageFolders: StartupCapabilityState;
+    approveAccess: StartupCapabilityState;
+    revokeAccess: StartupCapabilityState;
+    viewActivityLogs: StartupCapabilityState;
   };
   content: {
-    viewContent: boolean;
-    createPosts: boolean;
-    editPosts: boolean;
-    publishPosts: boolean;
-    deletePosts: boolean;
-    featurePosts: boolean;
+    viewContent: StartupCapabilityState;
+    createPosts: StartupCapabilityState;
+    editPosts: StartupCapabilityState;
+    publishPosts: StartupCapabilityState;
+    deletePosts: StartupCapabilityState;
+    featurePosts: StartupCapabilityState;
   };
   team: {
-    viewMembers: boolean;
-    inviteMembers: boolean;
-    editMembers: boolean;
-    removeMembers: boolean;
-    assignRoles: boolean;
-    changePermissions: boolean;
+    viewMembers: StartupCapabilityState;
+    inviteMembers: StartupCapabilityState;
+    editMembers: StartupCapabilityState;
+    removeMembers: StartupCapabilityState;
+    assignRoles: StartupCapabilityState;
+    changePermissions: StartupCapabilityState;
   };
   billing: {
-    viewBilling: boolean;
-    manageSubscription: boolean;
-    viewInvoices: boolean;
-    managePaymentMethod: boolean;
-    downloadInvoices: boolean;
+    viewBilling: StartupCapabilityState;
+    manageSubscription: StartupCapabilityState;
+    viewInvoices: StartupCapabilityState;
+    managePaymentMethod: StartupCapabilityState;
+    downloadInvoices: StartupCapabilityState;
   };
   entityAdministration: {
-    manageStartupSettings: boolean;
-    changeOfficialEmail: boolean;
-    changeProfileVisibility: boolean;
-    transferOwnership: boolean;
-    archiveStartup: boolean;
+    manageStartupSettings: StartupCapabilityState;
+    changeOfficialEmail: StartupCapabilityState;
+    changeProfileVisibility: StartupCapabilityState;
+    transferOwnership: StartupCapabilityState;
+    archiveStartup: StartupCapabilityState;
+  };
+  affiliate?: {
+    viewAffiliations: StartupCapabilityState;
+    previewAffiliation: StartupCapabilityState;
+    acceptAffiliation: StartupCapabilityState;
+    viewAffiliationHistory: StartupCapabilityState;
+    viewProEntitlement: StartupCapabilityState;
   };
 }
 

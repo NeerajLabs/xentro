@@ -64,8 +64,17 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({ onNavigate
         usersList = d?.data?.users || d?.data || [];
       }
     } catch {
-      // Backend not accessible, fallback to domain store
-      usersList = adminDomainService.getPersonalAccounts();
+      // Backend not accessible, fallback
+    }
+
+    if (!usersList.length) {
+      try {
+        const localResp = await fetch('/api/admin/users');
+        if (localResp.ok) {
+          const d = await localResp.json();
+          usersList = d?.data?.users || [];
+        }
+      } catch (_) {}
     }
 
     try {
@@ -79,10 +88,24 @@ export const AdminOverviewView: React.FC<AdminOverviewViewProps> = ({ onNavigate
       // No requests
     }
 
-    const startupsCount = usersList.filter((u: any) => (u.user_type || u.userType || u.role) === 'Startup').length;
-    const mentorsCount = usersList.filter((u: any) => (u.user_type || u.userType || u.role) === 'Mentor').length;
-    const investorsCount = usersList.filter((u: any) => (u.user_type || u.userType || u.role) === 'Investor').length;
-    const espsCount = usersList.filter((u: any) => (u.user_type || u.userType || u.role) === 'ESP').length;
+    let liveStartups = 0;
+    let liveInvestors = 0;
+    let liveEsps = 0;
+    try {
+      const entResp = await fetch('/api/admin/entities');
+      if (entResp.ok) {
+        const entData = await entResp.json();
+        const liveEnts = entData?.data?.entities || [];
+        liveStartups = liveEnts.filter((e: any) => e.type === 'Startup').length;
+        liveInvestors = liveEnts.filter((e: any) => e.type === 'Investor Organization').length;
+        liveEsps = liveEnts.filter((e: any) => e.type === 'ESP').length;
+      }
+    } catch (_) {}
+
+    const startupsCount = liveStartups || usersList.filter((u: any) => (u.user_type || u.userType || u.role) === 'Startup').length;
+    const mentorsCount = usersList.filter((u: any) => (u.participationModes || []).includes('Mentor') || (u.user_type || u.role) === 'Mentor').length;
+    const investorsCount = liveInvestors || usersList.filter((u: any) => (u.user_type || u.userType || u.role) === 'Investor').length;
+    const espsCount = liveEsps || usersList.filter((u: any) => (u.user_type || u.userType || u.role) === 'ESP').length;
 
     const pendingCount = Array.isArray(pendingRequests)
       ? pendingRequests.filter((r: any) => r.status === 'PENDING' || r.status === 'UNDER_REVIEW').length
