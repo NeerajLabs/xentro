@@ -22,6 +22,7 @@ import {
   LinkedEntity,
   ENTITY_CONTEXT_CHANGED_EVENT,
 } from '@/lib/entityContextService';
+import { EntityAccountSwitcher } from '../EntityAccountSwitcher';
 
 // Startup Components
 import { StartupOverview } from '../startup/StartupOverview';
@@ -323,9 +324,13 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                 </p>
               </div>
 
-              {/* Dynamic Persona / Role Test Switcher Bar: visible ONLY if ?dev=1 or user has multiple registered roles */}
-              {(isDevToolsEnabled() || getUserRegisteredRoles().length > 1) && (
-                <div className="flex flex-col gap-1 self-start md:self-auto">
+              <div className="flex items-center gap-2.5 self-start md:self-auto flex-wrap">
+                {/* Entity / Persona Switcher */}
+                <EntityAccountSwitcher variant="profile-action" />
+
+                {/* Dynamic Persona / Role Test Switcher Bar: visible ONLY if ?dev=1 or user has multiple registered roles */}
+                {(isDevToolsEnabled() || getUserRegisteredRoles().length > 1) && (
+                  <div className="flex flex-col gap-1">
                   <div className="flex items-center justify-between text-[10px] font-bold text-[#565B59] dark:text-[#7A807D] px-1 uppercase tracking-wider">
                     <span>Persona Switcher</span>
                     {isDevToolsEnabled() && (
@@ -356,6 +361,7 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                   </div>
                 </div>
               )}
+            </div>
             </div>
 
             {/* Context Switcher for Investor Role */}

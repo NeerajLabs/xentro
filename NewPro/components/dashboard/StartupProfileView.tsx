@@ -43,8 +43,15 @@ import {
   LayoutDashboard,
   ChevronDown,
   Plus,
+  ArrowLeftRight,
 } from "lucide-react";
 import { useToast } from "@/components/ui/Toast";
+import {
+  entityContextService,
+  ENTITY_CONTEXT_CHANGED_EVENT,
+  LinkedEntity,
+} from "@/lib/entityContextService";
+import { EntityAccountSwitcher } from "./EntityAccountSwitcher";
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from "@/lib/connectionService";
 import { messagingService } from "@/lib/messagingService";
 import {
@@ -132,6 +139,9 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
   const [isVisibilityDropdownOpen, setIsVisibilityDropdownOpen] = useState(false);
   const [customBanner, setCustomBanner] = useState<string | null>(null);
   const [customAvatar, setCustomAvatar] = useState<string | null>(null);
+  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
+    typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null
+  );
   const [pitchVideoOverride, setPitchVideoOverride] = useState<ElevatorPitchVideo | null | undefined>(undefined);
   const [pitchDeckOverride, setPitchDeckOverride] = useState<PitchDeckDoc | null | undefined>(undefined);
   const [teamMembersOverride, setTeamMembersOverride] = useState<StartupTeamMember[] | undefined>(undefined);
@@ -248,7 +258,12 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
       const ce = e as CustomEvent;
       setBasicInfoOverride(ce.detail?.basicInfo || getStartupBasicInfo());
     };
+    const handleEntitySwitch = (e: Event) => {
+      const ce = e as CustomEvent;
+      setActiveEntity(ce.detail?.entity || entityContextService.getActiveEntity());
+    };
 
+    window.addEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
     window.addEventListener("xentro-ghost-mode-changed", handleGhostChanged);
     window.addEventListener("xentro-visibility-changed", handleVisibilityChanged);
     window.addEventListener("xentro-privacy-settings-changed", handlePrivacyChanged);
@@ -266,6 +281,7 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
     window.addEventListener("xentro-startup-business-model-changed", handleBusinessModelChanged);
     window.addEventListener("xentro-startup-basic-info-changed", handleBasicInfoChanged);
     return () => {
+      window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
       window.removeEventListener("xentro-ghost-mode-changed", handleGhostChanged);
       window.removeEventListener("xentro-visibility-changed", handleVisibilityChanged);
       window.removeEventListener("xentro-privacy-settings-changed", handlePrivacyChanged);
@@ -332,23 +348,34 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
       }).filter((s) => s.title)
     : (Array.isArray(baseStartup?.unsdg) ? baseStartup.unsdg : []);
 
+  const linkedEntities = typeof window !== 'undefined' ? entityContextService.getLinkedEntities() : [];
+  const currentActiveEntity = activeEntity || (typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null);
+  const matchedEntity = (startupId ? linkedEntities.find((e) => e.id === startupId) : null) || currentActiveEntity;
+  const effectiveOrg = (userProfile.organization && userProfile.organization.trim().toUpperCase() !== 'N/A' && userProfile.organization.trim().toLowerCase() !== 'none') ? userProfile.organization.trim() : '';
+  const baseName = baseStartup.identity?.name && baseStartup.identity.name.trim().toUpperCase() !== 'N/A' && baseStartup.identity.name !== 'Your Startup' ? baseStartup.identity.name : null;
+  const resolvedStartupName = basicInfoOverride?.startupName
+    || matchedEntity?.name
+    || baseName
+    || effectiveOrg
+    || (userProfile.name ? `${userProfile.name}'s Startup` : 'Startup Venture');
+
   const startup: FullStartupProfile = {
     ...baseStartup,
     identity: isOwnStartup
       ? {
           ...baseStartup.identity,
-          name: basicInfoOverride?.startupName || userProfile.organization || (userProfile.name ? `${userProfile.name}'s Startup` : 'Your Startup'),
-          tagline: basicInfoOverride?.tagline || '',
-          stage: basicInfoOverride?.stage || userProfile.stageOrFocus || '',
-          industry: basicInfoOverride?.industry || userProfile.sector || '',
+          name: resolvedStartupName,
+          tagline: basicInfoOverride?.tagline || matchedEntity?.pitch || baseStartup.identity.tagline || '',
+          stage: basicInfoOverride?.stage || matchedEntity?.stage || userProfile.stageOrFocus || baseStartup.identity.stage || '',
+          industry: basicInfoOverride?.industry || matchedEntity?.sector || userProfile.sector || baseStartup.identity.industry || '',
           subSector: basicInfoOverride?.subSector || '',
           businessModelType: (basicInfoOverride?.businessModel as any) || baseStartup.identity.businessModelType,
           foundedYear: parsedFoundedYear,
-          location: basicInfoOverride?.headquarters || userProfile.location || '',
-          operatingGeography: (Array.isArray(parsedOperatingGeo) && parsedOperatingGeo.length > 0) ? parsedOperatingGeo : [],
-          website: basicInfoOverride?.website || '',
-          linkedin: basicInfoOverride?.linkedin || '',
-          logo: basicInfoOverride?.logo || userProfile.avatar || '/xentro-logo.png',
+          location: basicInfoOverride?.headquarters || matchedEntity?.details?.headquarters || userProfile.location || baseStartup.identity.location || '',
+          operatingGeography: (Array.isArray(parsedOperatingGeo) && parsedOperatingGeo.length > 0) ? parsedOperatingGeo : baseStartup.identity.operatingGeography || [],
+          website: basicInfoOverride?.website || matchedEntity?.website || baseStartup.identity.website || '',
+          linkedin: basicInfoOverride?.linkedin || baseStartup.identity.linkedin || '',
+          logo: (isOwner && customAvatar) ? customAvatar : (basicInfoOverride?.logo || matchedEntity?.logo || baseStartup.identity.logo || userProfile.avatar || '/xentro-logo.png'),
         }
       : baseStartup.identity,
     overview: isOwnStartup
@@ -840,9 +867,9 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
       </div>
 
       {/* 1. Global Startup Profile Header */}
-      <div className="bg-white dark:bg-[#181B1A] rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] overflow-hidden shadow-subtle">
+      <div className="bg-white dark:bg-[#181B1A] rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle relative">
         {/* Subtle Ambient Banner */}
-        <div className="h-28 sm:h-36 bg-gradient-to-r from-emerald-950/30 via-[#181B1A] to-lime-950/20 relative overflow-hidden">
+        <div className="h-28 sm:h-36 bg-gradient-to-r from-emerald-950/30 via-[#181B1A] to-lime-950/20 relative overflow-hidden rounded-t-2xl">
           {isOwner && customBanner ? (
             <img
               src={customBanner}
@@ -967,6 +994,29 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
                       </div>
                     )}
                   </div>
+
+                  {/* Switch Persona Workspace & Switch to Personal */}
+                  <EntityAccountSwitcher variant="profile-action" />
+
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const res = await entityContextService.switchPersona(userProfile.id, null);
+                        showToast(res.message || 'Switched to Personal Account', 'info');
+                        window.dispatchEvent(
+                          new CustomEvent('xentro-navigate-tab', { detail: { tab: res.destinationTab || 'feed' } })
+                        );
+                      } catch (err: any) {
+                        showToast(err.message || 'Failed to switch to personal account', 'error');
+                      }
+                    }}
+                    className="px-3.5 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#262A29] bg-white dark:bg-[#202422] hover:bg-gray-100 dark:hover:bg-[#262A29] text-xs font-bold text-[#101212] dark:text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-subtle active:scale-95"
+                    title={`Switch back to Personal Account (${userProfile.name})`}
+                  >
+                    <ArrowLeftRight className="w-3.5 h-3.5 text-[#9EBE12] dark:text-[#D9FF3F]" />
+                    <span>Switch to Personal</span>
+                  </button>
 
                   {/* Share Profile */}
                   <button

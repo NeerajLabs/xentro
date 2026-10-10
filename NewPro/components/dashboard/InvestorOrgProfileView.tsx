@@ -37,6 +37,7 @@ import {
 } from '@/lib/investorOrganizationService';
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { useToast } from '@/components/ui/Toast';
+import { EntityAccountSwitcher } from './EntityAccountSwitcher';
 
 export type OrgPublicTabType =
   | 'about'
@@ -149,6 +150,10 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          {isOwnProfile && (
+            <EntityAccountSwitcher variant="profile-action" />
+          )}
+
           {isOwnProfile && onEditProfile && (
             <button
               onClick={onEditProfile}

@@ -478,9 +478,9 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
       </div>
 
       {/* Main Profile Header Card */}
-      <div className="bg-white dark:bg-[#181B1A] rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] shadow-sm overflow-hidden">
+      <div className="bg-white dark:bg-[#181B1A] rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] shadow-sm relative">
         {/* Banner */}
-        <div className="h-36 sm:h-48 bg-gradient-to-r from-emerald-950 via-[#16221A] to-[#0D1410] relative">
+        <div className="h-36 sm:h-48 bg-gradient-to-r from-emerald-950 via-[#16221A] to-[#0D1410] relative rounded-t-2xl overflow-hidden">
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(217,255,63,0.15),transparent_50%)]" />
           <div className="absolute top-4 right-4">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-black/40 backdrop-blur-md text-[#D9FF3F] border border-[#D9FF3F]/30">
@@ -607,80 +607,7 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
             )}
           </div>
 
-          {/* Linked Organizations Banner */}
-          {isOwn && linkedEntities.length > 0 && (
-            <div className="mt-3 mb-2 p-3.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 animate-fade-slide">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 rounded-xl bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 shrink-0">
-                  <Rocket className="w-4 h-4" />
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-2">
-                    <span>Registered Entity Workspace ({linkedEntities.length})</span>
-                    <span className="px-2 py-0.2 rounded-full text-[9px] font-mono font-bold bg-emerald-500/20 text-emerald-700 dark:text-emerald-300">
-                      RBAC Active
-                    </span>
-                  </h4>
-                  <p className="text-[11px] text-[#565B59] dark:text-[#8E9290]">
-                    Manage dedicated company dashboards, revenue metrics, team seats, and investor diligence vaults.
-                  </p>
-                </div>
-              </div>
 
-              <div className="flex items-center gap-2 w-full sm:w-auto flex-wrap">
-                {linkedEntities.map((ent) => {
-                  const isCurrentActive = activeEntity?.id === ent.id;
-                  return (
-                    <button
-                      key={ent.id}
-                      type="button"
-                      onClick={async () => {
-                        try {
-                          const res = await entityContextService.switchPersona(profile.id, ent.id);
-                          showToast(res.message, 'success');
-                          window.dispatchEvent(
-                            new CustomEvent('xentro-navigate-tab', {
-                              detail: { tab: 'dashboard' },
-                            })
-                          );
-                        } catch (err: any) {
-                          showToast(err.message || 'Failed to switch workspace', 'error');
-                        }
-                      }}
-                      className="flex-1 sm:flex-initial px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 text-white hover:bg-emerald-500 transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer active:scale-95"
-                    >
-                      <span>{isCurrentActive ? `Open ${ent.name} Dashboard` : `Switch to ${ent.name}`}</span>
-                      <ArrowRight className="w-3 h-3" />
-                    </button>
-                  );
-                })}
-
-                {activeEntity && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const res = await entityContextService.switchPersona(profile.id, null);
-                        showToast(res.message, 'info');
-                        window.dispatchEvent(
-                          new CustomEvent('xentro-navigate-tab', {
-                            detail: { tab: res.destinationTab },
-                          })
-                        );
-                      } catch (err: any) {
-                        showToast(err.message || 'Failed to switch to personal account', 'error');
-                      }
-                    }}
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-gray-100 dark:bg-white/10 text-[#101212] dark:text-white hover:bg-gray-200 transition-colors flex items-center gap-1.5 cursor-pointer active:scale-95"
-                    title="Switch back to Personal Account"
-                  >
-                    <User className="w-3.5 h-3.5" />
-                    <span>Switch to Personal</span>
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Bio */}
           {profile.bio && (
