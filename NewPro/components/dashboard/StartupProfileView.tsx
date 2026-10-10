@@ -315,7 +315,7 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
 
   const parsedOperatingGeo = basicInfoOverride?.operatingGeography
     ? basicInfoOverride.operatingGeography.split(',').map((g) => g.trim()).filter(Boolean)
-    : baseStartup.identity.operatingGeography;
+    : (Array.isArray(baseStartup?.identity?.operatingGeography) ? baseStartup.identity.operatingGeography : []);
 
   const parsedUNSDGs = basicInfoOverride?.unsdgs
     ? basicInfoOverride.unsdgs.split(',').map((sdgText, idx) => {
@@ -330,7 +330,7 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
             : undefined,
         };
       }).filter((s) => s.title)
-    : baseStartup.unsdg;
+    : (Array.isArray(baseStartup?.unsdg) ? baseStartup.unsdg : []);
 
   const startup: FullStartupProfile = {
     ...baseStartup,
@@ -345,7 +345,7 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
           businessModelType: (basicInfoOverride?.businessModel as any) || baseStartup.identity.businessModelType,
           foundedYear: parsedFoundedYear,
           location: basicInfoOverride?.headquarters || userProfile.location || '',
-          operatingGeography: parsedOperatingGeo.length > 0 ? parsedOperatingGeo : [],
+          operatingGeography: (Array.isArray(parsedOperatingGeo) && parsedOperatingGeo.length > 0) ? parsedOperatingGeo : [],
           website: basicInfoOverride?.website || '',
           linkedin: basicInfoOverride?.linkedin || '',
           logo: basicInfoOverride?.logo || userProfile.avatar || '/xentro-logo.png',

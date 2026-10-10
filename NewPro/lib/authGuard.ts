@@ -654,6 +654,10 @@ export function logoutFromNewPro(): void {
     localStorage.removeItem('xentro_shared_messages_v3');
     localStorage.removeItem('xentro_active_conversation_id');
     localStorage.removeItem('xentro_notifications_state');
+    localStorage.removeItem('xentro_active_entity_id');
+    localStorage.removeItem('xentro_user_linked_entities');
+    localStorage.removeItem('xentro_entity_id');
+    localStorage.removeItem('xentro_account_type');
     sessionStorage.clear();
     // Expire session cookies
     document.cookie = `${SESSION_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax`;

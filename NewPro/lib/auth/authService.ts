@@ -954,6 +954,10 @@ export const authService = {
     removeStorageItem("xentro_onboarding_complete");
     removeStorageItem("xentro_user_profile");
     removeStorageItem("xentro_active_role");
+    removeStorageItem("xentro_active_entity_id");
+    removeStorageItem("xentro_user_linked_entities");
+    removeStorageItem("xentro_entity_id");
+    removeStorageItem("xentro_account_type");
     if (typeof document !== "undefined") {
       document.cookie = "xentro_session=; path=/; max-age=0; SameSite=Lax";
     }

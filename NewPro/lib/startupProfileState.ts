@@ -385,8 +385,10 @@ export function setStartupTeamMembers(members: StartupTeamMember[]): void {
 }
 
 export function categorizeTeamMembers(members: StartupTeamMember[]) {
-  const publicOnly = members.filter(
+  const safeMembers = Array.isArray(members) ? members : [];
+  const publicOnly = safeMembers.filter(
     (m) =>
+      m &&
       (m.publicProfileVisible === undefined || m.publicProfileVisible === true) &&
       m.entityMembershipStatus !== 'removed'
   );

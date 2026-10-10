@@ -216,8 +216,14 @@ export const DashboardLayout: React.FC = () => {
 
   const showHeader = activeNavTab === 'feed';
 
-  // Personal stand-alone dashboard for Mentor/Investor personal accounts (no active entity)
-  if (activeNavTab === 'dashboard' && !activeEntity && userProfile.role !== 'explorer') {
+  // Dedicated standalone dashboard workspace for all personas and active entities
+  if (activeNavTab === 'dashboard') {
+    // Explorers without an active entity do not have a dedicated dashboard -> redirect to feed
+    if (!activeEntity && userProfile.role === 'explorer') {
+      setActiveNavTab('feed');
+      return null;
+    }
+
     return (
       <ToastProvider>
         <DashboardWorkspace
@@ -246,12 +252,6 @@ export const DashboardLayout: React.FC = () => {
         />
       </ToastProvider>
     );
-  }
-
-  // Explorers without an active entity do not have a dashboard
-  if (activeNavTab === 'dashboard' && !activeEntity && userProfile.role === 'explorer') {
-    setActiveNavTab('feed');
-    return null;
   }
 
 

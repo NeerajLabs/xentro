@@ -17,6 +17,11 @@ import { isDevToolsEnabled } from '@/lib/devTools';
 import { useToast } from '@/components/ui/Toast';
 import { personaDashboardConfigs, PersonaDashboardConfig } from './dashboardNavConfig';
 import { DashboardSidebar } from './DashboardSidebar';
+import {
+  entityContextService,
+  LinkedEntity,
+  ENTITY_CONTEXT_CHANGED_EVENT,
+} from '@/lib/entityContextService';
 
 // Startup Components
 import { StartupOverview } from '../startup/StartupOverview';
@@ -82,11 +87,14 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
 }) => {
   const { showToast } = useToast();
   const [profile, setProfile] = useState<UserProfile>(getUserProfile());
+  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
+    entityContextService.getActiveEntity()
+  );
   const [activeModuleId, setActiveModuleId] = useState<string>('overview');
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isCreateOrgOpen, setIsCreateOrgOpen] = useState(false);
 
-  // Sync role changes
+  // Sync role and entity changes
   useEffect(() => {
     const handleRoleChanged = (e: Event) => {
       const customEvent = e as CustomEvent;
@@ -101,20 +109,43 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
       }
     };
 
+    const handleEntityChanged = (e: Event) => {
+      const ce = e as CustomEvent;
+      setActiveEntity(ce.detail?.entity || entityContextService.getActiveEntity());
+    };
+
     const handleOpenCreateOrg = () => {
       setIsCreateOrgOpen(true);
     };
 
     window.addEventListener('xentro-role-changed', handleRoleChanged);
+    window.addEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntityChanged);
     window.addEventListener('xentro-open-create-investor-org', handleOpenCreateOrg);
     return () => {
       window.removeEventListener('xentro-role-changed', handleRoleChanged);
+      window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntityChanged);
       window.removeEventListener('xentro-open-create-investor-org', handleOpenCreateOrg);
     };
   }, [activeModuleId]);
 
-  const currentConfig: PersonaDashboardConfig =
-    personaDashboardConfigs[profile.role] || personaDashboardConfigs.startup;
+  const effectiveRole: UserRole = (activeEntity
+    ? activeEntity.entityType?.toLowerCase() === 'startup'
+      ? 'startup'
+      : activeEntity.entityType?.toLowerCase().includes('investor') || activeEntity.entityType === 'INVESTOR_ORG'
+      ? 'investor'
+      : activeEntity.entityType?.toLowerCase() === 'esp'
+      ? 'esp'
+      : (profile.role as UserRole)
+    : (profile.role as UserRole)) || 'startup';
+
+  const baseConfig = personaDashboardConfigs[effectiveRole] || personaDashboardConfigs.startup;
+  const currentConfig: PersonaDashboardConfig = activeEntity
+    ? {
+        ...baseConfig,
+        workspaceName: activeEntity.name ? `${activeEntity.name} Workspace` : baseConfig.workspaceName,
+        badge: activeEntity.entityType ? activeEntity.entityType.toUpperCase() : baseConfig.badge,
+      }
+    : baseConfig;
 
   const handleSwitchRole = (role: UserRole) => {
     const newProfile = setActiveRole(role);
@@ -267,16 +298,28 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
               <div className="space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className="text-xl sm:text-2xl font-bold font-sora text-[#101212] dark:text-white tracking-tight">
-                    {profile.name || 'Your Account'}
+                    {activeEntity ? (profile.name || activeEntity.primaryOwnerName || 'Founder') : (profile.name || 'Your Account')}
                   </h1>
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider bg-[#D9FF3F] text-[#101212] shadow-2xs">
-                    {profile.role}
+                    {activeEntity ? (activeEntity.entityType?.toUpperCase() || 'STARTUP') : profile.role}
                   </span>
                 </div>
                 <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                  <span className="font-semibold text-[#101212] dark:text-white">{profile.roleTitle || 'Verified Member'}</span>
-                  {profile.organization && <span> &bull; {profile.organization}</span>}
-                  {profile.sector && <span className="text-[#565B59]"> &bull; {profile.sector}</span>}
+                  {activeEntity ? (
+                    <>
+                      <span className="font-semibold text-[#101212] dark:text-white">
+                        {activeEntity.role || 'Founder & CEO'}
+                      </span>
+                      <span> &bull; {activeEntity.name}</span>
+                      <span> &bull; {activeEntity.sector || 'Enterprise AI & Automation'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-semibold text-[#101212] dark:text-white">{profile.roleTitle || 'Verified Member'}</span>
+                      {profile.organization && <span> &bull; {profile.organization}</span>}
+                      {profile.sector && <span className="text-[#565B59]"> &bull; {profile.sector}</span>}
+                    </>
+                  )}
                 </p>
               </div>
 
@@ -294,7 +337,7 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                       .filter((pill) => isDevToolsEnabled() || getUserRegisteredRoles().includes(pill.role))
                       .map((pill) => {
                       const Icon = pill.icon;
-                      const isSelected = profile.role === pill.role;
+                      const isSelected = effectiveRole === pill.role;
                       return (
                         <button
                           key={pill.role}
@@ -316,7 +359,7 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
             </div>
 
             {/* Context Switcher for Investor Role */}
-            {profile.role === 'investor' && (
+            {effectiveRole === 'investor' && (
               <div className="pt-3 border-t border-[#E5E7EB] dark:border-[#262A29] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-xs font-semibold text-[#565B59] dark:text-[#B6B8B7]">
@@ -332,9 +375,9 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
           </div>
 
           {/* Module Content Rendering by Active Role */}
-          <div key={`${profile.role}_${activeModuleId}`} className="animate-fade-slide">
+          <div key={`${effectiveRole}_${activeModuleId}`} className="animate-fade-slide">
             {/* ================= STARTUP PERSONA ================= */}
-            {profile.role === 'startup' && (
+            {effectiveRole === 'startup' && (
               <>
                 {activeModuleId === 'overview' && (
                   <StartupOverview onNavigateTab={handleNavigateModule} />
@@ -384,7 +427,7 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
             )}
 
             {/* ================= INVESTOR PERSONA ================= */}
-            {profile.role === 'investor' && (
+            {effectiveRole === 'investor' && (
               <>
                 {activeModuleId === 'overview' && (
                   <InvestorOverview profile={profile} onNavigateTab={handleNavigateModule} />
@@ -434,7 +477,7 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
             )}
 
             {/* ================= MENTOR PERSONA ================= */}
-            {profile.role === 'mentor' && (
+            {effectiveRole === 'mentor' && (
               <>
                 {activeModuleId === 'overview' && (
                   <MentorOverviewContent onNavigateModule={handleNavigateModule} />
@@ -486,7 +529,7 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
             )}
 
             {/* ================= ESP PERSONA ================= */}
-            {profile.role === 'esp' && (
+            {effectiveRole === 'esp' && (
               <>
                 {activeModuleId === 'overview' && (
                   <ESPOverview profile={profile} onNavigateTab={handleNavigateModule} />
@@ -534,7 +577,7 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
             )}
 
             {/* ================= EXPLORER (GUEST) ================= */}
-            {profile.role === 'explorer' && (
+            {effectiveRole === 'explorer' && (
               <div className="p-6 sm:p-8 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] text-center space-y-3">
                 <div className="w-12 h-12 rounded-2xl bg-[#D9FF3F]/15 border border-[#D9FF3F]/40 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center mx-auto">
                   <Compass className="w-6 h-6" />

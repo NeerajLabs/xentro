@@ -250,6 +250,21 @@ class EntityContextService {
       this.setActiveEntityId(null);
     }
   }
+
+  clearSession(): void {
+    if (typeof window === 'undefined') return;
+    try {
+      localStorage.removeItem(this.ACTIVE_ENTITY_KEY);
+      localStorage.removeItem(this.ENTITIES_KEY);
+      window.dispatchEvent(
+        new CustomEvent(ENTITY_CONTEXT_CHANGED_EVENT, {
+          detail: { entityId: null, entity: null },
+        })
+      );
+    } catch (err) {
+      console.error('[EntityContextService] Failed to clear session:', err);
+    }
+  }
 }
 
 export const entityContextService = new EntityContextService();

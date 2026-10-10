@@ -234,6 +234,9 @@ export default function SignInPage() {
     localStorage.setItem("xentro_account_type", canonicalAccountType);
     if (signedInUser.entityId) {
       localStorage.setItem("xentro_entity_id", signedInUser.entityId);
+    } else {
+      localStorage.removeItem("xentro_entity_id");
+      localStorage.removeItem("xentro_active_entity_id");
     }
 
     const hasChosenPath = Boolean(
