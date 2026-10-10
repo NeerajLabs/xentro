@@ -186,14 +186,14 @@ export const SignupForm: React.FC = () => {
         accountType: "Explorer",
       };
 
-      let resp = await fetch(`${backendUrl}/auth/signup/step1/`, {
+      let resp = await fetch(`${backendUrl}/auth/signup/otp/send/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
       if (!resp.ok && resp.status === 404) {
-        resp = await fetch(`${backendUrl}/auth/signup/otp/send/`, {
+        resp = await fetch(`${backendUrl}/auth/otp/send/`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -294,15 +294,42 @@ export const SignupForm: React.FC = () => {
 
     try {
       const backendUrl = getBackendBaseUrl();
-      const resp = await fetch(`${backendUrl}/auth/signup/otp/verify/`, {
+      const payload = {
+        email: formData.email.trim().toLowerCase(),
+        otp: otpCode.trim(),
+        code: otpCode.trim(),
+      };
+
+      // 1. Try Render live endpoint (/auth/otp/verify/)
+      let resp = await fetch(`${backendUrl}/auth/otp/verify/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          email: formData.email.trim().toLowerCase(),
-          otp: otpCode.trim(),
-          code: otpCode.trim(),
-        }),
+        body: JSON.stringify(payload),
       });
+
+      // 2. Try alternate Render endpoint (/auth/signup/otp/verify/)
+      if (!resp.ok && resp.status === 404) {
+        resp = await fetch(`${backendUrl}/auth/signup/otp/verify/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+
+      // 3. Fallback to resilient internal Next.js route backed by MongoDB Atlas
+      if (!resp.ok) {
+        try {
+          const localResp = await fetch('/api/auth/otp/verify', {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          if (localResp.ok) {
+            resp = localResp;
+          }
+        } catch (_) {}
+      }
+
       const data = await resp.json();
 
       if (resp.ok && data?.success) {
