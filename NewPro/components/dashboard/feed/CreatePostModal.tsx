@@ -19,11 +19,16 @@ import { UserProfile, defaultProfiles, UserRole, GUEST_AVATAR } from '@/lib/user
 import { feedService, CreatePostInput } from '@/lib/feedService';
 import { Post } from '@/types';
 import { useToast } from '@/components/ui/Toast';
+import {
+  entityContextService,
+  LinkedEntity,
+} from '@/lib/entityContextService';
 
 interface CreatePostModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentUserProfile: UserProfile;
+  activeEntity?: LinkedEntity | null;
   initialIntent?: string;
   initialImageUrl?: string;
   onPostCreated?: (newPost: Post) => void;
@@ -187,6 +192,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   isOpen,
   onClose,
   currentUserProfile,
+  activeEntity,
   initialIntent,
   initialImageUrl,
   onPostCreated,
@@ -194,10 +200,20 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   const { showToast } = useToast();
   const modalFileInputRef = useRef<HTMLInputElement>(null);
 
+  const effectiveEntity = activeEntity !== undefined
+    ? activeEntity
+    : (typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null);
+
   // Active persona for the post
-  const [selectedRole, setSelectedRole] = useState<ExtendedRole>(
-    currentUserProfile.role || 'startup'
-  );
+  const [selectedRole, setSelectedRole] = useState<ExtendedRole>(() => {
+    if (effectiveEntity) {
+      const et = effectiveEntity.entityType?.toLowerCase() || '';
+      if (et === 'startup') return 'startup';
+      if (et.includes('investor')) return 'investor';
+      if (et === 'esp') return 'esp';
+    }
+    return currentUserProfile.role || 'startup';
+  });
   const [isPersonaMenuOpen, setIsPersonaMenuOpen] = useState(false);
 
   // Form states
@@ -238,7 +254,13 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
   // Sync role and defaults when opened
   useEffect(() => {
     if (isOpen) {
-      const initialRole = (currentUserProfile.role || 'startup') as ExtendedRole;
+      let initialRole = (currentUserProfile.role || 'startup') as ExtendedRole;
+      if (effectiveEntity) {
+        const et = effectiveEntity.entityType?.toLowerCase() || '';
+        if (et === 'startup') initialRole = 'startup';
+        else if (et.includes('investor')) initialRole = 'investor';
+        else if (et === 'esp') initialRole = 'esp';
+      }
       setSelectedRole(initialRole);
       const defaultTypes = POST_TYPES_BY_ROLE[initialRole] || POST_TYPES_BY_ROLE.startup;
       setPostType(defaultTypes[0]);
@@ -349,17 +371,21 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     }
   };
 
-  // Author identity is ALWAYS the signed-in user's real profile (never a demo persona).
-  // The role-specific presets only drive labels/colors, not names or avatars.
+  // Author identity: when an entity workspace is active, default post identity is the entity!
+  const isEntityPosting = Boolean(effectiveEntity && (
+    (selectedRole === 'startup' && effectiveEntity.entityType?.toLowerCase() === 'startup') ||
+    (selectedRole === 'investor' && effectiveEntity.entityType?.toLowerCase().includes('investor')) ||
+    (selectedRole === 'esp' && effectiveEntity.entityType?.toLowerCase() === 'esp')
+  ));
+
   const rolePreset = PERSONA_OPTIONS.find((p) => p.role === selectedRole);
   const currentPersona: PersonaOption = {
     role: selectedRole,
-    name: currentUserProfile.name || 'You',
-    roleTitle:
-      currentUserProfile.roleTitle || (selectedRole === 'explorer' ? 'Ecosystem Explorer' : ''),
-    organization: currentUserProfile.organization || (selectedRole === 'explorer' ? 'Xentro Ecosystem' : ''),
-    avatar: currentUserProfile.avatar || GUEST_AVATAR,
-    badgeLabel: rolePreset?.badgeLabel || 'Xentro User',
+    name: isEntityPosting ? effectiveEntity!.name : (currentUserProfile.name || 'You'),
+    roleTitle: isEntityPosting ? (effectiveEntity!.role || 'Founder & CEO') : (currentUserProfile.roleTitle || (selectedRole === 'explorer' ? 'Ecosystem Explorer' : '')),
+    organization: isEntityPosting ? effectiveEntity!.name : (currentUserProfile.organization || (selectedRole === 'explorer' ? 'Xentro Ecosystem' : '')),
+    avatar: isEntityPosting ? (effectiveEntity!.logo || currentUserProfile.avatar || GUEST_AVATAR) : (currentUserProfile.avatar || GUEST_AVATAR),
+    badgeLabel: isEntityPosting ? `${effectiveEntity!.name} (Verified)` : (rolePreset?.badgeLabel || 'Xentro User'),
     color: rolePreset?.color || 'bg-gray-100 text-[#101212] border-gray-300',
   };
 
@@ -409,27 +435,20 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
 
       // Use active user's actual profile if available for the selected role
       const isSelectedOwnRole = selectedRole === currentUserProfile.role;
-      const authorName = (isSelectedOwnRole && currentUserProfile.name?.trim())
-        ? currentUserProfile.name.trim()
-        : currentPersona.name;
-      const authorRoleTitle = (isSelectedOwnRole && currentUserProfile.roleTitle?.trim())
-        ? currentUserProfile.roleTitle.trim()
-        : currentPersona.roleTitle;
-      const authorCompany = (isSelectedOwnRole && currentUserProfile.organization?.trim())
-        ? currentUserProfile.organization.trim()
-        : currentPersona.organization;
-      const authorAvatar = (isSelectedOwnRole && currentUserProfile.avatar)
-        ? currentUserProfile.avatar
-        : currentPersona.avatar;
+      const authorId = isEntityPosting ? effectiveEntity!.id : (currentUserProfile.id || `user_${selectedRole}_${Date.now()}`);
+      const authorName = currentPersona.name;
+      const authorRoleTitle = currentPersona.roleTitle;
+      const authorCompany = currentPersona.organization;
+      const authorAvatar = currentPersona.avatar;
 
       const authorData = {
-        id: currentUserProfile.id || `user_${selectedRole}_${Date.now()}`,
+        id: authorId,
         name: authorName,
         username: authorName.toLowerCase().replace(/[^a-z0-9]/g, '') || 'member',
         role: authorRoleTitle,
         company: authorCompany,
         avatar: authorAvatar,
-        verified: isSelectedOwnRole ? true : false,
+        verified: isEntityPosting || isSelectedOwnRole,
       };
 
       const newPostInput: CreatePostInput = {

@@ -191,7 +191,7 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
 
       {/* 2. Render Corresponding Role / Entity Dashboard */}
       <div key={activeEntity ? activeEntity.id : profile.role} className="animate-fade-slide">
-        {activeEntity?.entityType === 'Startup' ? (
+        {activeEntity?.entityType?.toLowerCase() === 'startup' ? (
           <StartupDashboard
             profile={{
               ...profile,
@@ -202,7 +202,7 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
             }}
             onNavigateTab={onNavigateTab}
           />
-        ) : activeEntity?.entityType === 'Investor Organization' ? (
+        ) : (activeEntity?.entityType?.toLowerCase().includes('investor') || activeEntity?.entityType === 'Investor Organization') ? (
           <InvestorDashboard
             profile={{
               ...profile,
@@ -213,7 +213,7 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
             }}
             onNavigateTab={onNavigateTab}
           />
-        ) : activeEntity?.entityType === 'ESP' ? (
+        ) : activeEntity?.entityType?.toLowerCase() === 'esp' ? (
           <ESPDashboard
             profile={{
               ...profile,

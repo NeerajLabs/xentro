@@ -1,4 +1,6 @@
-import React, { useRef, useState, useEffect } from 'react';
+'use client';
+
+import React, { useRef } from 'react';
 import {
   Upload,
   Rocket,
@@ -19,22 +21,31 @@ import {
 
 interface CreatePostTriggerProps {
   userProfile: UserProfile;
+  activeEntity?: LinkedEntity | null;
   onOpenModal: (initialIntent?: string, initialImageUrl?: string) => void;
 }
 
 export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
   userProfile,
+  activeEntity,
   onOpenModal,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
-    entityContextService.getActiveEntity()
+
+  const [currentEntity, setCurrentEntity] = React.useState<LinkedEntity | null>(() =>
+    activeEntity !== undefined ? activeEntity : entityContextService.getActiveEntity()
   );
 
-  useEffect(() => {
+  React.useEffect(() => {
+    if (activeEntity !== undefined) {
+      setCurrentEntity(activeEntity);
+    }
+  }, [activeEntity]);
+
+  React.useEffect(() => {
     const handleEntitySwitch = (e: Event) => {
-      const ce = e as CustomEvent;
-      setActiveEntity(ce.detail?.entity || entityContextService.getActiveEntity());
+      const customEvent = e as CustomEvent;
+      setCurrentEntity(customEvent.detail?.entity || entityContextService.getActiveEntity());
     };
     window.addEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
     return () => {
@@ -42,46 +53,43 @@ export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
     };
   }, []);
 
-  // Format role badge styling and label based on activeEntity or personal userProfile
+  const isStartupEntity = currentEntity?.entityType?.toLowerCase() === 'startup';
+  const isInvestorEntity = Boolean(currentEntity?.entityType?.toLowerCase().includes('investor'));
+  const isEspEntity = currentEntity?.entityType?.toLowerCase() === 'esp';
+
+  const avatarUrl = currentEntity?.logo || userProfile.avatar || '/images/profile_avatar.webp';
+  const displayName = currentEntity ? currentEntity.name : userProfile.name;
+
+  // Format role badge styling and label
   const getRoleBadge = () => {
-    if (activeEntity) {
-      const type = (activeEntity.entityType || '').toLowerCase();
-      if (type === 'startup') {
-        return {
-          icon: <Rocket className="w-3 h-3 text-[#101212] dark:text-[#D9FF3F]" />,
-          label: `${activeEntity.name} (Startup Founder)`,
-          bg: 'bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] border-[#D9FF3F]/40',
-          placeholder: `Share an update, product launch, hiring ask, or milestone for ${activeEntity.name}...`,
-          symbol: 'S',
-          avatar: activeEntity.logo || null,
-          initials: activeEntity.name.slice(0, 2).toUpperCase(),
-          name: activeEntity.name,
-        };
-      }
-      if (type.includes('investor')) {
-        return {
-          icon: <Briefcase className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />,
-          label: `${activeEntity.name} (Investor Organization)`,
-          bg: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
-          placeholder: `Share market thesis, portfolio update, or call for pitches...`,
-          symbol: 'I',
-          avatar: activeEntity.logo || null,
-          initials: activeEntity.name.slice(0, 2).toUpperCase(),
-          name: activeEntity.name,
-        };
-      }
-      if (type === 'esp') {
-        return {
-          icon: <Building2 className="w-3 h-3 text-blue-600 dark:text-blue-400" />,
-          label: `${activeEntity.name} (Incubator / ESP)`,
-          bg: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30',
-          placeholder: `Announce cohort openings, grant deadlines, or demo day...`,
-          symbol: 'E',
-          avatar: activeEntity.logo || null,
-          initials: activeEntity.name.slice(0, 2).toUpperCase(),
-          name: activeEntity.name,
-        };
-      }
+    if (isStartupEntity) {
+      return {
+        icon: <Rocket className="w-3 h-3 text-[#101212] dark:text-[#D9FF3F]" />,
+        label: `${currentEntity?.name} (Startup)`,
+        letter: 'S',
+        bg: 'bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] border-[#D9FF3F]/40',
+        placeholder: `Share an update, product launch, hiring ask, or milestone for ${currentEntity?.name}...`,
+      };
+    }
+
+    if (isInvestorEntity) {
+      return {
+        icon: <Briefcase className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />,
+        label: `${currentEntity?.name} (Investor)`,
+        letter: 'I',
+        bg: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
+        placeholder: `Share market thesis, portfolio update, or call for pitches for ${currentEntity?.name}...`,
+      };
+    }
+
+    if (isEspEntity) {
+      return {
+        icon: <Building2 className="w-3 h-3 text-blue-600 dark:text-blue-400" />,
+        label: `${currentEntity?.name} (ESP)`,
+        letter: 'ESP',
+        bg: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30',
+        placeholder: `Announce cohort openings, grant opportunities, or demo day for ${currentEntity?.name}...`,
+      };
     }
 
     switch (userProfile.role) {
@@ -89,67 +97,49 @@ export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
         return {
           icon: <Compass className="w-3 h-3 text-[#101212] dark:text-[#D9FF3F]" />,
           label: 'Ecosystem Explorer',
+          letter: 'E',
           bg: 'bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] border-[#D9FF3F]/40',
           placeholder: "Share an idea, question, interesting discovery, or insight...",
-          symbol: 'E',
-          avatar: userProfile.avatar || null,
-          initials: (userProfile.name || 'EX').slice(0, 2).toUpperCase(),
-          name: userProfile.name,
         };
       case 'startup':
         return {
           icon: <Rocket className="w-3 h-3 text-[#101212] dark:text-[#D9FF3F]" />,
           label: 'Startup Founder',
+          letter: 'S',
           bg: 'bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] border-[#D9FF3F]/40',
           placeholder: "Share an update, product launch, hiring ask, or milestone...",
-          symbol: 'S',
-          avatar: userProfile.avatar || null,
-          initials: (userProfile.name || 'ST').slice(0, 2).toUpperCase(),
-          name: userProfile.name,
         };
       case 'investor':
         return {
           icon: <Briefcase className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />,
           label: 'Investor',
+          letter: 'I',
           bg: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30',
           placeholder: "Share market thesis, portfolio update, or call for pitches...",
-          symbol: 'I',
-          avatar: userProfile.avatar || null,
-          initials: (userProfile.name || 'IN').slice(0, 2).toUpperCase(),
-          name: userProfile.name,
         };
       case 'mentor':
         return {
           icon: <GraduationCap className="w-3 h-3 text-purple-600 dark:text-purple-400" />,
           label: 'Advisory Mentor',
+          letter: 'M',
           bg: 'bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-500/30',
           placeholder: "Share mentorship insight, office hours, or architecture tip...",
-          symbol: 'M',
-          avatar: userProfile.avatar || null,
-          initials: (userProfile.name || 'ME').slice(0, 2).toUpperCase(),
-          name: userProfile.name,
         };
       case 'esp':
         return {
           icon: <Building2 className="w-3 h-3 text-blue-600 dark:text-blue-400" />,
           label: 'Incubator / ESP',
+          letter: 'ESP',
           bg: 'bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/30',
           placeholder: "Announce cohort openings, grant opportunities, or demo day...",
-          symbol: 'E',
-          avatar: userProfile.avatar || null,
-          initials: (userProfile.name || 'ES').slice(0, 2).toUpperCase(),
-          name: userProfile.name,
         };
       default:
         return {
           icon: <Sparkles className="w-3 h-3 text-[#9EBE12]" />,
           label: 'Innovator',
+          letter: 'E',
           bg: 'bg-gray-100 dark:bg-[#262A29] text-[#101212] dark:text-white border-gray-300',
           placeholder: "What's happening in your venture or ecosystem? Start a post...",
-          symbol: 'E',
-          avatar: userProfile.avatar || null,
-          initials: (userProfile.name || 'IN').slice(0, 2).toUpperCase(),
-          name: userProfile.name,
         };
     }
   };
@@ -193,34 +183,19 @@ export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
       {/* Top row: Avatar + Fake Input field */}
       <div className="flex items-center gap-3">
         <div className="relative flex-shrink-0">
-          {badge.avatar ? (
-            <img
-              src={badge.avatar}
-              alt={badge.name}
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover border border-[#E5E7EB] dark:border-[#262A29]"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = '/images/profile_avatar.webp';
-              }}
-            />
-          ) : activeEntity ? (
-            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#D9FF3F] text-[#101212] font-black text-xs flex items-center justify-center border border-[#E5E7EB] dark:border-[#262A29] shadow-2xs">
-              {badge.initials}
-            </div>
-          ) : (
-            <img
-              src={userProfile.avatar || '/images/profile_avatar.webp'}
-              alt={userProfile.name}
-              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover border border-[#E5E7EB] dark:border-[#262A29]"
-              onError={(e) => {
-                (e.target as HTMLImageElement).src = '/images/profile_avatar.webp';
-              }}
-            />
-          )}
+          <img
+            src={avatarUrl}
+            alt={displayName}
+            className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover border border-[#E5E7EB] dark:border-[#262A29]"
+            onError={(e) => {
+              (e.target as HTMLImageElement).src = '/images/profile_avatar.webp';
+            }}
+          />
           <span
-            className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] flex items-center justify-center text-[9px] font-bold border-2 border-white dark:border-[#181B1A]"
+            className="absolute -bottom-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] flex items-center justify-center text-[9px] font-bold border-2 border-white dark:border-[#181B1A]"
             title={`Active role: ${badge.label}`}
           >
-            {badge.symbol}
+            {badge.letter}
           </span>
         </div>
 

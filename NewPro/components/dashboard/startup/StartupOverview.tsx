@@ -51,6 +51,7 @@ import { useToast } from '@/components/ui/Toast';
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { messagingService, resolveAvatarUrl } from '@/lib/messagingService';
 import { getUserProfile } from '@/lib/userProfile';
+import { entityContextService } from '@/lib/entityContextService';
 import {
   getStartupBanner,
   setStartupBanner,
@@ -177,18 +178,18 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
       try {
         const storedProf = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
         if (storedProf) userProfile = JSON.parse(storedProf);
-      } catch (_) {}
+      } catch (_) { }
 
       try {
         const storedUser = localStorage.getItem('xentro_current_user') || localStorage.getItem('xentro_auth_user');
         if (storedUser) currentUser = JSON.parse(storedUser);
-      } catch (_) {}
+      } catch (_) { }
 
       let personalProfile: any = null;
       try {
         const rawPersonal = localStorage.getItem('xentro_personal_profile');
         if (rawPersonal) personalProfile = JSON.parse(rawPersonal);
-      } catch (_) {}
+      } catch (_) { }
 
       try {
         const rawEntities = localStorage.getItem('xentro_startup_entities');
@@ -198,13 +199,32 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
             startupEntity = parsed[parsed.length - 1];
           }
         }
-      } catch (_) {}
+      } catch (_) { }
+
+      const formatLocation = (loc: any): string => {
+        if (!loc) return 'India';
+        if (typeof loc === 'string') return loc;
+        if (typeof loc === 'object') {
+          return [loc.city, loc.state, loc.country].filter(Boolean).join(', ') || loc.address || 'India';
+        }
+        return String(loc);
+      };
+
+      const activeEnt = entityContextService.getActiveEntity();
+      if (activeEnt) {
+        startupEntity = {
+          ...startupEntity,
+          startupName: activeEnt.name,
+          role: activeEnt.role,
+        };
+      }
 
       const founderName = personalProfile?.fullName || startupEntity?.founderName || userProfile?.name || currentUser?.fullName || 'Founder';
-      const startupName = startupEntity?.startupName || userProfile?.organization || `${founderName}'s Venture`;
+      const startupName = activeEnt?.name || startupEntity?.startupName || userProfile?.organization || `${founderName}'s Venture`;
       const stage = startupEntity?.stage || userProfile?.stageOrFocus || 'Early Stage';
       const industry = startupEntity?.industry || personalProfile?.industries?.[0] || userProfile?.sector || 'Enterprise Software & Technology';
-      const location = personalProfile?.location || startupEntity?.location || userProfile?.location || 'India';
+      const rawLocation = personalProfile?.location || startupEntity?.location || userProfile?.location || 'India';
+      const location = formatLocation(rawLocation);
       const website = startupEntity?.website || personalProfile?.website || 'https://xentro.io';
 
       setData((prev) => ({
@@ -256,10 +276,10 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
           const category = roleLower.includes('investor')
             ? 'Investor'
             : roleLower.includes('mentor')
-            ? 'Mentor'
-            : roleLower.includes('esp')
-            ? 'ESP'
-            : 'Startup';
+              ? 'Mentor'
+              : roleLower.includes('esp')
+                ? 'ESP'
+                : 'Startup';
 
           return {
             id: partnerId || c.id,
@@ -285,7 +305,7 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
     };
 
     syncLiveConnections();
-    connectionService.syncFromServer().then(() => syncLiveConnections()).catch(() => {});
+    connectionService.syncFromServer().then(() => syncLiveConnections()).catch(() => { });
 
     const handleConnectionsUpdate = () => {
       syncLiveConnections();
@@ -407,7 +427,7 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
       setCameraStream(stream);
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
-        videoRef.current.play().catch(() => {});
+        videoRef.current.play().catch(() => { });
       }
     } catch (err: any) {
       console.warn('Direct webcam access failed or unavailable, providing camera input fallback:', err);
@@ -452,7 +472,7 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
   const retakeSnapshot = () => {
     setCapturedPhoto(null);
     if (videoRef.current && cameraStream) {
-      videoRef.current.play().catch(() => {});
+      videoRef.current.play().catch(() => { });
     }
   };
 
@@ -639,7 +659,7 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
                   </span>
                 </div>
                 <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
-                  Good afternoon, <strong className="text-[#101212] dark:text-white font-semibold">{data.identity.founderName}</strong> &bull; {data.identity.stage} &bull; {data.identity.headquarters}
+                  Good afternoon, <strong className="text-[#101212] dark:text-white font-semibold">{data.identity.founderName}</strong> &bull; {data.identity.stage} &bull; {typeof data.identity.headquarters === 'object' && data.identity.headquarters ? ([(data.identity.headquarters as any).city, (data.identity.headquarters as any).state, (data.identity.headquarters as any).country].filter(Boolean).join(', ') || 'India') : (data.identity.headquarters || 'India')}
                 </p>
               </div>
             </div>
@@ -835,17 +855,15 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
         >
           <div className="flex items-center justify-between text-[#565B59] dark:text-[#B6B8B7]">
             <span className="text-[10px] font-bold uppercase tracking-wider">Billing Status</span>
-            <div className={`p-1 rounded-lg ${
-              failedPaymentSim
+            <div className={`p-1 rounded-lg ${failedPaymentSim
                 ? 'bg-rose-500/15 text-rose-500'
                 : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-            }`}>
+              }`}>
               <CreditCard className="w-3.5 h-3.5" />
             </div>
           </div>
-          <div className={`text-xs sm:text-sm font-bold font-sora truncate ${
-            failedPaymentSim ? 'text-rose-600 dark:text-rose-400' : 'text-[#101212] dark:text-white'
-          }`}>
+          <div className={`text-xs sm:text-sm font-bold font-sora truncate ${failedPaymentSim ? 'text-rose-600 dark:text-rose-400' : 'text-[#101212] dark:text-white'
+            }`}>
             {failedPaymentSim ? 'Payment Overdue' : 'Good Standing'}
           </div>
           <p className="text-[9px] text-[#565B59] dark:text-[#B6B8B7] truncate">
@@ -1043,9 +1061,8 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
                 className="flex items-center justify-between text-xs p-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]"
               >
                 <div className="flex items-center gap-2">
-                  <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
-                    item.completed ? 'bg-emerald-500 text-white' : 'bg-gray-300 dark:bg-gray-600 text-transparent'
-                  }`}>
+                  <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${item.completed ? 'bg-emerald-500 text-white' : 'bg-gray-300 dark:bg-gray-600 text-transparent'
+                    }`}>
                     <Check className="w-3 h-3" />
                   </div>
                   <span className={`font-semibold ${item.completed ? 'text-[#101212] dark:text-white' : 'text-[#565B59] dark:text-[#B6B8B7]'}`}>
@@ -1218,9 +1235,8 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
             <div className="space-y-1.5">
               {data.progressTracker.company.map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2 text-xs">
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${
-                    item.completed ? 'bg-emerald-500 text-white' : 'border border-gray-400'
-                  }`}>
+                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${item.completed ? 'bg-emerald-500 text-white' : 'border border-gray-400'
+                    }`}>
                     {item.completed && <Check className="w-2.5 h-2.5" />}
                   </div>
                   <span className={item.completed ? 'text-[#101212] dark:text-white font-medium' : 'text-[#565B59]'}>
@@ -1240,9 +1256,8 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
             <div className="space-y-1.5">
               {data.progressTracker.product.map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2 text-xs">
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${
-                    item.completed ? 'bg-emerald-500 text-white' : item.current ? 'bg-[#D9FF3F] text-[#101212]' : 'border border-gray-400'
-                  }`}>
+                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${item.completed ? 'bg-emerald-500 text-white' : item.current ? 'bg-[#D9FF3F] text-[#101212]' : 'border border-gray-400'
+                    }`}>
                     {item.completed ? <Check className="w-2.5 h-2.5" /> : item.current ? '•' : ''}
                   </div>
                   <span className={item.current ? 'font-bold text-[#9EBE12] dark:text-[#D9FF3F]' : item.completed ? 'text-[#101212] dark:text-white font-medium' : 'text-[#565B59]'}>
@@ -1262,9 +1277,8 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
             <div className="space-y-1.5">
               {data.progressTracker.market.map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2 text-xs">
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${
-                    item.completed ? 'bg-emerald-500 text-white' : item.current ? 'bg-[#D9FF3F] text-[#101212]' : 'border border-gray-400'
-                  }`}>
+                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${item.completed ? 'bg-emerald-500 text-white' : item.current ? 'bg-[#D9FF3F] text-[#101212]' : 'border border-gray-400'
+                    }`}>
                     {item.completed ? <Check className="w-2.5 h-2.5" /> : item.current ? '•' : ''}
                   </div>
                   <span className={item.current ? 'font-bold text-[#9EBE12] dark:text-[#D9FF3F]' : item.completed ? 'text-[#101212] dark:text-white font-medium' : 'text-[#565B59]'}>
@@ -1284,9 +1298,8 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
             <div className="space-y-1.5">
               {data.progressTracker.funding.map((item, idx) => (
                 <div key={idx} className="flex items-center gap-2 text-xs">
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${
-                    item.completed ? 'bg-emerald-500 text-white' : item.current ? 'bg-[#D9FF3F] text-[#101212]' : 'border border-gray-400'
-                  }`}>
+                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${item.completed ? 'bg-emerald-500 text-white' : item.current ? 'bg-[#D9FF3F] text-[#101212]' : 'border border-gray-400'
+                    }`}>
                     {item.completed ? <Check className="w-2.5 h-2.5" /> : item.current ? '•' : ''}
                   </div>
                   <span className={item.current ? 'font-bold text-[#9EBE12] dark:text-[#D9FF3F]' : item.completed ? 'text-[#101212] dark:text-white font-medium' : 'text-[#565B59]'}>
@@ -1408,11 +1421,10 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
               <button
                 key={cat}
                 onClick={() => setActiveConnectionCategory(cat)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap active:scale-95 ${
-                  activeConnectionCategory === cat
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap active:scale-95 ${activeConnectionCategory === cat
                     ? 'bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] shadow-2xs'
                     : 'text-[#565B59] dark:text-[#B6B8B7] hover:text-[#101212] dark:hover:text-white'
-                }`}
+                  }`}
               >
                 {cat === 'All' ? 'All' : `${cat}s`}
               </button>
@@ -1434,103 +1446,102 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
 
         {/* Connections Grid */}
         {connections.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-          {connections
-            .filter((c) => {
-              const matchesCat = activeConnectionCategory === 'All' || c.category === activeConnectionCategory;
-              const matchesQuery =
-                c.name.toLowerCase().includes(connectionSearchQuery.toLowerCase()) ||
-                c.organization.toLowerCase().includes(connectionSearchQuery.toLowerCase()) ||
-                c.role.toLowerCase().includes(connectionSearchQuery.toLowerCase());
-              return matchesCat && matchesQuery;
-            })
-            .map((conn) => (
-              <div
-                key={conn.id}
-                className="p-4 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] hover:border-[#D9FF3F]/50 transition-all space-y-3 flex flex-col justify-between"
-              >
-                <div className="space-y-2.5">
-                  <div className="flex items-start justify-between gap-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <img
-                        src={conn.avatar}
-                        alt={conn.name}
-                        className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-[#262A29]"
-                      />
-                      <div>
-                        <h4 className="text-xs font-bold text-[#101212] dark:text-white line-clamp-1">
-                          {conn.name}
-                        </h4>
-                        <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] line-clamp-1">
-                          {conn.role} &bull; {conn.organization}
-                        </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
+            {connections
+              .filter((c) => {
+                const matchesCat = activeConnectionCategory === 'All' || c.category === activeConnectionCategory;
+                const matchesQuery =
+                  c.name.toLowerCase().includes(connectionSearchQuery.toLowerCase()) ||
+                  c.organization.toLowerCase().includes(connectionSearchQuery.toLowerCase()) ||
+                  c.role.toLowerCase().includes(connectionSearchQuery.toLowerCase());
+                return matchesCat && matchesQuery;
+              })
+              .map((conn) => (
+                <div
+                  key={conn.id}
+                  className="p-4 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] hover:border-[#D9FF3F]/50 transition-all space-y-3 flex flex-col justify-between"
+                >
+                  <div className="space-y-2.5">
+                    <div className="flex items-start justify-between gap-2.5">
+                      <div className="flex items-center gap-2.5">
+                        <img
+                          src={conn.avatar}
+                          alt={conn.name}
+                          className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-[#262A29]"
+                        />
+                        <div>
+                          <h4 className="text-xs font-bold text-[#101212] dark:text-white line-clamp-1">
+                            {conn.name}
+                          </h4>
+                          <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] line-clamp-1">
+                            {conn.role} &bull; {conn.organization}
+                          </p>
+                        </div>
                       </div>
-                    </div>
 
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                        conn.category === 'Investor'
-                          ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
-                          : conn.category === 'Mentor'
-                          ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
-                          : conn.category === 'ESP'
-                          ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
-                          : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                      }`}
-                    >
-                      {conn.category}
-                    </span>
-                  </div>
-
-                  {/* Stage or status pill */}
-                  {(conn.investorStage || conn.mentorStage || conn.founderNotes?.relationshipStatus) && (
-                    <div className="flex items-center gap-1.5 text-[11px]">
-                      <span className="text-[#565B59] dark:text-[#8E9390]">Stage:</span>
-                      <span className="font-semibold text-[#101212] dark:text-white px-2 py-0.5 rounded-md bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29]">
-                        {conn.investorStage || conn.mentorStage || conn.founderNotes?.relationshipStatus}
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${conn.category === 'Investor'
+                            ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                            : conn.category === 'Mentor'
+                              ? 'bg-purple-500/10 text-purple-600 dark:text-purple-400'
+                              : conn.category === 'ESP'
+                                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400'
+                                : 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                          }`}
+                      >
+                        {conn.category}
                       </span>
                     </div>
-                  )}
 
-                  {/* Founder private note snippet if exists */}
-                  {conn.founderNotes?.notes && (
-                    <div className="p-2 rounded-xl bg-white dark:bg-[#181B1A] border border-gray-100 dark:border-[#262A29] text-[11px] text-[#565B59] dark:text-[#B6B8B7] line-clamp-2">
-                      <span className="font-semibold text-[#101212] dark:text-white mr-1">Note:</span>
-                      {conn.founderNotes.notes}
-                    </div>
-                  )}
+                    {/* Stage or status pill */}
+                    {(conn.investorStage || conn.mentorStage || conn.founderNotes?.relationshipStatus) && (
+                      <div className="flex items-center gap-1.5 text-[11px]">
+                        <span className="text-[#565B59] dark:text-[#8E9390]">Stage:</span>
+                        <span className="font-semibold text-[#101212] dark:text-white px-2 py-0.5 rounded-md bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29]">
+                          {conn.investorStage || conn.mentorStage || conn.founderNotes?.relationshipStatus}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Founder private note snippet if exists */}
+                    {conn.founderNotes?.notes && (
+                      <div className="p-2 rounded-xl bg-white dark:bg-[#181B1A] border border-gray-100 dark:border-[#262A29] text-[11px] text-[#565B59] dark:text-[#B6B8B7] line-clamp-2">
+                        <span className="font-semibold text-[#101212] dark:text-white mr-1">Note:</span>
+                        {conn.founderNotes.notes}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex items-center justify-between pt-2.5 border-t border-gray-200/60 dark:border-[#262A29]">
+                    <button
+                      onClick={() => openNoteEditor(conn)}
+                      className="px-2.5 py-1 rounded-lg bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29] hover:border-[#D9FF3F] text-[11px] font-semibold text-[#565B59] hover:text-[#101212] dark:hover:text-white transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      <span>Private Notes</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        showToast(`Opening chat with ${conn.name}...`, 'info');
+                        messagingService.startOrOpenConversation({
+                          id: conn.id,
+                          name: conn.name,
+                          role: conn.role,
+                          avatar: conn.avatar,
+                        });
+                        window.dispatchEvent(new CustomEvent('xentro-open-messages', { detail: { participant: conn.name, partnerId: conn.id } }));
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-[#D9FF3F] hover:bg-[#C7F020] text-[11px] font-bold text-[#101212] transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95"
+                    >
+                      <MessageSquare className="w-3 h-3" />
+                      <span>Message</span>
+                    </button>
+                  </div>
                 </div>
-
-                {/* Actions */}
-                <div className="flex items-center justify-between pt-2.5 border-t border-gray-200/60 dark:border-[#262A29]">
-                  <button
-                    onClick={() => openNoteEditor(conn)}
-                    className="px-2.5 py-1 rounded-lg bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29] hover:border-[#D9FF3F] text-[11px] font-semibold text-[#565B59] hover:text-[#101212] dark:hover:text-white transition-all flex items-center gap-1 cursor-pointer"
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    <span>Private Notes</span>
-                  </button>
-
-                  <button
-                    onClick={() => {
-                      showToast(`Opening chat with ${conn.name}...`, 'info');
-                      messagingService.startOrOpenConversation({
-                        id: conn.id,
-                        name: conn.name,
-                        role: conn.role,
-                        avatar: conn.avatar,
-                      });
-                      window.dispatchEvent(new CustomEvent('xentro-open-messages', { detail: { participant: conn.name, partnerId: conn.id } }));
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-[#D9FF3F] hover:bg-[#C7F020] text-[11px] font-bold text-[#101212] transition-all flex items-center gap-1 cursor-pointer shadow-2xs active:scale-95"
-                  >
-                    <MessageSquare className="w-3 h-3" />
-                    <span>Message</span>
-                  </button>
-                </div>
-              </div>
-            ))}
-        </div>
+              ))}
+          </div>
         ) : (
           <div className="py-12 px-6 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-center space-y-3">
             <div className="w-12 h-12 rounded-2xl bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center mx-auto">

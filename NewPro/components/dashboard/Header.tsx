@@ -9,6 +9,11 @@ import { isDevToolsEnabled } from '@/lib/devTools';
 import { notificationService, NOTIFICATIONS_UPDATED_EVENT, NotificationItem } from '@/lib/notificationService';
 import { CONVERSATIONS_UPDATED_EVENT } from '@/lib/messagingService';
 import { EntityAccountSwitcher } from './EntityAccountSwitcher';
+import {
+  entityContextService,
+  LinkedEntity,
+  ENTITY_CONTEXT_CHANGED_EVENT,
+} from '@/lib/entityContextService';
 
 interface HeaderProps {
   searchQuery: string;
@@ -34,6 +39,9 @@ export const Header: React.FC<HeaderProps> = ({
   const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile>(getUserProfile());
+  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
+    entityContextService.getActiveEntity()
+  );
   const [isDark, setIsDark] = useState(false);
   const notifRef = useRef<HTMLDivElement | null>(null);
   const userMenuRef = useRef<HTMLDivElement | null>(null);
@@ -103,9 +111,15 @@ export const Header: React.FC<HeaderProps> = ({
         setUserProfile(getUserProfile());
       }
     };
+    const handleEntitySwitch = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setActiveEntity(customEvent.detail?.entity || entityContextService.getActiveEntity());
+    };
     window.addEventListener('xentro-role-changed', handleRoleChanged);
+    window.addEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
     return () => {
       window.removeEventListener('xentro-role-changed', handleRoleChanged);
+      window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
     };
   }, []);
 
@@ -365,12 +379,12 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={() => setShowUserMenu(!showUserMenu)}
             className="flex items-center gap-2 p-1 rounded-full hover:ring-2 hover:ring-[#D9FF3F]/60 transition-all active:scale-95 ml-1 cursor-pointer"
             aria-label="User Account Menu"
-            title={`${userProfile.name} (${userProfile.role.toUpperCase()})`}
+            title={`${activeEntity ? activeEntity.name : userProfile.name} (${(activeEntity ? activeEntity.entityType : userProfile.role).toUpperCase()})`}
           >
             <div className="relative w-9 h-9 rounded-full overflow-hidden border border-[#E5E7EB] dark:border-gray-700">
               <img
-                src={userProfile.avatar || GUEST_AVATAR}
-                alt={userProfile.name}
+                src={activeEntity?.logo || userProfile.avatar || GUEST_AVATAR}
+                alt={activeEntity ? activeEntity.name : userProfile.name}
                 className="w-full h-full object-cover object-top"
               />
             </div>
@@ -383,25 +397,25 @@ export const Header: React.FC<HeaderProps> = ({
               <div className="flex items-center gap-3 p-2.5 rounded-xl bg-gray-50 dark:bg-[#202422]/60 mb-2">
                 <div className="w-10 h-10 rounded-full overflow-hidden border border-gray-200 dark:border-gray-700 flex-shrink-0">
                   <img
-                    src={userProfile.avatar || GUEST_AVATAR}
-                    alt={userProfile.name}
+                    src={activeEntity?.logo || userProfile.avatar || GUEST_AVATAR}
+                    alt={activeEntity ? activeEntity.name : userProfile.name}
                     className="w-full h-full object-cover object-top"
                   />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
                     <h4 className="text-xs font-bold text-[#101212] dark:text-white truncate">
-                      {userProfile.name}
+                      {activeEntity ? activeEntity.name : userProfile.name}
                     </h4>
                     <span className="text-[9px] uppercase font-bold px-1.5 py-0.5 rounded bg-[#D9FF3F] text-[#101212] font-mono">
-                      {userProfile.role}
+                      {activeEntity ? activeEntity.entityType : userProfile.role}
                     </span>
                   </div>
                   <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] truncate">
-                    {userProfile.organization || userProfile.roleTitle}
+                    {activeEntity ? (activeEntity.role || 'Entity Member') : (userProfile.organization || userProfile.roleTitle)}
                   </p>
                   <p className="text-[10px] text-[#565B59] dark:text-[#B6B8B7] truncate">
-                    {userProfile.email}
+                    {activeEntity?.officialEmail || userProfile.email}
                   </p>
                 </div>
               </div>

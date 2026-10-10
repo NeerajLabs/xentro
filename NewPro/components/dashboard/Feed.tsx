@@ -5,6 +5,11 @@ import { PostCard } from './PostCard';
 import { Post } from '@/types';
 import { getUserProfile, UserProfile } from '@/lib/userProfile';
 import { feedService, fetchInitialServerFeed } from '@/lib/feedService';
+import {
+  entityContextService,
+  LinkedEntity,
+  ENTITY_CONTEXT_CHANGED_EVENT,
+} from '@/lib/entityContextService';
 import { CreatePostTrigger } from './feed/CreatePostTrigger';
 import { CreatePostModal } from './feed/CreatePostModal';
 import { Sparkles, Plus, AlertCircle, RefreshCw } from 'lucide-react';
@@ -17,6 +22,9 @@ interface FeedProps {
 export const Feed: React.FC<FeedProps> = ({ searchQuery = '', onPostCreated }) => {
   const [posts, setPosts] = useState<Post[]>([]);
   const [userProfile, setUserProfile] = useState<UserProfile>(getUserProfile());
+  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
+    entityContextService.getActiveEntity()
+  );
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [modalInitialIntent, setModalInitialIntent] = useState<string | undefined>(undefined);
   const [modalInitialImageUrl, setModalInitialImageUrl] = useState<string | undefined>(undefined);
@@ -28,6 +36,7 @@ export const Feed: React.FC<FeedProps> = ({ searchQuery = '', onPostCreated }) =
     // Initial fetch from memory / storage and sync from authoritative server
     setPosts(feedService.getPosts());
     setUserProfile(getUserProfile());
+    setActiveEntity(entityContextService.getActiveEntity());
     fetchInitialServerFeed();
 
     const handleFeedUpdate = () => {
@@ -48,14 +57,21 @@ export const Feed: React.FC<FeedProps> = ({ searchQuery = '', onPostCreated }) =
       }
     };
 
+    const handleEntitySwitch = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      setActiveEntity(customEvent.detail?.entity || entityContextService.getActiveEntity());
+    };
+
     window.addEventListener('xentro-feed-updated', handleFeedUpdate);
     window.addEventListener('xentro-feed-error', handleFeedError);
     window.addEventListener('xentro-role-changed', handleRoleChanged);
+    window.addEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
 
     return () => {
       window.removeEventListener('xentro-feed-updated', handleFeedUpdate);
       window.removeEventListener('xentro-feed-error', handleFeedError);
       window.removeEventListener('xentro-role-changed', handleRoleChanged);
+      window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
     };
   }, []);
 
@@ -108,6 +124,7 @@ export const Feed: React.FC<FeedProps> = ({ searchQuery = '', onPostCreated }) =
       {/* 1. Create a Post Trigger Box */}
       <CreatePostTrigger
         userProfile={userProfile}
+        activeEntity={activeEntity}
         onOpenModal={handleOpenCreateModal}
       />
 
@@ -200,6 +217,7 @@ export const Feed: React.FC<FeedProps> = ({ searchQuery = '', onPostCreated }) =
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         currentUserProfile={userProfile}
+        activeEntity={activeEntity}
         initialIntent={modalInitialIntent}
         initialImageUrl={modalInitialImageUrl}
         onPostCreated={handlePostCreated}

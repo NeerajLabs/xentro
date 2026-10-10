@@ -1813,11 +1813,10 @@ export const StartupProfileManager: React.FC<StartupProfileManagerProps> = ({
                   showToast('Startup Profile set to Public', 'success');
                 }
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                !isGhostMode
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${!isGhostMode
                   ? 'bg-white dark:bg-[#181B1A] text-emerald-600 dark:text-emerald-400 shadow-xs'
                   : 'text-[#565B59] dark:text-[#B6B8B7]'
-              }`}
+                }`}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <span>Public</span>
@@ -1828,11 +1827,10 @@ export const StartupProfileManager: React.FC<StartupProfileManagerProps> = ({
                   setIsGhostConfirmOpen(true);
                 }
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                isGhostMode
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${isGhostMode
                   ? 'bg-white dark:bg-[#181B1A] text-amber-600 dark:text-amber-400 shadow-xs'
                   : 'text-[#565B59] dark:text-[#B6B8B7]'
-              }`}
+                }`}
             >
               <span className="w-2 h-2 rounded-full bg-amber-500" />
               <span>Ghost Mode</span>
@@ -1860,11 +1858,10 @@ export const StartupProfileManager: React.FC<StartupProfileManagerProps> = ({
       <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveSection('basic')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-            activeSection === 'basic'
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${activeSection === 'basic'
               ? 'bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] shadow-2xs'
               : 'text-[#565B59] dark:text-[#B6B8B7] hover:text-[#101212] dark:hover:text-white'
-          }`}
+            }`}
         >
           <Building2 className="w-3.5 h-3.5" />
           <span>Basic Info</span>
@@ -1872,11 +1869,10 @@ export const StartupProfileManager: React.FC<StartupProfileManagerProps> = ({
 
         <button
           onClick={() => setActiveSection('pitch')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-            activeSection === 'pitch' || activeSection === 'narrative'
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${activeSection === 'pitch' || activeSection === 'narrative'
               ? 'bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] shadow-2xs'
               : 'text-[#565B59] dark:text-[#B6B8B7] hover:text-[#101212] dark:hover:text-white'
-          }`}
+            }`}
         >
           <Video className="w-3.5 h-3.5" />
           <span>Pitch Deck</span>
@@ -1884,11 +1880,10 @@ export const StartupProfileManager: React.FC<StartupProfileManagerProps> = ({
 
         <button
           onClick={() => setActiveSection('team')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
-            activeSection === 'team'
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${activeSection === 'team'
               ? 'bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] shadow-2xs'
               : 'text-[#565B59] dark:text-[#B6B8B7] hover:text-[#101212] dark:hover:text-white'
-          }`}
+            }`}
         >
           <Users className="w-3.5 h-3.5" />
           <span>Team & Talent Asks</span>
@@ -1899,183 +1894,183 @@ export const StartupProfileManager: React.FC<StartupProfileManagerProps> = ({
       {activeSection === 'basic' && (
         <div className="space-y-6 animate-fade-slide">
           <div className="p-6 rounded-3xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-[#262A29]">
-            <div>
-              <h3 className="text-base font-bold text-[#101212] dark:text-white flex items-center gap-2">
-                <Building2 className="w-4 h-4 text-[#D9FF3F]" />
-                <span>Core Startup Identity</span>
-              </h3>
-              <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                Essential organization details visible to all founders, investors, and ecosystem accelerators.
-              </p>
-            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-[#262A29]">
+              <div>
+                <h3 className="text-base font-bold text-[#101212] dark:text-white flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-[#D9FF3F]" />
+                  <span>Core Startup Identity</span>
+                </h3>
+                <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                  Essential organization details visible to all founders, investors, and ecosystem accelerators.
+                </p>
+              </div>
 
-            <button
-              type="button"
-              onClick={handleSaveBasicInfo}
-              className="px-3.5 py-1.5 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 self-start sm:self-auto cursor-pointer active:scale-95"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span>Save Basic Info</span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <div>
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                Startup Legal / Registered Name
-              </label>
-              <input
-                type="text"
-                value={basicInfo.startupName}
-                onChange={(e) => updateBasicInfoField('startupName', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                Startup Stage
-              </label>
-              <select
-                value={basicInfo.stage}
-                onChange={(e) => updateBasicInfoField('stage', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
+              <button
+                type="button"
+                onClick={handleSaveBasicInfo}
+                className="px-3.5 py-1.5 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 self-start sm:self-auto cursor-pointer active:scale-95"
               >
-                <option>Idea / Validation</option>
-                <option>Pre-Seed · Verified</option>
-                <option>Seed Stage</option>
-                <option>Early Growth / Pre-Series A</option>
-                <option>Series A+</option>
-              </select>
+                <Save className="w-3.5 h-3.5" />
+                <span>Save Basic Info</span>
+              </button>
             </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                One-Line Tagline / Value Proposition
-              </label>
-              <input
-                type="text"
-                value={basicInfo.tagline}
-                onChange={(e) => updateBasicInfoField('tagline', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
-              />
-            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  Startup Legal / Registered Name
+                </label>
+                <input
+                  type="text"
+                  value={basicInfo.startupName}
+                  onChange={(e) => updateBasicInfoField('startupName', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                Primary Industry
-              </label>
-              <input
-                type="text"
-                value={basicInfo.industry}
-                onChange={(e) => updateBasicInfoField('industry', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
-              />
-            </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  Startup Stage
+                </label>
+                <select
+                  value={basicInfo.stage}
+                  onChange={(e) => updateBasicInfoField('stage', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
+                >
+                  <option>Idea / Validation</option>
+                  <option>Pre-Seed · Verified</option>
+                  <option>Seed Stage</option>
+                  <option>Early Growth / Pre-Series A</option>
+                  <option>Series A+</option>
+                </select>
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                Sub-Sector / Specialization
-              </label>
-              <input
-                type="text"
-                value={basicInfo.subSector}
-                onChange={(e) => updateBasicInfoField('subSector', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
-              />
-            </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  One-Line Tagline / Value Proposition
+                </label>
+                <input
+                  type="text"
+                  value={basicInfo.tagline}
+                  onChange={(e) => updateBasicInfoField('tagline', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                Business Model
-              </label>
-              <input
-                type="text"
-                value={basicInfo.businessModel}
-                onChange={(e) => updateBasicInfoField('businessModel', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
-              />
-            </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  Primary Industry
+                </label>
+                <input
+                  type="text"
+                  value={basicInfo.industry}
+                  onChange={(e) => updateBasicInfoField('industry', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                Headquarters
-              </label>
-              <input
-                type="text"
-                value={basicInfo.headquarters}
-                onChange={(e) => updateBasicInfoField('headquarters', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
-              />
-            </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  Sub-Sector / Specialization
+                </label>
+                <input
+                  type="text"
+                  value={basicInfo.subSector}
+                  onChange={(e) => updateBasicInfoField('subSector', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                Operating Geography
-              </label>
-              <input
-                type="text"
-                value={basicInfo.operatingGeography}
-                onChange={(e) => updateBasicInfoField('operatingGeography', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
-              />
-            </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  Business Model
+                </label>
+                <input
+                  type="text"
+                  value={basicInfo.businessModel}
+                  onChange={(e) => updateBasicInfoField('businessModel', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                Website URL
-              </label>
-              <input
-                type="url"
-                value={basicInfo.website}
-                onChange={(e) => updateBasicInfoField('website', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
-              />
-            </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  Headquarters
+                </label>
+                <input
+                  type="text"
+                  value={basicInfo.headquarters}
+                  onChange={(e) => updateBasicInfoField('headquarters', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
+                />
+              </div>
 
-            <div className="md:col-span-2">
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                Executive Overview & Mission
-              </label>
-              <textarea
-                rows={3}
-                value={basicInfo.overview}
-                onChange={(e) => updateBasicInfoField('overview', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden leading-relaxed"
-              />
-            </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  Operating Geography
+                </label>
+                <input
+                  type="text"
+                  value={basicInfo.operatingGeography}
+                  onChange={(e) => updateBasicInfoField('operatingGeography', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                UN Sustainable Development Goals (UNSDGs)
-              </label>
-              <input
-                type="text"
-                value={basicInfo.unsdgs}
-                onChange={(e) => updateBasicInfoField('unsdgs', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
-              />
-            </div>
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  Website URL
+                </label>
+                <input
+                  type="url"
+                  value={basicInfo.website}
+                  onChange={(e) => updateBasicInfoField('website', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
+                />
+              </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                Key Impact Areas
-              </label>
-              <input
-                type="text"
-                value={basicInfo.impactAreas}
-                onChange={(e) => updateBasicInfoField('impactAreas', e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
-              />
+              <div className="md:col-span-2">
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  Executive Overview & Mission
+                </label>
+                <textarea
+                  rows={3}
+                  value={basicInfo.overview}
+                  onChange={(e) => updateBasicInfoField('overview', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden leading-relaxed"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  UN Sustainable Development Goals (UNSDGs)
+                </label>
+                <input
+                  type="text"
+                  value={basicInfo.unsdgs}
+                  onChange={(e) => updateBasicInfoField('unsdgs', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
+                  Key Impact Areas
+                </label>
+                <input
+                  type="text"
+                  value={basicInfo.impactAreas}
+                  onChange={(e) => updateBasicInfoField('impactAreas', e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden"
+                />
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Company Information (Statutory & Incorporation) */}
-        {renderCompanyInfoCard()}
-      </div>
-    )}
+          {/* Company Information (Statutory & Incorporation) */}
+          {renderCompanyInfoCard()}
+        </div>
+      )}
 
       {/* SECTION 2: PITCH DECK */}
       {(activeSection === 'pitch' || activeSection === 'narrative') && (
@@ -2096,11 +2091,10 @@ export const StartupProfileManager: React.FC<StartupProfileManagerProps> = ({
                 key={pill.id}
                 type="button"
                 onClick={() => setPitchSubSection(pill.id as any)}
-                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                  pitchSubSection === pill.id
+                className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${pitchSubSection === pill.id
                     ? 'bg-[#101212] dark:bg-white text-white dark:text-[#101212] shadow-xs'
                     : 'bg-gray-100 dark:bg-[#202422] text-[#565B59] dark:text-[#B6B8B7] hover:bg-gray-200 dark:hover:bg-[#262A29]'
-                }`}
+                  }`}
               >
                 {pill.label}
               </button>
@@ -2111,298 +2105,296 @@ export const StartupProfileManager: React.FC<StartupProfileManagerProps> = ({
           {(pitchSubSection === 'all' || pitchSubSection === 'video') && (
             <div className="p-6 rounded-3xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-[#262A29]">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-base font-bold text-[#101212] dark:text-white">
-                    Elevator Pitch Video
-                  </h3>
-                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F]">
-                    Max 3 Minutes
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-[#101212] dark:text-white">
+                      Elevator Pitch Video
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F]">
+                      Max 3 Minutes
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                    First impression for institutional investors and cohort evaluation committees.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {elevatorVideo && (
+                    <button
+                      onClick={() => setIsVideoModalOpen(true)}
+                      className="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-bold text-[#101212] dark:text-white transition-all cursor-pointer flex items-center gap-1.5"
+                    >
+                      <Play className="w-3.5 h-3.5 text-[#101212] dark:text-[#D9FF3F]" />
+                      <span>Preview Video</span>
+                    </button>
+                  )}
+                  <button
+                    onClick={handleOpenVideoEditor}
+                    className="px-3.5 py-1.5 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-xs font-bold text-[#101212] transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-2xs"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{elevatorVideo ? 'Replace Video' : '+ Add Video'}</span>
+                  </button>
+                  {elevatorVideo && (
+                    <button
+                      onClick={handleRemoveVideo}
+                      className="p-1.5 rounded-xl border border-gray-200 dark:border-[#262A29] hover:bg-rose-50 dark:hover:bg-rose-950/20 text-gray-400 hover:text-rose-500 transition-all cursor-pointer"
+                      title="Remove pitch video"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {elevatorVideo ? (
+                <div className="p-4 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-[#101212] dark:bg-[#262A29] flex items-center justify-center text-[#D9FF3F] shrink-0">
+                      <Video className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold text-[#101212] dark:text-white">
+                        {elevatorVideo.title}
+                      </h4>
+                      <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                        Presenter: {elevatorVideo.presenterName} ({elevatorVideo.presenterRole}) &bull; Length: {elevatorVideo.duration} &bull; Synced {elevatorVideo.lastUpdated}
+                      </p>
+                    </div>
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 shrink-0">
+                    <Check className="w-3.5 h-3.5" /> Active in Header & Profile
                   </span>
                 </div>
-                <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                  First impression for institutional investors and cohort evaluation committees.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                {elevatorVideo && (
+              ) : (
+                <div className="p-8 text-center rounded-2xl bg-gray-50 dark:bg-[#202422] border border-dashed border-gray-200 dark:border-[#262A29] space-y-2">
+                  <Video className="w-8 h-8 mx-auto text-gray-400" />
+                  <h4 className="text-xs font-bold text-[#101212] dark:text-white">
+                    No Pitch Video Active
+                  </h4>
+                  <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] max-w-sm mx-auto">
+                    Upload a 2-3 minute elevator pitch video to give institutional evaluators an immediate overview of your vision.
+                  </p>
                   <button
-                    onClick={() => setIsVideoModalOpen(true)}
-                    className="px-3 py-1.5 rounded-xl bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-bold text-[#101212] dark:text-white transition-all cursor-pointer flex items-center gap-1.5"
+                    type="button"
+                    onClick={handleOpenVideoEditor}
+                    className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#D9FF3F] text-xs font-bold text-[#101212] cursor-pointer"
                   >
-                    <Play className="w-3.5 h-3.5 text-[#101212] dark:text-[#D9FF3F]" />
-                    <span>Preview Video</span>
+                    <Plus className="w-4 h-4" />
+                    <span>Upload Pitch Video</span>
                   </button>
-                )}
-                <button
-                  onClick={handleOpenVideoEditor}
-                  className="px-3.5 py-1.5 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-xs font-bold text-[#101212] transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-2xs"
-                >
-                  <Upload className="w-3.5 h-3.5" />
-                  <span>{elevatorVideo ? 'Replace Video' : '+ Add Video'}</span>
-                </button>
-                {elevatorVideo && (
-                  <button
-                    onClick={handleRemoveVideo}
-                    className="p-1.5 rounded-xl border border-gray-200 dark:border-[#262A29] hover:bg-rose-50 dark:hover:bg-rose-950/20 text-gray-400 hover:text-rose-500 transition-all cursor-pointer"
-                    title="Remove pitch video"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {elevatorVideo ? (
-              <div className="p-4 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-[#101212] dark:bg-[#262A29] flex items-center justify-center text-[#D9FF3F] shrink-0">
-                    <Video className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-[#101212] dark:text-white">
-                      {elevatorVideo.title}
-                    </h4>
-                    <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
-                      Presenter: {elevatorVideo.presenterName} ({elevatorVideo.presenterRole}) &bull; Length: {elevatorVideo.duration} &bull; Synced {elevatorVideo.lastUpdated}
-                    </p>
-                  </div>
                 </div>
-                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1 shrink-0">
-                  <Check className="w-3.5 h-3.5" /> Active in Header & Profile
-                </span>
-              </div>
-            ) : (
-              <div className="p-8 text-center rounded-2xl bg-gray-50 dark:bg-[#202422] border border-dashed border-gray-200 dark:border-[#262A29] space-y-2">
-                <Video className="w-8 h-8 mx-auto text-gray-400" />
-                <h4 className="text-xs font-bold text-[#101212] dark:text-white">
-                  No Pitch Video Active
-                </h4>
-                <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] max-w-sm mx-auto">
-                  Upload a 2-3 minute elevator pitch video to give institutional evaluators an immediate overview of your vision.
-                </p>
-                <button
-                  type="button"
-                  onClick={handleOpenVideoEditor}
-                  className="mt-2 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-[#D9FF3F] text-xs font-bold text-[#101212] cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" />
-                  <span>Upload Pitch Video</span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
 
           {/* Pitch Deck Section */}
           {(pitchSubSection === 'all' || pitchSubSection === 'deck') && (
             <div className="p-6 rounded-3xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-5">
               <input
-              type="file"
-              ref={deckFileInputRef}
-              onChange={handleDeckFileSelect}
-              accept=".pdf,.pptx,.ppt,.key"
-              className="hidden"
-            />
+                type="file"
+                ref={deckFileInputRef}
+                onChange={handleDeckFileSelect}
+                accept=".pdf,.pptx,.ppt,.key"
+                className="hidden"
+              />
 
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-[#262A29]">
-              <div>
-                <h3 className="text-base font-bold text-[#101212] dark:text-white flex items-center gap-2">
-                  <FileText className="w-4 h-4 text-emerald-500" />
-                  <span>Pitch Deck</span>
-                </h3>
-                <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                  Manage your venture presentation, configure viewer permissions, and update investor slides.
-                </p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-gray-100 dark:border-[#262A29]">
+                <div>
+                  <h3 className="text-base font-bold text-[#101212] dark:text-white flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-emerald-500" />
+                    <span>Pitch Deck</span>
+                  </h3>
+                  <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                    Manage your venture presentation, configure viewer permissions, and update investor slides.
+                  </p>
+                </div>
+
+                {pitchDeck && (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${pitchDeck.visibility === 'Public'
+                          ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                          : pitchDeck.visibility === 'Connections Only'
+                            ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
+                            : pitchDeck.visibility === 'Request Access'
+                              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
+                              : 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30'
+                        }`}
+                    >
+                      {pitchDeck.visibility}
+                    </span>
+                    <span
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border ${pitchDeck.allowDownload
+                          ? 'bg-gray-100 dark:bg-[#202422] border-gray-200 dark:border-[#262A29] text-gray-700 dark:text-gray-300'
+                          : 'bg-gray-50 dark:bg-[#202422]/50 border-gray-200 dark:border-[#262A29] text-gray-400'
+                        }`}
+                    >
+                      {pitchDeck.allowDownload ? 'Download Allowed' : 'Download Restricted'}
+                    </span>
+                  </div>
+                )}
               </div>
 
-              {pitchDeck && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider ${
-                      pitchDeck.visibility === 'Public'
-                        ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
-                        : pitchDeck.visibility === 'Connections Only'
-                        ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400 border border-blue-500/30'
-                        : pitchDeck.visibility === 'Request Access'
-                        ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30'
-                        : 'bg-purple-500/15 text-purple-600 dark:text-purple-400 border border-purple-500/30'
-                    }`}
-                  >
-                    {pitchDeck.visibility}
-                  </span>
-                  <span
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-semibold border ${
-                      pitchDeck.allowDownload
-                        ? 'bg-gray-100 dark:bg-[#202422] border-gray-200 dark:border-[#262A29] text-gray-700 dark:text-gray-300'
-                        : 'bg-gray-50 dark:bg-[#202422]/50 border-gray-200 dark:border-[#262A29] text-gray-400'
-                    }`}
-                  >
-                    {pitchDeck.allowDownload ? 'Download Allowed' : 'Download Restricted'}
-                  </span>
-                </div>
-              )}
-            </div>
-
-            {pitchDeck ? (
-              <div className="p-5 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-4">
-                <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
-                  <div className="flex items-start gap-3.5">
-                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                      <FileText className="w-6 h-6" />
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <h4 className="text-sm font-bold text-[#101212] dark:text-white">
-                          {pitchDeck.title}
-                        </h4>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold uppercase">
-                          {pitchDeck.fileType || 'PDF'}
-                        </span>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-200 dark:bg-[#262A29] text-gray-600 dark:text-gray-300 font-bold">
-                          v{pitchDeck.version || '1.0'}
-                        </span>
+              {pitchDeck ? (
+                <div className="p-5 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-4">
+                  <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                    <div className="flex items-start gap-3.5">
+                      <div className="w-12 h-12 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
+                        <FileText className="w-6 h-6" />
                       </div>
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm font-bold text-[#101212] dark:text-white">
+                            {pitchDeck.title}
+                          </h4>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold uppercase">
+                            {pitchDeck.fileType || 'PDF'}
+                          </span>
+                          <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-200 dark:bg-[#262A29] text-gray-600 dark:text-gray-300 font-bold">
+                            v{pitchDeck.version || '1.0'}
+                          </span>
+                        </div>
 
-                      {pitchDeck.fileName && pitchDeck.fileName !== pitchDeck.title && (
-                        <p className="text-xs font-mono text-gray-500 dark:text-gray-400">
-                          {pitchDeck.fileName}
-                        </p>
-                      )}
-
-                      {pitchDeck.description && (
-                        <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] line-clamp-2 max-w-2xl">
-                          {pitchDeck.description}
-                        </p>
-                      )}
-
-                      <div className="flex items-center gap-2.5 text-xs text-[#565B59] dark:text-[#B6B8B7] flex-wrap pt-1">
-                        <span>
-                          Updated: <strong>{pitchDeck.updatedAt || pitchDeck.lastUpdated || 'Recently'}</strong>
-                        </span>
-                        <span>&bull;</span>
-                        <span>
-                          Format: <strong>{pitchDeck.fileType || 'PDF'}</strong>
-                        </span>
-                        {pitchDeck.fileSize && (
-                          <>
-                            <span>&bull;</span>
-                            <span>
-                              Size: <strong className="font-mono">{pitchDeck.fileSize}</strong>
-                            </span>
-                          </>
+                        {pitchDeck.fileName && pitchDeck.fileName !== pitchDeck.title && (
+                          <p className="text-xs font-mono text-gray-500 dark:text-gray-400">
+                            {pitchDeck.fileName}
+                          </p>
                         )}
-                        <span>&bull;</span>
-                        <span>
-                          <strong>{pitchDeck.slideCount || 14} Slides</strong>
-                        </span>
+
+                        {pitchDeck.description && (
+                          <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] line-clamp-2 max-w-2xl">
+                            {pitchDeck.description}
+                          </p>
+                        )}
+
+                        <div className="flex items-center gap-2.5 text-xs text-[#565B59] dark:text-[#B6B8B7] flex-wrap pt-1">
+                          <span>
+                            Updated: <strong>{pitchDeck.updatedAt || pitchDeck.lastUpdated || 'Recently'}</strong>
+                          </span>
+                          <span>&bull;</span>
+                          <span>
+                            Format: <strong>{pitchDeck.fileType || 'PDF'}</strong>
+                          </span>
+                          {pitchDeck.fileSize && (
+                            <>
+                              <span>&bull;</span>
+                              <span>
+                                Size: <strong className="font-mono">{pitchDeck.fileSize}</strong>
+                              </span>
+                            </>
+                          )}
+                          <span>&bull;</span>
+                          <span>
+                            <strong>{pitchDeck.slideCount || 14} Slides</strong>
+                          </span>
+                        </div>
                       </div>
+                    </div>
+
+                    {/* 4 Action Buttons: [ View ], [ Replace ], [ Edit ], [ Remove ] */}
+                    <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap pt-2 md:pt-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCurrentViewerSlide(0);
+                          setIsDeckViewerOpen(true);
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        <span>View</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => deckFileInputRef.current?.click()}
+                        className="px-3.5 py-2 rounded-xl border border-gray-200 dark:border-[#262A29] bg-white dark:bg-[#181B1A] hover:bg-gray-100 dark:hover:bg-[#202422] text-xs font-bold text-[#101212] dark:text-white transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        <span>Replace</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleOpenEditModal}
+                        className="px-3.5 py-2 rounded-xl border border-gray-200 dark:border-[#262A29] bg-white dark:bg-[#181B1A] hover:bg-gray-100 dark:hover:bg-[#202422] text-xs font-bold text-[#101212] dark:text-white transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <Pencil className="w-3.5 h-3.5" />
+                        <span>Edit</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setIsRemoveConfirmOpen(true)}
+                        className="px-3.5 py-2 rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-500/5 hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Remove</span>
+                      </button>
                     </div>
                   </div>
 
-                  {/* 4 Action Buttons: [ View ], [ Replace ], [ Edit ], [ Remove ] */}
-                  <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap pt-2 md:pt-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCurrentViewerSlide(0);
-                        setIsDeckViewerOpen(true);
-                      }}
-                      className="px-3.5 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold transition-all shadow-2xs flex items-center gap-1.5 cursor-pointer active:scale-95"
-                    >
-                      <Eye className="w-3.5 h-3.5" />
-                      <span>View</span>
-                    </button>
+                  {/* Quick Governance Row */}
+                  <div className="pt-3 border-t border-gray-200/60 dark:border-[#262A29] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                    <div className="flex items-center gap-3">
+                      <label className="text-xs font-bold text-[#101212] dark:text-white">
+                        Access Mode:
+                      </label>
+                      <select
+                        value={pitchDeck.visibility}
+                        onChange={(e) => handleDeckVisibilityChange(e.target.value as PitchDeckDoc['visibility'])}
+                        className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29] text-xs font-semibold text-[#101212] dark:text-white cursor-pointer focus:outline-hidden"
+                      >
+                        <option value="Public">Public (Anyone on Xentro)</option>
+                        <option value="Connections Only">Connections Only</option>
+                        <option value="Request Access">Request Access (Approval Required)</option>
+                        <option value="Private">Private (Founding Team Only)</option>
+                      </select>
+                    </div>
 
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={pitchDeck.allowDownload ?? false}
+                        onChange={(e) => handleDeckDownloadChange(e.target.checked)}
+                        className="w-4 h-4 rounded text-[#D9FF3F] accent-[#D9FF3F] focus:ring-0 cursor-pointer"
+                      />
+                      <span className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                        Allow viewers to download presentation file
+                      </span>
+                    </label>
+                  </div>
+                </div>
+              ) : (
+                /* Empty State */
+                <div className="p-10 text-center rounded-2xl bg-gray-50 dark:bg-[#202422] border border-dashed border-gray-200 dark:border-[#262A29] space-y-3">
+                  <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                    <FileText className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-bold text-[#101212] dark:text-white">
+                      No pitch deck added yet.
+                    </h4>
+                    <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] max-w-sm mx-auto leading-relaxed">
+                      Upload your pitch presentation in PDF, PPTX, or Keynote format to showcase your business model and traction to investors.
+                    </p>
+                  </div>
+                  <div className="pt-2">
                     <button
                       type="button"
                       onClick={() => deckFileInputRef.current?.click()}
-                      className="px-3.5 py-2 rounded-xl border border-gray-200 dark:border-[#262A29] bg-white dark:bg-[#181B1A] hover:bg-gray-100 dark:hover:bg-[#202422] text-xs font-bold text-[#101212] dark:text-white transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
+                      className="px-4 py-2.5 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-xs font-bold text-[#101212] transition-all cursor-pointer inline-flex items-center gap-2 active:scale-95 shadow-2xs"
                     >
-                      <RefreshCw className="w-3.5 h-3.5" />
-                      <span>Replace</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={handleOpenEditModal}
-                      className="px-3.5 py-2 rounded-xl border border-gray-200 dark:border-[#262A29] bg-white dark:bg-[#181B1A] hover:bg-gray-100 dark:hover:bg-[#202422] text-xs font-bold text-[#101212] dark:text-white transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                      <span>Edit</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setIsRemoveConfirmOpen(true)}
-                      className="px-3.5 py-2 rounded-xl border border-rose-200 dark:border-rose-900/40 bg-rose-500/5 hover:bg-rose-500/15 text-rose-600 dark:text-rose-400 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer active:scale-95"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Remove</span>
+                      <Upload className="w-3.5 h-3.5" />
+                      <span>Upload Pitch Deck</span>
                     </button>
                   </div>
                 </div>
-
-                {/* Quick Governance Row */}
-                <div className="pt-3 border-t border-gray-200/60 dark:border-[#262A29] flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                  <div className="flex items-center gap-3">
-                    <label className="text-xs font-bold text-[#101212] dark:text-white">
-                      Access Mode:
-                    </label>
-                    <select
-                      value={pitchDeck.visibility}
-                      onChange={(e) => handleDeckVisibilityChange(e.target.value as PitchDeckDoc['visibility'])}
-                      className="px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29] text-xs font-semibold text-[#101212] dark:text-white cursor-pointer focus:outline-hidden"
-                    >
-                      <option value="Public">Public (Anyone on Xentro)</option>
-                      <option value="Connections Only">Connections Only</option>
-                      <option value="Request Access">Request Access (Approval Required)</option>
-                      <option value="Private">Private (Founding Team Only)</option>
-                    </select>
-                  </div>
-
-                  <label className="flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={pitchDeck.allowDownload ?? false}
-                      onChange={(e) => handleDeckDownloadChange(e.target.checked)}
-                      className="w-4 h-4 rounded text-[#D9FF3F] accent-[#D9FF3F] focus:ring-0 cursor-pointer"
-                    />
-                    <span className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                      Allow viewers to download presentation file
-                    </span>
-                  </label>
-                </div>
-              </div>
-            ) : (
-              /* Empty State */
-              <div className="p-10 text-center rounded-2xl bg-gray-50 dark:bg-[#202422] border border-dashed border-gray-200 dark:border-[#262A29] space-y-3">
-                <div className="w-12 h-12 mx-auto rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
-                  <FileText className="w-6 h-6" />
-                </div>
-                <div className="space-y-1">
-                  <h4 className="text-sm font-bold text-[#101212] dark:text-white">
-                    No pitch deck added yet.
-                  </h4>
-                  <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] max-w-sm mx-auto leading-relaxed">
-                    Upload your pitch presentation in PDF, PPTX, or Keynote format to showcase your business model and traction to investors.
-                  </p>
-                </div>
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => deckFileInputRef.current?.click()}
-                    className="px-4 py-2.5 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-xs font-bold text-[#101212] transition-all cursor-pointer inline-flex items-center gap-2 active:scale-95 shadow-2xs"
-                  >
-                    <Upload className="w-3.5 h-3.5" />
-                    <span>Upload Pitch Deck</span>
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          )}
 
           {/* Problem */}
           {(pitchSubSection === 'all' || pitchSubSection === 'problem') && renderProblemCard()}

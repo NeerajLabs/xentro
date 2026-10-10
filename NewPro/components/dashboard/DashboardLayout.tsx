@@ -338,37 +338,55 @@ export const DashboardLayout: React.FC = () => {
               ) : activeNavTab === 'notifications' ? (
                 <NotificationsView onBackToFeed={() => setActiveNavTab('feed')} />
               ) : activeNavTab === 'profile' ? (
-                (activeEntity?.entityType?.toLowerCase() === 'startup' || activeEntity?.accountType?.toLowerCase() === 'startup') ? (
+                activeEntity?.entityType?.toLowerCase() === 'startup' ? (
                   <StartupProfileView
                     startupId={activeEntity.id}
                     startupData={{
                       id: activeEntity.id,
                       identity: {
                         name: activeEntity.name,
-                        logo: activeEntity.logo || undefined,
+                        logo: activeEntity.logo || '/xentro-logo.png',
+                        tagline: activeEntity.pitch || 'Building next-generation solutions',
                         stage: activeEntity.stage || 'Seed',
                         industry: activeEntity.sector || 'Technology & Innovation',
-                        founderName: userProfile.name,
-                        city: 'Delhi',
-                        country: 'India',
+                        businessModelType: 'B2B',
+                        operatingGeography: ['India'],
+                        foundedYear: 2024,
+                        website: activeEntity.website || '',
+                        founderName: activeEntity.primaryOwnerName || userProfile.name,
+                        contactEmail: activeEntity.officialEmail || userProfile.email,
                       },
-                      overview: {
-                        tagline: activeEntity.pitch || `Official startup profile for ${activeEntity.name}`,
-                        shortDescription: activeEntity.pitch || `Building high-growth venture on Xentro.`,
+                      basicInfo: {
+                        description: activeEntity.pitch || `Active venture led by ${activeEntity.primaryOwnerName || userProfile.name}.`,
+                        vision: 'Scaling impactful solutions across the ecosystem.',
                       },
+                      team: {
+                        founders: [{
+                          id: userProfile.id,
+                          name: activeEntity.primaryOwnerName || userProfile.name,
+                          role: activeEntity.role || 'Founder & CEO',
+                          avatar: userProfile.avatar,
+                          isFounder: true,
+                        }],
+                        leadership: [],
+                        core: [],
+                        advisors: [],
+                        openRoles: [],
+                      },
+                      ...(activeEntity.details || {}),
                     } as any}
                     isOwnProfile={true}
                     onBackToFeed={() => setActiveNavTab('feed')}
                     onManageInDashboard={() => setActiveNavTab('dashboard')}
                   />
-                ) : (activeEntity?.entityType?.toLowerCase().includes('investor') || activeEntity?.accountType?.toLowerCase().includes('investor')) ? (
+                ) : (activeEntity?.entityType?.toLowerCase().includes('investor') || activeEntity?.entityType === 'INVESTOR_ORG') ? (
                   <InvestorOrgProfileView
                     organizationId={activeEntity.id}
                     onBackToFeed={() => setActiveNavTab('feed')}
                     onBackToDashboard={() => setActiveNavTab('dashboard')}
                     isOwnProfile={true}
                   />
-                ) : (activeEntity?.entityType?.toLowerCase() === 'esp' || activeEntity?.accountType?.toLowerCase() === 'esp') ? (
+                ) : activeEntity?.entityType?.toLowerCase() === 'esp' ? (
                   <ESPProfileView
                     espId={activeEntity.id}
                     onBackToFeed={() => setActiveNavTab('feed')}

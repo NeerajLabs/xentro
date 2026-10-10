@@ -21,6 +21,7 @@ import { getUserProfile, GUEST_AVATAR } from '@/lib/userProfile';
 import { feedService } from '@/lib/feedService';
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { resolveAvatarUrl } from '@/lib/messagingService';
+import { entityContextService } from '@/lib/entityContextService';
 
 interface PostCardProps {
   post: Post;
@@ -41,7 +42,9 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onLikeToggle }) => {
   };
 
   const myProfile = getUserProfile();
-  const isMe = (myProfile.id || '').trim().toLowerCase() === (author.id || '').trim().toLowerCase();
+  const activeEntity = typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null;
+  const isMe = (myProfile.id || '').trim().toLowerCase() === (author.id || '').trim().toLowerCase() ||
+    Boolean(activeEntity?.id && (activeEntity.id || '').trim().toLowerCase() === (author.id || '').trim().toLowerCase());
 
   const [isLiked, setIsLiked] = useState(Boolean(post.isLiked));
   const [likeCount, setLikeCount] = useState(post.metrics?.likes ?? (post as any).likes ?? 0);
