@@ -17,6 +17,8 @@ import {
   Building,
   User,
   Info,
+  KeyRound,
+  RotateCw,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { getUserProfile, UserProfile, saveUserProfile } from '@/lib/userProfile';
@@ -29,16 +31,6 @@ interface PersonalUpgradeModalProps {
   onApplicationSubmitted?: () => void;
 }
 
-interface ExistingRequest {
-  id: string;
-  requestId: string;
-  requestedRole: string;
-  currentRole: string;
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  adminNotes?: string;
-  createdAt: string;
-}
-
 export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
   isOpen,
   onClose,
@@ -48,8 +40,6 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
   const { showToast } = useToast();
   const [profile, setProfile] = useState<UserProfile>(currentUserProfile || getUserProfile());
   const [selectedTarget, setSelectedTarget] = useState<'mentor' | 'investor'>('mentor');
-  const [existingRequests, setExistingRequests] = useState<ExistingRequest[]>([]);
-  const [isLoadingRequests, setIsLoadingRequests] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Form fields
@@ -72,8 +62,23 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
   const [preferredStage, setPreferredStage] = useState('Seed');
   const [sectorsOfInterest, setSectorsOfInterest] = useState('');
 
-  // Check investor organization conflict for Mentor conversion
+  // Conflict detection
   const [hasInvestorOrgConflict, setHasInvestorOrgConflict] = useState(false);
+
+  // OTP State Machine
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [challengeId, setChallengeId] = useState('');
+  const [maskedEmail, setMaskedEmail] = useState('');
+  const [countdown, setCountdown] = useState(0);
+
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (countdown > 0) {
+      timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+    }
+    return () => clearTimeout(timer);
+  }, [countdown]);
 
   useEffect(() => {
     if (isOpen) {
@@ -88,6 +93,10 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
       setSkills(Array.isArray(p.skills) ? p.skills.join(', ') : '');
       setLinkedin(p.linkedin || '');
       setSectorsOfInterest(Array.isArray(p.industries) ? p.industries.join(', ') : '');
+      setOtpStep(false);
+      setOtpCode('');
+      setChallengeId('');
+      setCountdown(0);
 
       // Conflict detection: Explorer belonging to Investor Org cannot convert to Mentor
       const memberships = investorOrganizationService.getAllMemberships();
@@ -98,27 +107,100 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
 
   if (!isOpen) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const targetPurpose = selectedTarget === 'mentor' ? 'MENTOR_CONVERSION' : 'INDIVIDUAL_INVESTOR_CONVERSION';
+  const roleLabel = selectedTarget === 'mentor' ? 'Mentor' : 'Individual Investor';
 
+  // Step 1: Send OTP to personal email
+  const handleSendOtp = async () => {
     if (selectedTarget === 'mentor' && hasInvestorOrgConflict) {
       showToast(
-        'Conversion blocked: You currently belong to an Investor Organization. Please resolve or leave your Investor Organization membership before converting to Mentor.',
+        'Conversion blocked: Mentors are strictly prohibited from holding active Investor Organization memberships.',
         'error'
       );
       return;
     }
 
+    const targetEmail = (email || profile.email || '').trim().toLowerCase();
+    if (!targetEmail || !targetEmail.includes('@')) {
+      showToast('A registered personal email address is required.', 'error');
+      return;
+    }
+
     setIsSubmitting(true);
     try {
+      const res = await fetch('/api/auth/otp/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: targetEmail,
+          purpose: targetPurpose,
+          name: fullName.trim() || profile.name,
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setOtpStep(true);
+        setChallengeId(data.challengeId || '');
+        setMaskedEmail(data.maskedEmail || targetEmail);
+        setCountdown(60);
+        showToast(`Verification code sent to ${data.maskedEmail || targetEmail}`, 'info');
+      } else {
+        showToast(data?.message || 'Failed to dispatch verification code.', 'error');
+      }
+    } catch {
+      showToast('Network error while requesting verification code.', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  // Step 2: Verify OTP and activate permanent conversion
+  const handleVerifyAndActivate = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!otpStep) {
+      await handleSendOtp();
+      return;
+    }
+
+    if (!otpCode || otpCode.trim().length !== 6) {
+      showToast('Please enter the 6-digit verification code.', 'error');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const targetEmail = (email || profile.email || '').trim().toLowerCase();
+
+      // 1. Verify OTP with challenge binding
+      const verifyRes = await fetch('/api/auth/otp/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: targetEmail,
+          code: otpCode.trim(),
+          purpose: targetPurpose,
+          challengeId,
+        }),
+      });
+
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.success) {
+        showToast(verifyData?.message || 'Invalid or expired verification code.', 'error');
+        setIsSubmitting(false);
+        return;
+      }
+
+      // 2. Finalize permanent conversion in MongoDB
       const targetRoleTitle = selectedTarget === 'mentor' ? 'Mentor' : 'Investor';
-      const roleLabel = selectedTarget === 'mentor' ? 'Mentor' : 'Individual Investor';
 
       const payload = {
         userId: profile.id,
-        userEmail: email.trim().toLowerCase(),
+        userEmail: targetEmail,
         userName: fullName.trim(),
         targetRole: targetRoleTitle,
+        challengeId,
         headline,
         bio,
         currentRole,
@@ -165,7 +247,7 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
         window.dispatchEvent(new CustomEvent('xentro-role-changed', { detail: { role: newRole, profile: updatedProfile } }));
 
         showToast(
-          `${roleLabel} account activated successfully! Redirecting to ${roleLabel} Dashboard...`,
+          `${roleLabel} account verified & activated successfully! Redirecting to dashboard...`,
           'success'
         );
 
@@ -201,250 +283,297 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
 
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#D9FF3F]/15 border border-[#D9FF3F]/30 text-xs font-mono font-bold text-[#D9FF3F] mb-3">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>Personal Account Upgrade</span>
+            <span>Permanent Account Upgrade</span>
           </div>
           <h2 className="text-xl sm:text-2xl font-black font-display tracking-tight text-white">
             Upgrade Your Explorer Account
           </h2>
           <p className="text-xs text-[#B6B8B7] mt-1 max-w-lg leading-relaxed">
-            Permanent personal role upgrade. Your personal User ID ({profile.id}), connections, messages, and saved profile data are preserved throughout conversion.
+            Permanent role conversion. Your User ID ({profile.id}), connections, messages, and history are preserved as your dedicated dashboard is activated.
           </p>
 
           {/* Role Choice Switcher Tabs */}
-          <div className="grid grid-cols-2 gap-2 mt-5 p-1 bg-white/5 rounded-2xl border border-white/10">
-            <button
-              type="button"
-              onClick={() => setSelectedTarget('mentor')}
-              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                selectedTarget === 'mentor'
-                  ? 'bg-[#D9FF3F] text-[#101212] shadow-md'
-                  : 'text-gray-300 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <GraduationCap className="w-4 h-4" />
-              <span>Become Mentor</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setSelectedTarget('investor')}
-              className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                selectedTarget === 'investor'
-                  ? 'bg-[#D9FF3F] text-[#101212] shadow-md'
-                  : 'text-gray-300 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <TrendingUp className="w-4 h-4" />
-              <span>Become Individual Investor</span>
-            </button>
-          </div>
+          {!otpStep && (
+            <div className="grid grid-cols-2 gap-2 mt-5 p-1 bg-white/5 rounded-2xl border border-white/10">
+              <button
+                type="button"
+                onClick={() => setSelectedTarget('mentor')}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  selectedTarget === 'mentor'
+                    ? 'bg-[#D9FF3F] text-[#101212] shadow-md'
+                    : 'text-[#B6B8B7] hover:text-white'
+                }`}
+              >
+                <GraduationCap className="w-4 h-4" />
+                <span>Mentor</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedTarget('investor')}
+                className={`flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  selectedTarget === 'investor'
+                    ? 'bg-[#D9FF3F] text-[#101212] shadow-md'
+                    : 'text-[#B6B8B7] hover:text-white'
+                }`}
+              >
+                <TrendingUp className="w-4 h-4" />
+                <span>Individual Investor</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Form Body */}
         <div className="p-6 sm:p-7 space-y-6">
-          {/* Direct Activation Notice */}
-          <div className="p-4 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/30 text-xs flex items-start gap-3">
-            <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-[#101212] dark:text-[#D9FF3F]" />
-            <div className="flex-1">
-              <span className="font-bold text-[#101212] dark:text-white block">
-                Immediate Account Activation ({selectedTarget === 'mentor' ? 'Mentor' : 'Individual Investor'})
-              </span>
-              <p className="mt-0.5 text-[11px] text-[#565B59] dark:text-[#8E9290] leading-relaxed">
-                Submitting this form permanently converts your personal Explorer account into a {selectedTarget === 'mentor' ? 'Mentor' : 'Individual Investor'}. No general administrative approval stage required — your dedicated role dashboard activates directly upon submission.
-              </p>
-            </div>
-          </div>
-
-          {/* Conflict Alert for Mentors belonging to Investor Orgs */}
+          {/* Conflict Warning for Mentor */}
           {selectedTarget === 'mentor' && hasInvestorOrgConflict && (
-            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-700 dark:text-amber-300 text-xs flex items-start gap-3">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-amber-500" />
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-800 dark:text-rose-200 text-xs flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 flex-shrink-0 text-rose-500 mt-0.5" />
               <div>
-                <span className="font-bold block">Organizational Conflict Detected</span>
-                <span className="mt-0.5 text-[11px] block leading-relaxed">
-                  You currently belong to an Investor Organization. Under Xentro compliance policies, Mentors cannot hold simultaneous memberships in Investor Organizations. You must resolve or leave your Investor Organization membership before completing conversion to Mentor.
-                </span>
+                <p className="font-bold">Investor Organization Membership Conflict Detected</p>
+                <p className="mt-1 opacity-90">
+                  Mentors are strictly prohibited from holding active Investor Organization memberships. You must resign from your Investor Organization before upgrading to Mentor.
+                </p>
               </div>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {/* Prefilled Profile Details (Read-only summary) */}
-            <div className="p-4 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] space-y-3">
-              <div className="flex items-center justify-between text-xs">
-                <span className="font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5 text-[#9EBE12]" />
-                  <span>Canonical Explorer Profile Information</span>
-                </span>
-                <span className="text-[10px] text-[#565B59] dark:text-[#8E9290]">Auto-Populated</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                <div>
-                  <span className="text-[11px] text-[#565B59] dark:text-[#8E9290] block">Applicant Name</span>
-                  <span className="font-semibold text-[#101212] dark:text-white">{fullName}</span>
-                </div>
-                <div>
-                  <span className="text-[11px] text-[#565B59] dark:text-[#8E9290] block">Registered Email</span>
-                  <span className="font-semibold text-[#101212] dark:text-white">{email}</span>
-                </div>
-                <div>
-                  <span className="text-[11px] text-[#565B59] dark:text-[#8E9290] block">Current Role / Title</span>
-                  <span className="font-semibold text-[#101212] dark:text-white">{currentRole || 'Not specified'}</span>
-                </div>
-                <div>
-                  <span className="text-[11px] text-[#565B59] dark:text-[#8E9290] block">Current Organization</span>
-                  <span className="font-semibold text-[#101212] dark:text-white">{currentOrg || 'Not specified'}</span>
-                </div>
-              </div>
-
-              {headline && (
-                <div className="pt-2 border-t border-[#E5E7EB] dark:border-[#262A29] text-xs">
-                  <span className="text-[11px] text-[#565B59] dark:text-[#8E9290] block">Professional Headline</span>
-                  <span className="text-[#101212] dark:text-white italic">{headline}</span>
-                </div>
-              )}
-            </div>
-
-            {/* Target Role Specific Inputs */}
-            {selectedTarget === 'mentor' ? (
+          <form onSubmit={handleVerifyAndActivate} className="space-y-4">
+            {/* Step 1: Profile & Role Details */}
+            {!otpStep ? (
               <>
-                <div>
-                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                    Primary Advisory Expertise &amp; Domains *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={mentorExpertise}
-                    onChange={(e) => setMentorExpertise(e.target.value)}
-                    placeholder="e.g. Go-To-Market Strategy, Product Architecture, Seed Fundraising"
-                    className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
-                  />
-                </div>
-
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                      Years of Professional / Advisory Experience
+                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                      Full Name
                     </label>
-                    <select
-                      value={yearsExperience}
-                      onChange={(e) => setYearsExperience(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
-                    >
-                      <option value="3-5 years">3 - 5 years</option>
-                      <option value="5+ years">5 - 10 years</option>
-                      <option value="10+ years">10+ years</option>
-                      <option value="15+ years">15+ years (Executive / Veteran)</option>
-                    </select>
+                    <input
+                      type="text"
+                      required
+                      value={fullName}
+                      onChange={(e) => setFullName(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                    />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                      LinkedIn / Portfolio Link
+                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                      Registered Email
                     </label>
                     <input
-                      type="url"
-                      value={linkedin}
-                      onChange={(e) => setLinkedin(e.target.value)}
-                      placeholder="https://linkedin.com/in/username"
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                      type="email"
+                      required
+                      disabled
+                      value={email}
+                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white opacity-75 cursor-not-allowed"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                    Advisory Motivation &amp; Startup Stages You Guide *
-                  </label>
-                  <textarea
-                    rows={3}
-                    required
-                    value={mentorshipMotivation}
-                    onChange={(e) => setMentorshipMotivation(e.target.value)}
-                    placeholder="Describe how you plan to support early-stage founders and the specific areas you evaluate during mentorship sessions..."
-                    className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                      Typical Cheque Size / Bracket *
-                    </label>
-                    <select
-                      value={chequeSize}
-                      onChange={(e) => setChequeSize(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
-                    >
-                      <option value="$5k - $25k">$5k - $25k (Micro Angel)</option>
-                      <option value="$25k - $50k">$25k - $50k (Angel / Syndicate)</option>
-                      <option value="$50k - $100k">$50k - $100k (Lead Angel)</option>
-                      <option value="$100k+">$100k+ (Super Angel / High Net Worth)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                      Preferred Investment Stage
-                    </label>
-                    <select
-                      value={preferredStage}
-                      onChange={(e) => setPreferredStage(e.target.value)}
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
-                    >
-                      <option value="Pre-Seed">Pre-Seed</option>
-                      <option value="Seed">Seed</option>
-                      <option value="Pre-Series A">Pre-Series A</option>
-                      <option value="Series A+">Series A and Beyond</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                    Sectors / Verticals of Interest *
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                    Professional Headline
                   </label>
                   <input
                     type="text"
                     required
-                    value={sectorsOfInterest}
-                    onChange={(e) => setSectorsOfInterest(e.target.value)}
-                    placeholder="e.g. AI/ML, B2B SaaS, Climate Tech, FinTech, DeepTech"
-                    className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                    value={headline}
+                    onChange={(e) => setHeadline(e.target.value)}
+                    placeholder="e.g. Senior Partner @ VentureLab | Former CTO"
+                    className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1.5">
-                    Investor Profile / AngelList / LinkedIn URL
+                  <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                    Bio / Summary
                   </label>
-                  <input
-                    type="url"
-                    value={linkedin}
-                    onChange={(e) => setLinkedin(e.target.value)}
-                    placeholder="https://linkedin.com/in/investor or AngelList URL"
-                    className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                  <textarea
+                    rows={3}
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    placeholder="Briefly describe your background, expertise, and focus areas..."
+                    className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
                   />
                 </div>
+
+                {/* Mentor-Specific Fields */}
+                {selectedTarget === 'mentor' && (
+                  <div className="p-4 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/20 space-y-3">
+                    <h4 className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
+                      <GraduationCap className="w-4 h-4 text-[#9EBE12]" />
+                      Mentor Specialization
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#565B59] dark:text-[#B6B8B7] mb-1">
+                          Primary Domain Expertise
+                        </label>
+                        <input
+                          type="text"
+                          value={mentorExpertise}
+                          onChange={(e) => setMentorExpertise(e.target.value)}
+                          placeholder="e.g. AI Product Growth, Fintech Regs"
+                          className="w-full px-3 py-2 rounded-xl text-xs bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#565B59] dark:text-[#B6B8B7] mb-1">
+                          Years of Experience
+                        </label>
+                        <select
+                          value={yearsExperience}
+                          onChange={(e) => setYearsExperience(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl text-xs bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                        >
+                          <option value="3-5 years">3 - 5 years</option>
+                          <option value="5-10 years">5 - 10 years</option>
+                          <option value="10+ years">10+ years</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#565B59] dark:text-[#B6B8B7] mb-1">
+                        Mentorship Philosophy &amp; Motivation
+                      </label>
+                      <input
+                        type="text"
+                        value={mentorshipMotivation}
+                        onChange={(e) => setMentorshipMotivation(e.target.value)}
+                        placeholder="What drives you to mentor founders on Xentro?"
+                        className="w-full px-3 py-2 rounded-xl text-xs bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Investor-Specific Fields */}
+                {selectedTarget === 'investor' && (
+                  <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 space-y-3">
+                    <h4 className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
+                      <TrendingUp className="w-4 h-4 text-blue-500" />
+                      Investment Preferences
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#565B59] dark:text-[#B6B8B7] mb-1">
+                          Typical Cheque Size
+                        </label>
+                        <select
+                          value={chequeSize}
+                          onChange={(e) => setChequeSize(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl text-xs bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                        >
+                          <option value="$5k - $15k">$5k - $15k</option>
+                          <option value="$15k - $50k">$15k - $50k</option>
+                          <option value="$50k - $150k">$50k - $150k</option>
+                          <option value="$150k+">$150k+</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-semibold text-[#565B59] dark:text-[#B6B8B7] mb-1">
+                          Preferred Stage
+                        </label>
+                        <select
+                          value={preferredStage}
+                          onChange={(e) => setPreferredStage(e.target.value)}
+                          className="w-full px-3 py-2 rounded-xl text-xs bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                        >
+                          <option value="Idea">Idea / Pre-Seed</option>
+                          <option value="Seed">Seed</option>
+                          <option value="Series A">Series A</option>
+                          <option value="All Stages">All Stages</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-semibold text-[#565B59] dark:text-[#B6B8B7] mb-1">
+                        Sectors of Interest
+                      </label>
+                      <input
+                        type="text"
+                        value={sectorsOfInterest}
+                        onChange={(e) => setSectorsOfInterest(e.target.value)}
+                        placeholder="e.g. AI / ML, B2B SaaS, HealthTech"
+                        className="w-full px-3 py-2 rounded-xl text-xs bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                      />
+                    </div>
+                  </div>
+                )}
               </>
+            ) : (
+              /* Step 2: OTP Verification Card */
+              <div className="p-5 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/30 space-y-4 animate-fade-slide">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <KeyRound className="w-4 h-4 text-[#9EBE12]" />
+                    <span className="font-bold text-xs text-[#101212] dark:text-[#D9FF3F]">
+                      Verify Consent to Convert Personal Account
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOtpStep(false)}
+                    className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] hover:underline cursor-pointer"
+                  >
+                    Edit Details
+                  </button>
+                </div>
+
+                <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                  To authorize the permanent conversion to <strong>{roleLabel}</strong>, enter the 6-digit verification code sent to <strong>{maskedEmail || email}</strong>:
+                </p>
+
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    maxLength={6}
+                    required
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                    placeholder="123456"
+                    className="w-full px-4 py-3 rounded-xl text-lg font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border border-[#D9FF3F] text-[#101212] dark:text-white font-black"
+                  />
+
+                  <div className="flex items-center justify-between text-[11px] text-[#565B59] dark:text-[#8E9290]">
+                    <span>Valid for 10 minutes</span>
+                    {countdown > 0 ? (
+                      <span className="font-mono">Resend available in {countdown}s</span>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSendOtp}
+                        disabled={isSubmitting}
+                        className="text-[#9EBE12] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                      >
+                        <RotateCw className="w-3 h-3" />
+                        <span>Resend Verification Code</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Permanent Conversion Warning */}
             <div className="pt-2 text-[11px] text-[#565B59] dark:text-[#8E9290]">
-              <span className="font-semibold text-amber-600 dark:text-amber-400">Important:</span> This account conversion is permanent. Your personal User ID, profile details, messages, and connections are preserved as your {selectedTarget === 'mentor' ? 'Mentor' : 'Individual Investor'} dashboard is activated.
+              <span className="font-semibold text-amber-600 dark:text-amber-400">Important:</span> This account conversion is permanent. Your personal User ID ({profile.id}), connections, messages, and profile history are preserved as your {roleLabel} dashboard is activated.
             </div>
 
-            {/* Actions */}
+            {/* Action Buttons */}
             <div className="pt-3 border-t border-[#E5E7EB] dark:border-[#262A29] flex items-center justify-end gap-3">
               <button
                 type="button"
-                onClick={onClose}
+                onClick={() => {
+                  if (otpStep) setOtpStep(false);
+                  else onClose();
+                }}
                 className="px-4 py-2.5 rounded-xl text-xs font-semibold text-[#565B59] dark:text-[#B6B8B7] hover:bg-gray-100 dark:hover:bg-[#202422] transition-colors cursor-pointer"
               >
-                Close
+                {otpStep ? 'Back' : 'Close'}
               </button>
 
               <button
@@ -455,17 +584,22 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
                 {isSubmitting ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                    <span>Activating Account...</span>
+                    <span>{otpStep ? 'Verifying & Activating...' : 'Sending Code...'}</span>
+                  </>
+                ) : !otpStep ? (
+                  <>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>Send Verification Code</span>
                   </>
                 ) : selectedTarget === 'mentor' ? (
                   <>
-                    <GraduationCap className="w-3.5 h-3.5" />
-                    <span>Activate Mentor Account</span>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Verify &amp; Activate Mentor</span>
                   </>
                 ) : (
                   <>
-                    <TrendingUp className="w-3.5 h-3.5" />
-                    <span>Activate Investor Account</span>
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Verify &amp; Activate Investor</span>
                   </>
                 )}
               </button>

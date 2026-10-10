@@ -66,6 +66,9 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
   const [startupWebsite, setStartupWebsite] = useState('');
   const [startupOtpStep, setStartupOtpStep] = useState(false);
   const [startupOtpCode, setStartupOtpCode] = useState('');
+  const [startupChallengeId, setStartupChallengeId] = useState('');
+  const [maskedStartupEmail, setMaskedStartupEmail] = useState('');
+  const [startupCountdown, setStartupCountdown] = useState(0);
 
   // Investor Org form
   const [orgName, setOrgName] = useState('');
@@ -76,12 +79,24 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
   const [orgWebsite, setOrgWebsite] = useState('');
   const [investorOrgOtpStep, setInvestorOrgOtpStep] = useState(false);
   const [investorOrgOtpCode, setInvestorOrgOtpCode] = useState('');
+  const [investorOrgChallengeId, setInvestorOrgChallengeId] = useState('');
+  const [maskedOrgEmail, setMaskedOrgEmail] = useState('');
+  const [investorOrgCountdown, setInvestorOrgCountdown] = useState(0);
 
   // ESP form
   const [espName, setEspName] = useState('');
   const [espType, setEspType] = useState('Incubator');
   const [espCity, setEspCity] = useState('');
   const [espEmail, setEspEmail] = useState('');
+
+  // Countdown timer effect
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setStartupCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+      setInvestorOrgCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -92,8 +107,12 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
       setOrgEmail(p.email || '');
       setStartupOtpStep(false);
       setStartupOtpCode('');
+      setStartupChallengeId('');
+      setStartupCountdown(0);
       setInvestorOrgOtpStep(false);
       setInvestorOrgOtpCode('');
+      setInvestorOrgChallengeId('');
+      setInvestorOrgCountdown(0);
 
       // Check Government Identity Status from authService and profile
       const idRecord = authService.getIdentityVerification();
@@ -171,12 +190,19 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
         const otpSendRes = await fetch('/api/auth/otp/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: targetEmail, entityName: startupName.trim() }),
+          body: JSON.stringify({
+            email: targetEmail,
+            entityName: startupName.trim(),
+            purpose: 'STARTUP_EMAIL_VERIFICATION',
+          }),
         });
         const sendData = await otpSendRes.json();
         if (otpSendRes.ok && sendData.success) {
           setStartupOtpStep(true);
-          showToast(`6-digit verification code sent to ${targetEmail}`, 'info');
+          setStartupChallengeId(sendData.challengeId || '');
+          setMaskedStartupEmail(sendData.maskedEmail || targetEmail);
+          setStartupCountdown(60);
+          showToast(`6-digit verification code sent to ${sendData.maskedEmail || targetEmail}`, 'info');
         } else {
           showToast(sendData?.message || 'Failed to dispatch verification code.', 'error');
         }
@@ -192,7 +218,12 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
       const verifyRes = await fetch('/api/auth/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: targetEmail, code: startupOtpCode.trim() }),
+        body: JSON.stringify({
+          email: targetEmail,
+          code: startupOtpCode.trim(),
+          purpose: 'STARTUP_EMAIL_VERIFICATION',
+          challengeId: startupChallengeId,
+        }),
       });
       const verifyData = await verifyRes.json();
       if (!verifyRes.ok || !verifyData.success) {
@@ -208,6 +239,7 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
           name: startupName.trim(),
           entityType: 'STARTUP',
           officialEmail: targetEmail,
+          challengeId: startupChallengeId,
           userId: profile.id,
           userEmail: profile.email,
           details: {
@@ -282,12 +314,20 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
         const otpSendRes = await fetch('/api/auth/otp/send', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: targetEmail, entityName: orgName.trim() }),
+          body: JSON.stringify({
+            email: targetEmail,
+            entityName: orgName.trim(),
+            purpose: 'INVESTOR_ORG_EMAIL_VERIFICATION',
+            entityType: 'INVESTOR_ORG',
+          }),
         });
         const sendData = await otpSendRes.json();
         if (otpSendRes.ok && sendData.success) {
           setInvestorOrgOtpStep(true);
-          showToast(`6-digit verification code sent to ${targetEmail}`, 'info');
+          setInvestorOrgChallengeId(sendData.challengeId || '');
+          setMaskedOrgEmail(sendData.maskedEmail || targetEmail);
+          setInvestorOrgCountdown(60);
+          showToast(`6-digit verification code sent to ${sendData.maskedEmail || targetEmail}`, 'info');
         } else {
           showToast(sendData?.message || 'Failed to dispatch verification code.', 'error');
         }
@@ -303,7 +343,12 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
       const verifyRes = await fetch('/api/auth/otp/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: targetEmail, code: investorOrgOtpCode.trim() }),
+        body: JSON.stringify({
+          email: targetEmail,
+          code: investorOrgOtpCode.trim(),
+          purpose: 'INVESTOR_ORG_EMAIL_VERIFICATION',
+          challengeId: investorOrgChallengeId,
+        }),
       });
       const verifyData = await verifyRes.json();
       if (!verifyRes.ok || !verifyData.success) {
@@ -318,6 +363,7 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
           name: orgName.trim(),
           entityType: 'INVESTOR_ORG',
           officialEmail: targetEmail,
+          challengeId: investorOrgChallengeId,
           userId: profile.id,
           userEmail: profile.email,
           requestedRole: orgRole,
@@ -826,7 +872,7 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
 
                   {/* Step 2: OTP Verification Field */}
                   {startupOtpStep && (
-                    <div className="p-4 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/30 space-y-2 animate-fade-slide">
+                    <div className="p-4 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/30 space-y-3 animate-fade-slide">
                       <div className="flex items-center justify-between text-xs">
                         <span className="font-bold text-[#101212] dark:text-[#D9FF3F]">
                           Enter 6-Digit Email Verification Code *
@@ -846,11 +892,25 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                         value={startupOtpCode}
                         onChange={(e) => setStartupOtpCode(e.target.value.replace(/\D/g, ''))}
                         placeholder="123456"
-                        className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border border-[#D9FF3F] text-[#101212] dark:text-white font-bold"
+                        className="w-full px-3.5 py-2.5 rounded-xl text-base font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border border-[#D9FF3F] text-[#101212] dark:text-white font-bold"
                       />
-                      <p className="text-[10px] text-[#565B59] dark:text-[#8E9290]">
-                        We sent a 6-digit verification code to <strong>{startupEmail}</strong>. Verify email ownership to finalize startup registration.
-                      </p>
+                      <div className="flex items-center justify-between text-[11px] text-[#565B59] dark:text-[#8E9290]">
+                        <span>Code sent to <strong>{maskedStartupEmail || startupEmail}</strong></span>
+                        {startupCountdown > 0 ? (
+                          <span className="font-mono">Resend in {startupCountdown}s</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setStartupOtpStep(false);
+                              handleCreateStartup({ preventDefault: () => {} } as any);
+                            }}
+                            className="text-[#9EBE12] hover:underline font-semibold cursor-pointer"
+                          >
+                            Resend Code
+                          </button>
+                        )}
+                      </div>
                     </div>
                   )}
 
@@ -873,7 +933,7 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                       {isSubmittingEntity ? (
                         <>
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                          <span>{startupOtpStep ? 'Verifying & Registering...' : 'Sending Code...'}</span>
+                          <span>{startupOtpStep ? 'Verifying & Creating Startup...' : 'Sending Code...'}</span>
                         </>
                       ) : startupOtpStep ? (
                         <>
@@ -883,7 +943,7 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                       ) : (
                         <>
                           <Rocket className="w-3.5 h-3.5" />
-                          <span>Create Startup Account</span>
+                          <span>Send Verification Code</span>
                         </>
                       )}
                     </button>
@@ -1007,9 +1067,9 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
 
                   {/* Step 2: Investor Org OTP Verification */}
                   {investorOrgOtpStep && (
-                    <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 space-y-2 animate-fade-slide">
+                    <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 space-y-3 animate-fade-slide">
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-[#101212] dark:text-white">
+                        <span className="font-bold text-[#101212] dark:text-blue-300">
                           Enter 6-Digit Email Verification Code *
                         </span>
                         <button
@@ -1027,10 +1087,27 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                         value={investorOrgOtpCode}
                         onChange={(e) => setInvestorOrgOtpCode(e.target.value.replace(/\D/g, ''))}
                         placeholder="123456"
-                        className="w-full px-3.5 py-2.5 rounded-xl text-sm font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border border-blue-500 text-[#101212] dark:text-white font-bold"
+                        className="w-full px-3.5 py-2.5 rounded-xl text-base font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border border-blue-500 text-[#101212] dark:text-white font-bold"
                       />
+                      <div className="flex items-center justify-between text-[11px] text-[#565B59] dark:text-[#8E9290]">
+                        <span>Code sent to <strong>{maskedOrgEmail || orgEmail}</strong></span>
+                        {investorOrgCountdown > 0 ? (
+                          <span className="font-mono">Resend in {investorOrgCountdown}s</span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInvestorOrgOtpStep(false);
+                              handleCreateInvestorOrg({ preventDefault: () => {} } as any);
+                            }}
+                            className="text-blue-500 hover:underline font-semibold cursor-pointer"
+                          >
+                            Resend Code
+                          </button>
+                        )}
+                      </div>
                       <p className="text-[10px] text-[#565B59] dark:text-[#8E9290]">
-                        Verification code sent to <strong>{orgEmail}</strong>. Owner/Admin privileges will be submitted for Xentro verification upon confirmation.
+                        Owner/Admin privileged role requires subsequent Xentro administrative review upon registration.
                       </p>
                     </div>
                   )}
@@ -1059,12 +1136,12 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                       ) : investorOrgOtpStep ? (
                         <>
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>Verify &amp; Create Organization</span>
+                          <span>Verify &amp; Register Organization</span>
                         </>
                       ) : (
                         <>
                           <Building className="w-3.5 h-3.5" />
-                          <span>Create Investor Organization</span>
+                          <span>Send Verification Code</span>
                         </>
                       )}
                     </button>

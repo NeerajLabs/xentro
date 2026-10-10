@@ -31,6 +31,8 @@ export async function POST(req: NextRequest) {
     const userId = req.headers.get('x-user-id') || body.userId || body.id || '';
     const userEmail = req.headers.get('x-user-email') || body.userEmail || body.email || '';
     const rawTargetRole = String(body.targetRole || body.requestedRole || body.role || '').trim().toLowerCase();
+    const challengeId = String(body.challengeId || '').trim();
+    const otpCode = String(body.code || body.otp || body.otpCode || '').trim();
 
     const targetRole = rawTargetRole.includes('mentor') ? 'Mentor' : rawTargetRole.includes('investor') ? 'Investor' : '';
 
@@ -55,6 +57,7 @@ export async function POST(req: NextRequest) {
     const membershipsCol = db.collection('memberships');
     const auditCol = db.collection('audit_logs');
     const roleReqCol = db.collection('role_requests');
+    const otpCol = db.collection('otp_codes');
 
     // 1. Locate existing canonical personal account
     const queryConditions: any[] = [];
@@ -74,7 +77,48 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'User account not found' }, { status: 404 });
     }
 
-    // 2. Check for prohibited memberships (Mentors cannot belong to Investor Organizations)
+    // 2. Validate OTP Challenge for Conversion
+    const expectedPurpose = targetRole === 'Mentor' ? 'MENTOR_CONVERSION' : 'INDIVIDUAL_INVESTOR_CONVERSION';
+    const otpQuery: any = {
+      email: user.email.toLowerCase(),
+      purpose: expectedPurpose,
+    };
+    if (challengeId) {
+      otpQuery.challengeId = challengeId;
+    }
+
+    let activeChallenge = await otpCol.findOne(otpQuery);
+
+    // If an otpCode is passed directly and challenge was not yet verified, verify it inline
+    if (otpCode && activeChallenge && !activeChallenge.verified) {
+      if (activeChallenge.code === otpCode) {
+        await otpCol.updateOne({ _id: activeChallenge._id }, { $set: { verified: true, verifiedAt: new Date().toISOString() } });
+        activeChallenge = await otpCol.findOne({ _id: activeChallenge._id });
+      } else {
+        await otpCol.updateOne({ _id: activeChallenge._id }, { $inc: { attempts: 1 } });
+        return NextResponse.json({ success: false, message: 'Invalid verification code.' }, { status: 400 });
+      }
+    }
+
+    if (!activeChallenge || !activeChallenge.verified) {
+      return NextResponse.json(
+        {
+          success: false,
+          status: 'otp_required',
+          message: `Email verification code is required to activate ${targetRole} account. Please verify the code sent to ${user.email}.`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (activeChallenge.consumed) {
+      return NextResponse.json(
+        { success: false, message: 'This verification challenge has already been consumed. Please request a new code.' },
+        { status: 400 }
+      );
+    }
+
+    // 3. Check for prohibited memberships (Mentors cannot belong to Investor Organizations)
     if (targetRole === 'Mentor') {
       const activeInvestorOrgMembership = await membershipsCol.findOne({
         $or: [
@@ -101,7 +145,13 @@ export async function POST(req: NextRequest) {
     const canonicalUserId = user.id || userId;
     const roleLabel = targetRole === 'Mentor' ? 'Mentor' : 'Individual Investor';
 
-    // 3. Prepare role-specific metadata
+    // 4. Mark challenge consumed to prevent replay attacks
+    await otpCol.updateOne(
+      { _id: activeChallenge._id },
+      { $set: { consumed: true, consumedAt: nowIso, updatedAt: nowIso } }
+    );
+
+    // 5. Prepare role-specific metadata
     const mentorDetails = targetRole === 'Mentor' ? (body.mentorDetails || body.entityDetails?.mentorDetails || {}) : undefined;
     const investorDetails = targetRole === 'Investor' ? (body.investorDetails || body.entityDetails?.investorDetails || {}) : undefined;
 
@@ -122,7 +172,7 @@ export async function POST(req: NextRequest) {
     if (mentorDetails) updateFields.mentorDetails = mentorDetails;
     if (investorDetails) updateFields.investorDetails = investorDetails;
 
-    // 4. Update the existing personal account in MongoDB Atlas atomically
+    // 6. Update the existing personal account in MongoDB Atlas atomically
     await usersCol.updateOne(
       { _id: user._id },
       {
@@ -130,7 +180,7 @@ export async function POST(req: NextRequest) {
       }
     );
 
-    // 5. Update canonical personal profile if present
+    // 7. Update canonical personal profile if present
     try {
       await personalCol.updateOne(
         {
@@ -153,24 +203,25 @@ export async function POST(req: NextRequest) {
       );
     } catch (_) {}
 
-    // 6. Record conversion event in audit history
+    // 8. Record conversion event in audit history
     try {
       await auditCol.insertOne({
         id: `audit_${Date.now()}`,
         actorId: canonicalUserId,
         actorEmail: user.email,
         action: `DIRECT_ACCOUNT_CONVERSION_${targetRole.toUpperCase()}`,
+        challengeId: activeChallenge.challengeId,
         details: {
           previousRole: user.accountType || user.primaryRole || 'Explorer',
           newRole: targetRole,
-          method: 'DIRECT_SELF_ACTIVATION',
+          method: 'OTP_VERIFIED_DIRECT_ACTIVATION',
           timestamp: nowIso,
         },
         createdAt: nowIso,
       });
     } catch (_) {}
 
-    // 7. Clear any legacy pending generic conversion requests for this user & role
+    // 9. Clear any legacy pending generic conversion requests for this user & role
     try {
       await roleReqCol.deleteMany({
         $or: [
@@ -181,17 +232,13 @@ export async function POST(req: NextRequest) {
       });
     } catch (_) {}
 
-    // 8. Dispatch notification / email
+    // 10. Dispatch notification email asynchronously without holding the response
     if (user.email && user.email.includes('@')) {
-      try {
-        await sendZohoEmail({
-          to: user.email.trim().toLowerCase(),
-          subject: `XENTRO: Your Account is Now Active as ${roleLabel}`,
-          text: `Dear ${user.fullName || user.name || 'Member'},\n\nCongratulations! Your personal Xentro account has been directly and permanently converted to a ${roleLabel}.\n\nAccount Details:\n- User ID: ${canonicalUserId}\n- Account Type: ${roleLabel}\n- Dashboard: Activated\n\nYour existing connections, conversations, and personal profile history have been preserved.\n\nAccess your new dashboard here:\nhttps://xentro.in/?tab=dashboard\n\nWarm regards,\nXENTRO Platform Operations\nhttps://xentro.in`,
-        });
-      } catch (emailErr) {
-        console.warn('[RoleConvert] Zoho email dispatch error:', emailErr);
-      }
+      sendZohoEmail({
+        to: user.email.trim().toLowerCase(),
+        subject: `XENTRO: Your Account is Now Active as ${roleLabel}`,
+        text: `Dear ${user.fullName || user.name || 'Member'},\n\nCongratulations! Your personal Xentro account has been directly and permanently converted to a ${roleLabel} following email verification.\n\nAccount Details:\n- User ID: ${canonicalUserId}\n- Account Type: ${roleLabel}\n- Dashboard: Activated\n\nYour existing connections, conversations, and personal profile history have been preserved.\n\nAccess your new dashboard here:\nhttps://xentro.in/?tab=dashboard\n\nWarm regards,\nXENTRO Platform Operations\nhttps://xentro.in`,
+      }).catch((emailErr) => console.warn('[RoleConvert] Zoho email dispatch error:', emailErr));
     }
 
     const updatedUser = await usersCol.findOne({ _id: user._id });

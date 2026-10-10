@@ -58,6 +58,58 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, message: 'Entity name is required' }, { status: 400 });
     }
 
+    const otpCol = db.collection('otp_codes');
+    const challengeId = String(body.challengeId || '').trim();
+
+    // Verify OTP challenge for Startup & Investor Org entities
+    if (entityTypeRaw.includes('STARTUP') || entityTypeRaw.includes('VENTURE')) {
+      const targetEmail = (officialEmail || user.email).toLowerCase();
+      const otpQuery: any = {
+        email: targetEmail,
+        purpose: 'STARTUP_EMAIL_VERIFICATION',
+        verified: true,
+        consumed: false,
+      };
+      if (challengeId) otpQuery.challengeId = challengeId;
+
+      const otpRec = await otpCol.findOne(otpQuery);
+      if (!otpRec) {
+        return NextResponse.json(
+          {
+            success: false,
+            status: 'otp_required',
+            message: 'Official startup email verification is required. Please verify the code sent to your entity email.',
+          },
+          { status: 400 }
+        );
+      }
+      // Consume challenge
+      await otpCol.updateOne({ _id: otpRec._id }, { $set: { consumed: true, consumedAt: new Date().toISOString() } });
+    } else if (entityTypeRaw.includes('INVESTOR') || entityTypeRaw.includes('VC') || entityTypeRaw.includes('FIRM')) {
+      const targetEmail = (officialEmail || user.email).toLowerCase();
+      const otpQuery: any = {
+        email: targetEmail,
+        purpose: 'INVESTOR_ORG_EMAIL_VERIFICATION',
+        verified: true,
+        consumed: false,
+      };
+      if (challengeId) otpQuery.challengeId = challengeId;
+
+      const otpRec = await otpCol.findOne(otpQuery);
+      if (!otpRec) {
+        return NextResponse.json(
+          {
+            success: false,
+            status: 'otp_required',
+            message: 'Official organization email verification is required. Please verify the code sent to your organization email.',
+          },
+          { status: 400 }
+        );
+      }
+      // Consume challenge
+      await otpCol.updateOne({ _id: otpRec._id }, { $set: { consumed: true, consumedAt: new Date().toISOString() } });
+    }
+
     const randomSuffix = Math.floor(100000 + Math.random() * 900000);
     let entityId = '';
     let canonicalType = 'STARTUP';

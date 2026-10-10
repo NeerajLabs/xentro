@@ -1199,7 +1199,7 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
         onClose={() => setIsUpgradeModalOpen(false)}
         currentUserProfile={currentUser}
         onApplicationSubmitted={() => {
-          showToast('Upgrade application submitted. Awaiting review.', 'info');
+          showToast('Account upgraded successfully! Dashboard activated.', 'success');
         }}
       />
 
