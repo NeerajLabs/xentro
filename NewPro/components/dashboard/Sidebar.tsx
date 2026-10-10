@@ -428,11 +428,23 @@ export const Sidebar: React.FC<SidebarProps> = ({
             }`}
           >
             <div className={`w-8 h-8 rounded-full overflow-hidden border border-gray-200 dark:border-gray-700 transition-all duration-200 group-hover:scale-110 group-hover:ring-2 group-hover:ring-[#D9FF3F] ${activeTab === 'profile' ? 'ring-2 ring-[#D9FF3F]' : ''}`}>
-              <img
-                src={profile.avatar || GUEST_AVATAR}
-                alt={profile.name || 'User Profile'}
-                className="w-full h-full object-cover object-top transition-transform"
-              />
+              {activeEntity?.logo ? (
+                <img
+                  src={activeEntity.logo}
+                  alt={activeEntity.name}
+                  className="w-full h-full object-cover object-top transition-transform"
+                />
+              ) : activeEntity ? (
+                <div className="w-full h-full bg-[#D9FF3F] text-[#101212] font-black text-xs flex items-center justify-center">
+                  {activeEntity.name.slice(0, 2).toUpperCase()}
+                </div>
+              ) : (
+                <img
+                  src={profile.avatar || GUEST_AVATAR}
+                  alt={profile.name || 'User Profile'}
+                  className="w-full h-full object-cover object-top transition-transform"
+                />
+              )}
             </div>
           </div>
           <div

@@ -338,19 +338,41 @@ export const DashboardLayout: React.FC = () => {
               ) : activeNavTab === 'notifications' ? (
                 <NotificationsView onBackToFeed={() => setActiveNavTab('feed')} />
               ) : activeNavTab === 'profile' ? (
-                activeEntity?.entityType === 'STARTUP' ? (
+                (activeEntity?.entityType?.toLowerCase() === 'startup' || activeEntity?.accountType?.toLowerCase() === 'startup') ? (
                   <StartupProfileView
                     startupId={activeEntity.id}
-                    startupData={activeEntity as any}
+                    startupData={{
+                      id: activeEntity.id,
+                      identity: {
+                        name: activeEntity.name,
+                        logo: activeEntity.logo || undefined,
+                        stage: activeEntity.stage || 'Seed',
+                        industry: activeEntity.sector || 'Technology & Innovation',
+                        founderName: userProfile.name,
+                        city: 'Delhi',
+                        country: 'India',
+                      },
+                      overview: {
+                        tagline: activeEntity.pitch || `Official startup profile for ${activeEntity.name}`,
+                        shortDescription: activeEntity.pitch || `Building high-growth venture on Xentro.`,
+                      },
+                    } as any}
                     isOwnProfile={true}
                     onBackToFeed={() => setActiveNavTab('feed')}
                     onManageInDashboard={() => setActiveNavTab('dashboard')}
                   />
-                ) : activeEntity?.entityType === 'INVESTOR_ORG' ? (
+                ) : (activeEntity?.entityType?.toLowerCase().includes('investor') || activeEntity?.accountType?.toLowerCase().includes('investor')) ? (
                   <InvestorOrgProfileView
                     organizationId={activeEntity.id}
                     onBackToFeed={() => setActiveNavTab('feed')}
                     onBackToDashboard={() => setActiveNavTab('dashboard')}
+                    isOwnProfile={true}
+                  />
+                ) : (activeEntity?.entityType?.toLowerCase() === 'esp' || activeEntity?.accountType?.toLowerCase() === 'esp') ? (
+                  <ESPProfileView
+                    espId={activeEntity.id}
+                    onBackToFeed={() => setActiveNavTab('feed')}
+                    onBackToDiscover={() => setActiveNavTab('dashboard')}
                     isOwnProfile={true}
                   />
                 ) : userProfile.role === 'explorer' ? (
