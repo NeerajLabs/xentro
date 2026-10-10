@@ -25,6 +25,7 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
+  ArrowRight,
 } from 'lucide-react';
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { messagingService } from '@/lib/messagingService';
@@ -250,23 +251,8 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [isEntityModalOpen, setIsEntityModalOpen] = useState(false);
-  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
-  const actionsMenuRef = useRef<HTMLDivElement>(null);
+  const [isActionsModalOpen, setIsActionsModalOpen] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
-        setIsActionsMenuOpen(false);
-      }
-    };
-    if (isActionsMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, [isActionsMenuOpen]);
   const [editFormData, setEditFormData] = useState({
     name: '',
     headline: '',
@@ -544,80 +530,15 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
                   <span>Edit Profile</span>
                 </button>
 
-                {/* Merged Actions Menu */}
-                <div className="relative" ref={actionsMenuRef}>
-                  <button
-                    type="button"
-                    onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
-                    className="px-4 py-2 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-all flex items-center gap-1.5 shadow-xs cursor-pointer border border-[#D9FF3F]"
-                    aria-expanded={isActionsMenuOpen}
-                    aria-haspopup="true"
-                  >
-                    <Sparkles className="w-3.5 h-3.5 fill-[#101212]" />
-                    <span>Actions</span>
-                    <ChevronDown
-                      className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                        isActionsMenuOpen ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </button>
-
-                  {isActionsMenuOpen && (
-                    <div className="absolute right-0 sm:right-auto sm:left-0 mt-2 w-72 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-2xl z-50 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
-                      {/* Action Choice 1: Upgrade Personal Account */}
-                      {String(profile.role || 'explorer').toLowerCase() === 'explorer' && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsActionsMenuOpen(false);
-                            setIsUpgradeModalOpen(true);
-                          }}
-                          className="w-full text-left p-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-[#202422] transition-colors flex items-start gap-3 group cursor-pointer"
-                        >
-                          <div className="p-2 rounded-lg bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] group-hover:scale-105 transition-transform shrink-0 mt-0.5">
-                            <Sparkles className="w-4 h-4 fill-current" />
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-[#101212] dark:text-white group-hover:text-[#9EBE12] dark:group-hover:text-[#D9FF3F] transition-colors">
-                                Upgrade Account
-                              </span>
-                              <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
-                            </div>
-                            <p className="text-[11px] text-[#565B59] dark:text-[#8E9290] mt-0.5 leading-snug">
-                              Permanent conversion to Mentor or Individual Investor.
-                            </p>
-                          </div>
-                        </button>
-                      )}
-
-                      {/* Action Choice 2: Create Entity Account */}
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsActionsMenuOpen(false);
-                          setIsEntityModalOpen(true);
-                        }}
-                        className="w-full text-left p-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-[#202422] transition-colors flex items-start gap-3 group cursor-pointer"
-                      >
-                        <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform shrink-0 mt-0.5">
-                          <Building2 className="w-4 h-4" />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-[#101212] dark:text-white group-hover:text-blue-500 transition-colors">
-                              Create Entity Account
-                            </span>
-                            <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
-                          </div>
-                          <p className="text-[11px] text-[#565B59] dark:text-[#8E9290] mt-0.5 leading-snug">
-                            Launch a dedicated Startup, Investor Organization, or ESP.
-                          </p>
-                        </div>
-                      </button>
-                    </div>
-                  )}
-                </div>
+                {/* Actions Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsActionsModalOpen(true)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-all flex items-center gap-1.5 shadow-xs cursor-pointer border border-[#D9FF3F]"
+                >
+                  <Sparkles className="w-3.5 h-3.5 fill-[#101212]" />
+                  <span>Actions</span>
+                </button>
               </div>
             )}
           </div>
@@ -1163,6 +1084,113 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Account Actions Pop-up Modal */}
+      {isActionsModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setIsActionsModalOpen(false);
+          }}
+        >
+          <div className="relative w-full max-w-lg bg-white dark:bg-[#181B1A] rounded-3xl border border-[#E5E7EB] dark:border-[#262A29] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Header Banner */}
+            <div className="p-6 sm:p-7 border-b border-[#E5E7EB] dark:border-[#262A29] relative bg-gradient-to-r from-[#141816] via-[#101412] to-[#0A0D0C] text-white">
+              <button
+                type="button"
+                onClick={() => setIsActionsModalOpen(false)}
+                className="absolute top-5 right-5 p-2 rounded-xl text-gray-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+                title="Close"
+              >
+                <X className="w-5 h-5" />
+              </button>
+
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#D9FF3F]/15 border border-[#D9FF3F]/30 text-xs font-mono font-bold text-[#D9FF3F] mb-3">
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Account Actions</span>
+              </div>
+              <h3 className="text-xl sm:text-2xl font-black font-display tracking-tight text-white">
+                What would you like to do?
+              </h3>
+              <p className="text-xs text-[#B6B8B7] mt-1 max-w-md leading-relaxed">
+                Choose an action to upgrade your personal capabilities or establish a new organizational entity on Xentro.
+              </p>
+            </div>
+
+            {/* Options List */}
+            <div className="p-6 sm:p-7 space-y-3.5">
+              {/* Option 1: Upgrade Personal Account */}
+              {String(profile.role || 'explorer').toLowerCase() === 'explorer' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsActionsModalOpen(false);
+                    setIsUpgradeModalOpen(true);
+                  }}
+                  className="w-full text-left p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] hover:border-[#D9FF3F] dark:hover:border-[#D9FF3F] transition-all flex items-start gap-4 group cursor-pointer shadow-sm hover:shadow-md"
+                >
+                  <div className="p-3 rounded-2xl bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F] border border-[#D9FF3F]/30 group-hover:scale-105 transition-transform shrink-0 mt-0.5">
+                    <Sparkles className="w-5 h-5 fill-current" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm font-bold text-[#101212] dark:text-white group-hover:text-[#9EBE12] dark:group-hover:text-[#D9FF3F] transition-colors">
+                        Upgrade Personal Account
+                      </span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F]">
+                        Personal
+                      </span>
+                    </div>
+                    <p className="text-xs text-[#565B59] dark:text-[#8E9290] leading-relaxed">
+                      Permanently convert to a <strong>Mentor</strong> or <strong>Individual Investor</strong>. Pre-fill your profile details and unlock dedicated role dashboards upon verification.
+                    </p>
+                  </div>
+                  <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-[#101212] dark:group-hover:text-[#D9FF3F] group-hover:translate-x-1 transition-all shrink-0 mt-2" />
+                </button>
+              )}
+
+              {/* Option 2: Create Entity Account */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsActionsModalOpen(false);
+                  setIsEntityModalOpen(true);
+                }}
+                className="w-full text-left p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] hover:border-blue-500 dark:hover:border-blue-400 transition-all flex items-start gap-4 group cursor-pointer shadow-sm hover:shadow-md"
+              >
+                <div className="p-3 rounded-2xl bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 group-hover:scale-105 transition-transform shrink-0 mt-0.5">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-bold text-[#101212] dark:text-white group-hover:text-blue-500 transition-colors">
+                      Create Entity Account
+                    </span>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/15 text-blue-600 dark:text-blue-400">
+                      Organization
+                    </span>
+                  </div>
+                  <p className="text-xs text-[#565B59] dark:text-[#8E9290] leading-relaxed">
+                    Launch a dedicated <strong>Startup</strong>, <strong>Investor Organization</strong>, or <strong>ESP Institution</strong> with independent team seats and verified organizational RBAC.
+                  </p>
+                </div>
+                <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-blue-500 group-hover:translate-x-1 transition-all shrink-0 mt-2" />
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-gray-50 dark:bg-[#141615] border-t border-[#E5E7EB] dark:border-[#262A29] flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsActionsModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-[#565B59] dark:text-[#B6B8B7] hover:bg-gray-100 dark:hover:bg-[#202422] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
