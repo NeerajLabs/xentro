@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   User,
   Mail,
@@ -23,6 +23,8 @@ import {
   X,
   Loader2,
   Building2,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { messagingService } from '@/lib/messagingService';
@@ -248,7 +250,23 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isUpgradeModalOpen, setIsUpgradeModalOpen] = useState(false);
   const [isEntityModalOpen, setIsEntityModalOpen] = useState(false);
+  const [isActionsMenuOpen, setIsActionsMenuOpen] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target as Node)) {
+        setIsActionsMenuOpen(false);
+      }
+    };
+    if (isActionsMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isActionsMenuOpen]);
   const [editFormData, setEditFormData] = useState({
     name: '',
     headline: '',
@@ -526,25 +544,80 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
                   <span>Edit Profile</span>
                 </button>
 
-                {String(profile.role || 'explorer').toLowerCase() === 'explorer' && (
+                {/* Merged Actions Menu */}
+                <div className="relative" ref={actionsMenuRef}>
                   <button
                     type="button"
-                    onClick={() => setIsUpgradeModalOpen(true)}
+                    onClick={() => setIsActionsMenuOpen(!isActionsMenuOpen)}
                     className="px-4 py-2 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-all flex items-center gap-1.5 shadow-xs cursor-pointer border border-[#D9FF3F]"
+                    aria-expanded={isActionsMenuOpen}
+                    aria-haspopup="true"
                   >
                     <Sparkles className="w-3.5 h-3.5 fill-[#101212]" />
-                    <span>Upgrade</span>
+                    <span>Actions</span>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                        isActionsMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    />
                   </button>
-                )}
 
-                <button
-                  type="button"
-                  onClick={() => setIsEntityModalOpen(true)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-white dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white hover:border-[#D9FF3F] hover:text-[#9EBE12] dark:hover:text-[#D9FF3F] transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                >
-                  <Building2 className="w-3.5 h-3.5" />
-                  <span>Create Entity Account</span>
-                </button>
+                  {isActionsMenuOpen && (
+                    <div className="absolute right-0 sm:right-auto sm:left-0 mt-2 w-72 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-2xl z-50 p-2 space-y-1 animate-in fade-in zoom-in-95 duration-150">
+                      {/* Action Choice 1: Upgrade Personal Account */}
+                      {String(profile.role || 'explorer').toLowerCase() === 'explorer' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsActionsMenuOpen(false);
+                            setIsUpgradeModalOpen(true);
+                          }}
+                          className="w-full text-left p-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-[#202422] transition-colors flex items-start gap-3 group cursor-pointer"
+                        >
+                          <div className="p-2 rounded-lg bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] group-hover:scale-105 transition-transform shrink-0 mt-0.5">
+                            <Sparkles className="w-4 h-4 fill-current" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold text-[#101212] dark:text-white group-hover:text-[#9EBE12] dark:group-hover:text-[#D9FF3F] transition-colors">
+                                Upgrade Account
+                              </span>
+                              <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                            </div>
+                            <p className="text-[11px] text-[#565B59] dark:text-[#8E9290] mt-0.5 leading-snug">
+                              Permanent conversion to Mentor or Individual Investor.
+                            </p>
+                          </div>
+                        </button>
+                      )}
+
+                      {/* Action Choice 2: Create Entity Account */}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsActionsMenuOpen(false);
+                          setIsEntityModalOpen(true);
+                        }}
+                        className="w-full text-left p-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-[#202422] transition-colors flex items-start gap-3 group cursor-pointer"
+                      >
+                        <div className="p-2 rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400 group-hover:scale-105 transition-transform shrink-0 mt-0.5">
+                          <Building2 className="w-4 h-4" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-[#101212] dark:text-white group-hover:text-blue-500 transition-colors">
+                              Create Entity Account
+                            </span>
+                            <ChevronRight className="w-3.5 h-3.5 text-gray-400 group-hover:translate-x-0.5 transition-transform" />
+                          </div>
+                          <p className="text-[11px] text-[#565B59] dark:text-[#8E9290] mt-0.5 leading-snug">
+                            Launch a dedicated Startup, Investor Organization, or ESP.
+                          </p>
+                        </div>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
