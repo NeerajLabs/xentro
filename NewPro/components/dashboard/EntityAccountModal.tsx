@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Building2,
@@ -19,6 +19,7 @@ import {
   ExternalLink,
   Ban,
   FileCheck2,
+  KeyRound,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { getUserProfile, UserProfile } from '@/lib/userProfile';
@@ -98,8 +99,11 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
     return () => clearInterval(timer);
   }, []);
 
+  const prevIsOpenRef = useRef(false);
+
   useEffect(() => {
-    if (isOpen) {
+    // Only reset form and OTP state on actual modal OPEN transition (false -> true)
+    if (isOpen && !prevIsOpenRef.current) {
       const p = currentUserProfile || getUserProfile();
       setProfile(p);
       setNameAsPerId(p.name || '');
@@ -125,7 +129,8 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
 
       setIdentityStatus(String(currentStatus).toUpperCase());
     }
-  }, [isOpen, currentUserProfile]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -791,125 +796,128 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                     </button>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                      Startup / Company Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={startupName}
-                      onChange={(e) => setStartupName(e.target.value)}
-                      placeholder="e.g. Horizon AI Labs"
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                        Industry Sector
-                      </label>
-                      <select
-                        value={startupSector}
-                        onChange={(e) => setStartupSector(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
-                      >
-                        <option value="AI / Machine Learning">AI / Machine Learning</option>
-                        <option value="Fintech">Fintech</option>
-                        <option value="SaaS & DevTools">SaaS &amp; DevTools</option>
-                        <option value="Climate & CleanTech">Climate &amp; CleanTech</option>
-                        <option value="Healthcare & BioTech">Healthcare &amp; BioTech</option>
-                        <option value="E-Commerce & Retail">E-Commerce &amp; Retail</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                        Current Maturity Stage
-                      </label>
-                      <select
-                        value={startupStage}
-                        onChange={(e) => setStartupStage(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
-                      >
-                        <option value="Idea">Idea / Conceptual</option>
-                        <option value="MVP">MVP in Development</option>
-                        <option value="Early Traction">Early Traction / Beta</option>
-                        <option value="Scaling">Scaling / Revenue Generating</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                      Official Startup / Entity Email *
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      disabled={startupOtpStep}
-                      value={startupEmail}
-                      onChange={(e) => setStartupEmail(e.target.value)}
-                      placeholder="e.g. founder@horizonai.com or hello@startup.io"
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                      Short One-Line Pitch
-                    </label>
-                    <input
-                      type="text"
-                      disabled={startupOtpStep}
-                      value={startupPitch}
-                      onChange={(e) => setStartupPitch(e.target.value)}
-                      placeholder="e.g. Autonomous workflow automation for enterprise financial teams"
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
-                    />
-                  </div>
-
-                  {/* Step 2: OTP Verification Field */}
-                  {startupOtpStep && (
-                    <div className="p-4 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/30 space-y-3 animate-fade-slide">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-[#101212] dark:text-[#D9FF3F]">
-                          Enter 6-Digit Email Verification Code *
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setStartupOtpStep(false)}
-                          className="text-[11px] text-[#565B59] hover:underline cursor-pointer"
-                        >
-                          Change Email
-                        </button>
+                  {!startupOtpStep ? (
+                    <>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                          Startup / Company Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={startupName}
+                          onChange={(e) => setStartupName(e.target.value)}
+                          placeholder="e.g. Horizon AI Labs"
+                          className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                        />
                       </div>
-                      <input
-                        type="text"
-                        maxLength={6}
-                        required
-                        value={startupOtpCode}
-                        onChange={(e) => setStartupOtpCode(e.target.value.replace(/\D/g, ''))}
-                        placeholder="123456"
-                        className="w-full px-3.5 py-2.5 rounded-xl text-base font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border border-[#D9FF3F] text-[#101212] dark:text-white font-bold"
-                      />
-                      <div className="flex items-center justify-between text-[11px] text-[#565B59] dark:text-[#8E9290]">
-                        <span>Code sent to <strong>{maskedStartupEmail || startupEmail}</strong></span>
-                        {startupCountdown > 0 ? (
-                          <span className="font-mono">Resend in {startupCountdown}s</span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setStartupOtpStep(false);
-                              handleCreateStartup({ preventDefault: () => {} } as any);
-                            }}
-                            className="text-[#9EBE12] hover:underline font-semibold cursor-pointer"
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                            Industry Sector
+                          </label>
+                          <select
+                            value={startupSector}
+                            onChange={(e) => setStartupSector(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
                           >
-                            Resend Code
-                          </button>
-                        )}
+                            <option value="AI / Machine Learning">AI / Machine Learning</option>
+                            <option value="Fintech">Fintech</option>
+                            <option value="SaaS & DevTools">SaaS &amp; DevTools</option>
+                            <option value="Climate & CleanTech">Climate &amp; CleanTech</option>
+                            <option value="Healthcare & BioTech">Healthcare &amp; BioTech</option>
+                            <option value="E-Commerce & Retail">E-Commerce &amp; Retail</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                            Current Maturity Stage
+                          </label>
+                          <select
+                            value={startupStage}
+                            onChange={(e) => setStartupStage(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                          >
+                            <option value="Idea">Idea / Conceptual</option>
+                            <option value="MVP">MVP in Development</option>
+                            <option value="Early Traction">Early Traction / Beta</option>
+                            <option value="Scaling">Scaling / Revenue Generating</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                          Official Startup / Entity Email *
+                        </label>
+                        <input
+                          type="email"
+                          required
+                          value={startupEmail}
+                          onChange={(e) => setStartupEmail(e.target.value)}
+                          placeholder="e.g. founder@horizonai.com or hello@startup.io"
+                          className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                          Short One-Line Pitch
+                        </label>
+                        <input
+                          type="text"
+                          value={startupPitch}
+                          onChange={(e) => setStartupPitch(e.target.value)}
+                          placeholder="e.g. Autonomous workflow automation for enterprise financial teams"
+                          className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    /* Step 2: DEDICATED FULL-SCREEN OTP VIEW */
+                    <div className="py-6 px-5 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/30 space-y-4 animate-fade-slide text-center">
+                      <div className="w-12 h-12 rounded-2xl bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center mx-auto shadow-sm">
+                        <KeyRound className="w-6 h-6 text-[#9EBE12]" />
+                      </div>
+                      <div>
+                        <h4 className="text-base font-black text-[#101212] dark:text-white">
+                          Enter 6-Digit Email Verification Code
+                        </h4>
+                        <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] mt-1">
+                          We sent a 6-digit verification code to <strong>{maskedStartupEmail || startupEmail}</strong>. Verify email ownership to activate your official startup entity.
+                        </p>
+                      </div>
+
+                      <div className="max-w-xs mx-auto space-y-3">
+                        <input
+                          type="text"
+                          maxLength={6}
+                          required
+                          autoFocus
+                          value={startupOtpCode}
+                          onChange={(e) => setStartupOtpCode(e.target.value.replace(/\D/g, ''))}
+                          placeholder="123456"
+                          className="w-full px-4 py-3 rounded-2xl text-2xl font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border-2 border-[#D9FF3F] text-[#101212] dark:text-white font-black shadow-inner focus:outline-none focus:ring-2 focus:ring-[#D9FF3F]/50"
+                        />
+
+                        <div className="flex items-center justify-between text-xs text-[#565B59] dark:text-[#8E9290]">
+                          <span>Valid for 10 min</span>
+                          {startupCountdown > 0 ? (
+                            <span className="font-mono">Resend in {startupCountdown}s</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleCreateStartup({ preventDefault: () => {} } as any);
+                              }}
+                              className="text-[#9EBE12] hover:underline font-bold cursor-pointer"
+                            >
+                              Resend Code
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -968,145 +976,145 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
                     </button>
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                      Organization / Fund Name *
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      disabled={investorOrgOtpStep}
-                      value={orgName}
-                      onChange={(e) => setOrgName(e.target.value)}
-                      placeholder="e.g. Nexus Apex Capital"
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12] disabled:opacity-60"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                        Organization Type
-                      </label>
-                      <select
-                        disabled={investorOrgOtpStep}
-                        value={orgType}
-                        onChange={(e) => setOrgType(e.target.value as any)}
-                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
-                      >
-                        <option value="Venture Capital Fund">Venture Capital Fund</option>
-                        <option value="Angel Network">Angel Network / Syndicate</option>
-                        <option value="Family Office">Family Office</option>
-                        <option value="Corporate VC">Corporate Venture (CVC)</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                        Target AUM / Pool Bracket
-                      </label>
-                      <select
-                        disabled={investorOrgOtpStep}
-                        value={targetAum}
-                        onChange={(e) => setTargetAum(e.target.value)}
-                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
-                      >
-                        <option value="Under $5M">Under $5M</option>
-                        <option value="$5M - $25M">$5M - $25M</option>
-                        <option value="$25M - $100M">$25M - $100M</option>
-                        <option value="$100M+">$100M+</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                        Official Organization Domain Email *
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        disabled={investorOrgOtpStep}
-                        value={orgEmail}
-                        onChange={(e) => setOrgEmail(e.target.value)}
-                        placeholder="e.g. partner@nexuscapital.com"
-                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                        Requested Administrative Role *
-                      </label>
-                      <select
-                        disabled={investorOrgOtpStep}
-                        value={orgRole}
-                        onChange={(e) => setOrgRole(e.target.value as any)}
-                        className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
-                      >
-                        <option value="Owner / Managing Partner">Owner / Managing Partner</option>
-                        <option value="Admin">Admin</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
-                      Organization Website
-                    </label>
-                    <input
-                      type="url"
-                      disabled={investorOrgOtpStep}
-                      value={orgWebsite}
-                      onChange={(e) => setOrgWebsite(e.target.value)}
-                      placeholder="https://nexuscapital.com"
-                      className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white disabled:opacity-60"
-                    />
-                  </div>
-
-                  {/* Step 2: Investor Org OTP Verification */}
-                  {investorOrgOtpStep && (
-                    <div className="p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 space-y-3 animate-fade-slide">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-[#101212] dark:text-blue-300">
-                          Enter 6-Digit Email Verification Code *
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setInvestorOrgOtpStep(false)}
-                          className="text-[11px] text-blue-500 hover:underline cursor-pointer"
-                        >
-                          Change Email
-                        </button>
+                  {!investorOrgOtpStep ? (
+                    <>
+                      <div>
+                        <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                          Organization / Fund Name *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={orgName}
+                          onChange={(e) => setOrgName(e.target.value)}
+                          placeholder="e.g. Nexus Apex Capital"
+                          className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white focus:outline-none focus:border-[#9EBE12]"
+                        />
                       </div>
-                      <input
-                        type="text"
-                        maxLength={6}
-                        required
-                        value={investorOrgOtpCode}
-                        onChange={(e) => setInvestorOrgOtpCode(e.target.value.replace(/\D/g, ''))}
-                        placeholder="123456"
-                        className="w-full px-3.5 py-2.5 rounded-xl text-base font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border border-blue-500 text-[#101212] dark:text-white font-bold"
-                      />
-                      <div className="flex items-center justify-between text-[11px] text-[#565B59] dark:text-[#8E9290]">
-                        <span>Code sent to <strong>{maskedOrgEmail || orgEmail}</strong></span>
-                        {investorOrgCountdown > 0 ? (
-                          <span className="font-mono">Resend in {investorOrgCountdown}s</span>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setInvestorOrgOtpStep(false);
-                              handleCreateInvestorOrg({ preventDefault: () => {} } as any);
-                            }}
-                            className="text-blue-500 hover:underline font-semibold cursor-pointer"
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                            Organization Type
+                          </label>
+                          <select
+                            value={orgType}
+                            onChange={(e) => setOrgType(e.target.value as any)}
+                            className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
                           >
-                            Resend Code
-                          </button>
-                        )}
+                            <option value="Venture Capital Fund">Venture Capital Fund</option>
+                            <option value="Angel Network">Angel Network / Syndicate</option>
+                            <option value="Family Office">Family Office</option>
+                            <option value="Corporate VC">Corporate Venture (CVC)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                            Target AUM / Pool Bracket
+                          </label>
+                          <select
+                            value={targetAum}
+                            onChange={(e) => setTargetAum(e.target.value)}
+                            className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                          >
+                            <option value="Under $5M">Under $5M</option>
+                            <option value="$5M - $25M">$5M - $25M</option>
+                            <option value="$25M - $100M">$25M - $100M</option>
+                            <option value="$100M+">$100M+</option>
+                          </select>
+                        </div>
                       </div>
-                      <p className="text-[10px] text-[#565B59] dark:text-[#8E9290]">
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                            Official Organization Domain Email *
+                          </label>
+                          <input
+                            type="email"
+                            required
+                            value={orgEmail}
+                            onChange={(e) => setOrgEmail(e.target.value)}
+                            placeholder="e.g. partner@nexuscapital.com"
+                            className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                            Requested Administrative Role *
+                          </label>
+                          <select
+                            value={orgRole}
+                            onChange={(e) => setOrgRole(e.target.value as any)}
+                            className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                          >
+                            <option value="Owner / Managing Partner">Owner / Managing Partner</option>
+                            <option value="Admin">Admin</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-[#101212] dark:text-white mb-1">
+                          Organization Website
+                        </label>
+                        <input
+                          type="url"
+                          value={orgWebsite}
+                          onChange={(e) => setOrgWebsite(e.target.value)}
+                          placeholder="https://nexuscapital.com"
+                          className="w-full px-3.5 py-2.5 rounded-xl text-xs bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    /* Step 2: DEDICATED FULL-SCREEN INVESTOR ORG OTP VIEW */
+                    <div className="py-6 px-5 rounded-2xl bg-blue-500/10 border border-blue-500/30 space-y-4 animate-fade-slide text-center">
+                      <div className="w-12 h-12 rounded-2xl bg-blue-500/20 text-blue-500 flex items-center justify-center mx-auto shadow-sm">
+                        <Building className="w-6 h-6 text-blue-500" />
+                      </div>
+                      <div>
+                        <h4 className="text-base font-black text-[#101212] dark:text-white">
+                          Verify Organization Official Email
+                        </h4>
+                        <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] mt-1">
+                          We sent a 6-digit verification code to <strong>{maskedOrgEmail || orgEmail}</strong>.
+                        </p>
+                      </div>
+
+                      <div className="max-w-xs mx-auto space-y-3">
+                        <input
+                          type="text"
+                          maxLength={6}
+                          required
+                          autoFocus
+                          value={investorOrgOtpCode}
+                          onChange={(e) => setInvestorOrgOtpCode(e.target.value.replace(/\D/g, ''))}
+                          placeholder="123456"
+                          className="w-full px-4 py-3 rounded-2xl text-2xl font-mono tracking-widest text-center bg-white dark:bg-[#181B1A] border-2 border-blue-500 text-[#101212] dark:text-white font-black shadow-inner focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+                        />
+
+                        <div className="flex items-center justify-between text-xs text-[#565B59] dark:text-[#8E9290]">
+                          <span>Valid for 10 min</span>
+                          {investorOrgCountdown > 0 ? (
+                            <span className="font-mono">Resend in {investorOrgCountdown}s</span>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                handleCreateInvestorOrg({ preventDefault: () => {} } as any);
+                              }}
+                              className="text-blue-500 hover:underline font-bold cursor-pointer"
+                            >
+                              Resend Code
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      <p className="text-[11px] text-[#565B59] dark:text-[#8E9290]">
                         Owner/Admin privileged role requires subsequent Xentro administrative review upon registration.
                       </p>
                     </div>

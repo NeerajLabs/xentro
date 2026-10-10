@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Sparkles,
   GraduationCap,
@@ -80,8 +80,10 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
     return () => clearTimeout(timer);
   }, [countdown]);
 
+  const prevIsOpenRef = useRef(false);
+
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !prevIsOpenRef.current) {
       const p = currentUserProfile || getUserProfile();
       setProfile(p);
       setFullName(p.name || '');
@@ -103,7 +105,8 @@ export const PersonalUpgradeModal: React.FC<PersonalUpgradeModalProps> = ({
       const activeInvestorMemberships = memberships.filter((m) => m.status === 'active');
       setHasInvestorOrgConflict(activeInvestorMemberships.length > 0);
     }
-  }, [isOpen, currentUserProfile]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
