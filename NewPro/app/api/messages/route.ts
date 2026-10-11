@@ -1,90 +1,124 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  getServerMessages,
-  addServerMessage,
-  markServerMessagesRead,
-  broadcast,
-  SharedChatMessage,
-} from '@/lib/serverMessages';
-import { getBackendBaseUrl } from '@/lib/backendUrl';
+import { getDatabase } from '@/lib/mongodb';
+import { broadcast } from '@/lib/serverMessages';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const BACKEND_BASE = getBackendBaseUrl();
-
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const conversationId = searchParams.get('conversationId');
-    const userId = searchParams.get('userId');
+    const conversationId = searchParams.get('conversationId')?.trim();
+    const userId = searchParams.get('userId')?.trim();
+    const entityId = searchParams.get('entityId')?.trim();
 
+    const db = await getDatabase();
+    const messagesCol = db.collection('chat_messages');
+    const convsCol = db.collection('conversations');
+    const entitiesCol = db.collection('entities');
+
+    // 1. Fetch messages for a specific conversation
     if (conversationId) {
-      try {
-        const res = await fetch(`${BACKEND_BASE}/messages/conversations/${conversationId}/`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(userId ? { 'X-User-Id': userId } : {}),
-          },
-          cache: 'no-store',
-        });
-        if (res.ok) {
-          const data = await res.json();
-          return NextResponse.json({
-            success: true,
-            messages: data?.data?.messages || [],
-          });
-        }
-      } catch (err) {
-        console.debug('[Messages Route] Backend fetch conversation error, using local store:', err);
-      }
+      const messages = await messagesCol
+        .find({ conversationId })
+        .sort({ createdAt: 1 })
+        .limit(200)
+        .toArray();
 
-      // Filter server messages by requested conversationId
-      const convNorm = conversationId.toLowerCase().trim();
-      const localFiltered = getServerMessages().filter(
-        (m) => (m.conversationId || '').toLowerCase().trim() === convNorm
-      );
       return NextResponse.json({
         success: true,
-        messages: localFiltered,
-      });
-    } else if (userId) {
-      try {
-        const res = await fetch(`${BACKEND_BASE}/messages/conversations/?userId=${userId}`, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-User-Id': userId,
-          },
-          cache: 'no-store',
-        });
-        if (res.ok) {
-          const data = await res.json();
-          return NextResponse.json({
-            success: true,
-            conversations: data?.data?.conversations || [],
-          });
-        }
-      } catch (err) {
-        console.debug('[Messages Route] Backend fetch conversations error:', err);
-      }
-      return NextResponse.json({
-        success: true,
-        conversations: [],
+        messages: messages.map((m: any) => ({
+          id: m.id || String(m._id),
+          clientMessageId: m.clientMessageId || m.id,
+          conversationId: m.conversationId,
+          senderId: m.senderId,
+          senderName: m.senderName || 'Member',
+          senderAvatar: m.senderAvatar || '/xentro-logo.png',
+          senderRole: m.senderRole || 'Member',
+          text: m.text || m.content || '',
+          content: m.text || m.content || '',
+          timestamp: m.timestamp || m.createdAt,
+          createdAt: m.createdAt,
+          readBy: Array.isArray(m.readBy) ? m.readBy : [m.senderId],
+          status: m.status || 'delivered',
+        })),
+        source: 'mongodb-atlas',
       });
     }
 
+    // 2. Fetch conversations for a user (or entity)
+    if (userId || entityId) {
+      let targetIds: string[] = [];
+      if (userId) {
+        targetIds.push(userId);
+        targetIds.push(userId.toLowerCase());
+
+        // Fetch owned entities so startup messages are included for the owner
+        try {
+          const ownedEntities = await entitiesCol
+            .find({
+              $or: [
+                { primaryOwnerId: userId },
+                { createdByUserId: userId },
+                { 'members.userId': userId },
+              ],
+              status: { $nin: ['DELETED', 'ORPHANED_DELETED'] },
+            })
+            .project({ id: 1, entityId: 1 })
+            .toArray();
+
+          ownedEntities.forEach((ent: any) => {
+            if (ent.id) targetIds.push(ent.id);
+            if (ent.entityId) targetIds.push(ent.entityId);
+          });
+        } catch (err) {
+          console.warn('[Messages GET] Error fetching owned entities:', err);
+        }
+      }
+
+      if (entityId) {
+        targetIds.push(entityId);
+        targetIds.push(entityId.toLowerCase());
+      }
+
+      targetIds = Array.from(new Set(targetIds.filter(Boolean)));
+
+      const conversations = await convsCol
+        .find({
+          participants: { $in: targetIds },
+        })
+        .sort({ updatedAt: -1 })
+        .limit(100)
+        .toArray();
+
+      return NextResponse.json({
+        success: true,
+        conversations: conversations.map((c: any) => ({
+          id: c.id || String(c._id),
+          participants: c.participants || [],
+          users: c.users || {},
+          user: c.user || undefined,
+          lastMessage: c.lastMessage || '',
+          updatedAt: c.updatedAt || c.createdAt,
+          createdAt: c.createdAt,
+        })),
+        source: 'mongodb-atlas',
+      });
+    }
+
+    // Default: Return recent messages
+    const recent = await messagesCol.find().sort({ createdAt: -1 }).limit(50).toArray();
     return NextResponse.json({
       success: true,
-      messages: getServerMessages(),
+      messages: recent,
+      source: 'mongodb-atlas',
     });
   } catch (err: any) {
-    return NextResponse.json({
-      success: true,
-      messages: getServerMessages(),
-      error: err?.message,
-    });
+    console.error('[Messages GET] Error:', err);
+    return NextResponse.json(
+      { success: false, messages: [], error: err?.message },
+      { status: 500 }
+    );
   }
 }
 
@@ -93,28 +127,93 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const action = body?.action || 'send';
 
+    const db = await getDatabase();
+    const messagesCol = db.collection('chat_messages');
+    const convsCol = db.collection('conversations');
+
+    const nowIso = new Date().toISOString();
+
     if (action === 'startConversation') {
       const partnerId = body?.partnerId;
       const userId = body?.userId;
+      const partner = body?.partner || {};
+      const currentUser = body?.currentUser || {};
       const initialMessage = body?.initialMessage;
 
-      const res = await fetch(`${BACKEND_BASE}/messages/conversations/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(userId ? { 'X-User-Id': userId } : {}),
-        },
-        body: JSON.stringify({ partnerId, userId, initialMessage }),
-      });
-
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
+      if (!partnerId || !userId) {
         return NextResponse.json(
-          { success: false, error: data?.message || 'Could not start conversation' },
-          { status: res.status }
+          { success: false, error: 'partnerId and userId are required' },
+          { status: 400 }
         );
       }
-      return NextResponse.json({ success: true, conversation: data?.data?.conversation });
+
+      const sortedPair = [userId.toLowerCase(), partnerId.toLowerCase()].sort();
+      const convId = body?.conversationId || `conv_${sortedPair[0]}_${sortedPair[1]}`;
+
+      const convDoc = {
+        id: convId,
+        participants: [userId, partnerId],
+        users: {
+          [userId]: {
+            id: userId,
+            name: currentUser?.name || 'Member',
+            avatar: currentUser?.avatar || '/xentro-logo.png',
+            role: currentUser?.role || 'Member',
+            company: currentUser?.company || '',
+          },
+          [partnerId]: {
+            id: partnerId,
+            name: partner?.name || 'Member',
+            avatar: partner?.avatar || '/xentro-logo.png',
+            role: partner?.role || 'Member',
+            company: partner?.company || '',
+          },
+        },
+        user: {
+          id: partnerId,
+          name: partner?.name || 'Member',
+          avatar: partner?.avatar || '/xentro-logo.png',
+          role: partner?.role || 'Member',
+          company: partner?.company || '',
+        },
+        lastMessage: initialMessage || 'Conversation initiated.',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      await convsCol.updateOne(
+        { id: convId },
+        {
+          $set: convDoc,
+          $setOnInsert: { createdAt: nowIso },
+        },
+        { upsert: true }
+      );
+
+      if (initialMessage) {
+        const msgDoc = {
+          id: `msg_${Date.now()}`,
+          clientMessageId: `msg_${Date.now()}`,
+          conversationId: convId,
+          senderId: userId,
+          senderName: currentUser?.name || 'Member',
+          senderAvatar: currentUser?.avatar || '/xentro-logo.png',
+          senderRole: currentUser?.role || 'Member',
+          text: initialMessage,
+          content: initialMessage,
+          timestamp: nowIso,
+          createdAt: nowIso,
+          readBy: [userId],
+          status: 'delivered',
+        };
+        await messagesCol.insertOne(msgDoc);
+        broadcast({ type: 'new_message', data: msgDoc });
+      }
+
+      return NextResponse.json({
+        success: true,
+        conversation: convDoc,
+      });
     }
 
     if (action === 'send') {
@@ -123,103 +222,93 @@ export async function POST(req: NextRequest) {
       const text = rawMsg?.text || rawMsg?.content || '';
       const senderId = rawMsg?.senderId || body?.senderId || 'anonymous';
       const senderName = rawMsg?.senderName || body?.senderName || 'Member';
-      const id = rawMsg?.id || rawMsg?.tempId || `msg_${Date.now()}`;
+      const senderAvatar = rawMsg?.senderAvatar || body?.senderAvatar || '/xentro-logo.png';
+      const senderRole = rawMsg?.senderRole || body?.senderRole || 'Member';
+      const id = rawMsg?.id || rawMsg?.tempId || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const clientMessageId = rawMsg?.clientMessageId || id;
 
-      if (!text) {
-        return NextResponse.json({ success: false, error: 'Invalid message payload: missing text' }, { status: 400 });
+      if (!text || !conversationId) {
+        return NextResponse.json(
+          { success: false, error: 'text and conversationId are required' },
+          { status: 400 }
+        );
       }
 
-      const message: SharedChatMessage = {
+      const msgDoc = {
         id,
-        conversationId: conversationId || 'conv_general',
+        clientMessageId,
+        conversationId,
         senderId,
         senderName,
+        senderAvatar,
+        senderRole,
         text,
-        timestamp: rawMsg?.timestamp || new Date().toISOString(),
-        readBy: rawMsg?.readBy || [senderId],
+        content: text,
+        timestamp: rawMsg?.timestamp || nowIso,
+        createdAt: nowIso,
+        readBy: [senderId],
         status: 'delivered',
-        senderAvatar: rawMsg?.senderAvatar || '/xentro-logo.png',
-        senderRole: rawMsg?.senderRole || 'Member',
       };
 
-      // Verify and persist via Django MongoDB backend
-      let serverSavedMessage: any = null;
-      if (conversationId) {
-        try {
-          const res = await fetch(`${BACKEND_BASE}/messages/conversations/${conversationId}/send/`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(senderId ? { 'X-User-Id': senderId } : {}),
-            },
-            body: JSON.stringify({
-              id: message.id,
-              clientMessageId: message.id,
-              content: message.text,
-              text: message.text,
-              type: 'TEXT',
-              senderName: message.senderName,
-              userId: senderId,
-              senderId: senderId,
-              conversationId: conversationId,
-            }),
-          });
+      // 1. Insert message into MongoDB Atlas chat_messages
+      await messagesCol.updateOne(
+        { $or: [{ id }, { clientMessageId }] },
+        { $set: msgDoc },
+        { upsert: true }
+      );
 
-          if (res.ok) {
-            const resData = await res.json().catch(() => ({}));
-            if (resData?.data?.message) {
-              serverSavedMessage = resData.data.message;
-            }
-          }
-        } catch (err) {
-          console.debug('[Messages Route] Backend send error, using fallback:', err);
-        }
-      }
+      // 2. Update conversation last message and timestamp in MongoDB Atlas
+      await convsCol.updateOne(
+        { id: conversationId },
+        {
+          $set: {
+            lastMessage: text,
+            updatedAt: nowIso,
+          },
+          $addToSet: {
+            participants: senderId,
+          },
+        },
+        { upsert: true }
+      );
 
-      const updated = addServerMessage(serverSavedMessage || message);
+      // 3. Broadcast real-time SSE event to all connected browsers
+      broadcast({ type: 'new_message', data: msgDoc });
+
       return NextResponse.json({
         success: true,
-        message: serverSavedMessage || message,
-        messages: updated,
+        message: msgDoc,
       });
     }
 
     if (action === 'markRead') {
       const userId = body?.userId as string;
-      const conversationId = body?.conversationId as string | undefined;
-      if (!userId) {
-        return NextResponse.json({ success: false, error: 'userId is required' }, { status: 400 });
+      const conversationId = body?.conversationId as string;
+
+      if (!userId || !conversationId) {
+        return NextResponse.json(
+          { success: false, error: 'userId and conversationId required' },
+          { status: 400 }
+        );
       }
 
-      // Forward to Django MongoDB backend
-      try {
-        const markUrl = conversationId
-          ? `${BACKEND_BASE}/messages/conversations/${conversationId}/read/`
-          : `${BACKEND_BASE}/messages/read/`;
-        fetch(markUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-User-Id': userId,
-          },
-          body: JSON.stringify({ userId, conversationId }),
-        }).catch(() => {});
-      } catch (err) {
-        console.debug('[Messages Route] Backend markRead error:', err);
-      }
+      await messagesCol.updateMany(
+        { conversationId },
+        { $addToSet: { readBy: userId } }
+      );
 
-      const updated = markServerMessagesRead(userId, conversationId);
-      return NextResponse.json({ success: true, messages: updated });
+      return NextResponse.json({ success: true });
     }
 
-    if (action === 'clear') {
-      const { clearServerMessages } = await import('@/lib/serverMessages');
-      const updated = clearServerMessages();
-      return NextResponse.json({ success: true, messages: updated });
-    }
-
-    return NextResponse.json({ success: false, error: 'Unsupported action' }, { status: 400 });
+    return NextResponse.json(
+      { success: false, error: 'Unsupported action' },
+      { status: 400 }
+    );
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err?.message || 'Server error' }, { status: 500 });
+    console.error('[Messages POST] Error:', err);
+    return NextResponse.json(
+      { success: false, error: err?.message || 'Server error' },
+      { status: 500 }
+    );
   }
 }

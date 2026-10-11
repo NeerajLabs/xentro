@@ -89,11 +89,13 @@ export const FullMessagesPage: React.FC<FullMessagesPageProps> = ({ onBackToFeed
     window.addEventListener(CONVERSATIONS_UPDATED_EVENT, handleUpdated);
     window.addEventListener(AUTO_REPLY_CHANGED_EVENT, handleAutoReply);
     window.addEventListener('xentro-navigate-tab', handleNavigate);
+    window.addEventListener('xentro-entity-switched', handleUpdated);
 
     return () => {
       window.removeEventListener(CONVERSATIONS_UPDATED_EVENT, handleUpdated);
       window.removeEventListener(AUTO_REPLY_CHANGED_EVENT, handleAutoReply);
       window.removeEventListener('xentro-navigate-tab', handleNavigate);
+      window.removeEventListener('xentro-entity-switched', handleUpdated);
     };
   }, []);
 

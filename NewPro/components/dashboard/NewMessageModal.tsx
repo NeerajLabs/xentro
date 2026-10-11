@@ -41,9 +41,9 @@ export const NewMessageModal: React.FC<NewMessageModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [connectedPartners, setConnectedPartners] = useState<Array<{ id: string; name: string; role: string; avatar: string }>>([]);
 
-  const currentProfile = getUserProfile();
-  const currentUserId = currentProfile.id || '';
-  const currentUserName = (currentProfile.name || '').toLowerCase().trim();
+  const persona = connectionService.getActiveConnectionPersona();
+  const currentUserId = persona.id;
+  const currentUserName = (persona.name || '').toLowerCase().trim();
 
   // Load connected partners strictly from connectionService
   useEffect(() => {

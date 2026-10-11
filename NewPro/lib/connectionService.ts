@@ -3,6 +3,7 @@
 import { getUserProfile } from './userProfile';
 import { notificationService } from './notificationService';
 import { messagingService, resolveAvatarUrl } from './messagingService';
+import { entityContextService } from './entityContextService';
 
 export const CONNECTIONS_STORAGE_KEY = 'xentro_connections_v2';
 export const CONNECTIONS_PARTNERS_KEY = 'xentro_connections_partners_v2';
@@ -41,6 +42,16 @@ export interface ConnectionMetrics {
   activeUsers: number;
 }
 
+export interface ActiveConnectionPersona {
+  id: string;
+  name: string;
+  role: string;
+  avatar: string;
+  isEntity: boolean;
+  entityId?: string;
+  personalUserId: string;
+}
+
 // Cross-tab broadcast channel
 let connectionChannel: BroadcastChannel | null = null;
 if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
@@ -61,13 +72,55 @@ export function normalizeUserId(rawId?: string): string {
   return rawId.trim();
 }
 
-function getCurrentUserId(): { id: string; name: string; role: string; avatar: string } {
+/**
+ * Returns the active identity based on whether the user is in personal mode
+ * or inside an Entity Workspace (Startup, Investor Org, ESP).
+ */
+export function getActiveConnectionPersona(): ActiveConnectionPersona {
   const profile = getUserProfile();
-  const id = profile.id || '';
-  const name = profile.name || 'Member';
-  const role = profile.roleTitle || profile.role || 'Member';
-  const avatar = resolveAvatarUrl(profile.avatar, name);
-  return { id, name, role, avatar };
+  const personalId = profile.id || '';
+  const personalName = profile.name || 'Member';
+  const personalRole = profile.roleTitle || profile.role || 'Member';
+  const personalAvatar = resolveAvatarUrl(profile.avatar, personalName);
+
+  if (typeof window !== 'undefined') {
+    try {
+      const activeEntity = entityContextService.getActiveEntity();
+      if (activeEntity && activeEntity.id) {
+        return {
+          id: activeEntity.id,
+          name: activeEntity.name || 'Startup',
+          role: activeEntity.entityType || 'Startup',
+          avatar: resolveAvatarUrl(activeEntity.logo, activeEntity.name),
+          isEntity: true,
+          entityId: activeEntity.id,
+          personalUserId: personalId,
+        };
+      }
+    } catch (err) {
+      console.debug('[Connections] Error resolving active entity:', err);
+    }
+  }
+
+  return {
+    id: personalId,
+    name: personalName,
+    role: personalRole,
+    avatar: personalAvatar,
+    isEntity: false,
+    entityId: undefined,
+    personalUserId: personalId,
+  };
+}
+
+function getCurrentUserId(): { id: string; name: string; role: string; avatar: string } {
+  const persona = getActiveConnectionPersona();
+  return {
+    id: persona.id,
+    name: persona.name,
+    role: persona.role,
+    avatar: persona.avatar,
+  };
 }
 
 // Global initialization and listener hook
@@ -89,6 +142,11 @@ if (typeof window !== 'undefined') {
     connectionService.syncFromServer();
   });
 
+  window.addEventListener('xentro-entity-switched', () => {
+    connectionService.syncFromServer();
+    window.dispatchEvent(new CustomEvent(CONNECTIONS_UPDATED_EVENT));
+  });
+
   // Fetch initial on page load
   setTimeout(() => {
     connectionService.syncFromServer();
@@ -96,6 +154,11 @@ if (typeof window !== 'undefined') {
 }
 
 export const connectionService = {
+  /** Get active persona based on current workspace */
+  getActiveConnectionPersona(): ActiveConnectionPersona {
+    return getActiveConnectionPersona();
+  },
+
   /** Get all connections (filtered by optional user ID) */
   getConnections(userId?: string): ConnectionRecord[] {
     const list = this.getRawConnections();
@@ -158,9 +221,15 @@ export const connectionService = {
     }
 
     try {
-      const currentUser = getCurrentUserId();
-      const userId = normalizeUserId(currentUser.id);
-      const url = userId ? `/api/connections?userId=${encodeURIComponent(userId)}` : '/api/connections';
+      const persona = getActiveConnectionPersona();
+      const personalId = normalizeUserId(persona.personalUserId);
+      const entityId = persona.isEntity ? normalizeUserId(persona.entityId) : '';
+
+      const params = new URLSearchParams();
+      if (personalId) params.append('userId', personalId);
+      if (entityId) params.append('entityId', entityId);
+
+      const url = params.toString() ? `/api/connections?${params.toString()}` : '/api/connections';
 
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error('API fetch error');
@@ -169,16 +238,13 @@ export const connectionService = {
       if (data?.success && Array.isArray(data.connections)) {
         this.applyRemoteConnections(data.connections);
       }
-      if (data?.connectedPartners && Array.isArray(data.connectedPartners)) {
-        localStorage.setItem(CONNECTIONS_PARTNERS_KEY, JSON.stringify(data.connectedPartners));
-      }
       if (data?.metrics) {
         localStorage.setItem(CONNECTIONS_METRICS_KEY, JSON.stringify(data.metrics));
       }
 
       return {
         connections: data?.connections || this.getRawConnections(),
-        connectedPartners: data?.connectedPartners || this.getConnectedPartners(),
+        connectedPartners: this.getConnectedPartners(),
         metrics: data?.metrics || this.getMetrics(),
       };
     } catch (err) {
@@ -221,16 +287,20 @@ export const connectionService = {
     }
     this.saveRawConnections(updated);
 
-    const currentUser = getCurrentUserId();
-    const normalizedRecipient = normalizeUserId(conn.recipientId);
-    const normalizedSender = normalizeUserId(conn.senderId);
-    const normalizedCurrent = normalizeUserId(currentUser.id);
+    const persona = getActiveConnectionPersona();
+    const normalizedRecipient = normalizeUserId(conn.recipientId).toLowerCase();
+    const normalizedSender = normalizeUserId(conn.senderId).toLowerCase();
+    const normalizedCurrent = normalizeUserId(persona.id).toLowerCase();
+    const normalizedPersonal = normalizeUserId(persona.personalUserId).toLowerCase();
+
+    const isRecipientMe = normalizedRecipient === normalizedCurrent || normalizedRecipient === normalizedPersonal;
+    const isSenderMe = normalizedSender === normalizedCurrent || normalizedSender === normalizedPersonal;
 
     // If we are the recipient of a pending request, notify the UI
-    if (normalizedRecipient === normalizedCurrent && conn.status === 'pending') {
+    if (isRecipientMe && conn.status === 'pending') {
       notificationService.sendNotification({
         id: `notif_conn_${conn.id}`,
-        userId: currentUser.id,
+        userId: persona.id,
         category: 'mentorship',
         title: `${conn.senderName} sent you a connection request`,
         description: `Looking to connect and collaborate on Xentro.`,
@@ -244,10 +314,10 @@ export const connectionService = {
         actionType: 'connection_request',
         targetTab: 'notifications',
       });
-    } else if (normalizedSender === normalizedCurrent && conn.status === 'accepted') {
+    } else if (isSenderMe && conn.status === 'accepted') {
       notificationService.sendNotification({
         id: `notif_accepted_${conn.id}`,
-        userId: currentUser.id,
+        userId: persona.id,
         category: 'mentorship',
         title: `${conn.recipientName} accepted your connection request!`,
         description: `You are now connected on Xentro! Start collaborating.`,
@@ -276,21 +346,24 @@ export const connectionService = {
 
   /** Get current relationship status with a given partner directly from MongoDB source */
   getConnectionStatus(partnerId: string): 'none' | 'pending' | 'received' | 'connected' {
-    const currentUser = getCurrentUserId();
+    const persona = getActiveConnectionPersona();
     const all = this.getRawConnections();
-    const normalizedCurrent = normalizeUserId(currentUser.id).toLowerCase();
+    const normalizedCurrent = normalizeUserId(persona.id).toLowerCase();
+    const normalizedPersonal = normalizeUserId(persona.personalUserId).toLowerCase();
     const normalizedPartner = normalizeUserId(partnerId).toLowerCase();
 
     if (!normalizedPartner || !normalizedCurrent) return 'none';
-    if (normalizedPartner === normalizedCurrent) return 'none';
+    if (normalizedPartner === normalizedCurrent || normalizedPartner === normalizedPersonal) return 'none';
 
-    // Match either direction with normalized IDs
+    // Match either direction with normalized IDs (active persona or personal ID)
     const conn = all.find((c) => {
       const s = normalizeUserId(c.senderId).toLowerCase();
       const r = normalizeUserId(c.recipientId).toLowerCase();
       return (
         (s === normalizedCurrent && r === normalizedPartner) ||
-        (r === normalizedCurrent && s === normalizedPartner)
+        (r === normalizedCurrent && s === normalizedPartner) ||
+        (s === normalizedPersonal && r === normalizedPartner) ||
+        (r === normalizedPersonal && s === normalizedPartner)
       );
     });
 
@@ -303,7 +376,8 @@ export const connectionService = {
     }
 
     if (conn.status === 'pending') {
-      if (normalizeUserId(conn.senderId).toLowerCase() === normalizedCurrent) {
+      const s = normalizeUserId(conn.senderId).toLowerCase();
+      if (s === normalizedCurrent || s === normalizedPersonal) {
         return 'pending'; // Current user requested it
       } else {
         return 'received'; // Current user received it
@@ -320,17 +394,17 @@ export const connectionService = {
     role: string;
     avatar?: string;
   }): Promise<ConnectionRecord> {
-    const currentUser = getCurrentUserId();
-    const senderId = normalizeUserId(currentUser.id);
+    const persona = getActiveConnectionPersona();
+    const senderId = normalizeUserId(persona.id);
     const recipientId = normalizeUserId(partner.id);
     const connId = `conn_${[senderId.toLowerCase(), recipientId.toLowerCase()].sort().join('_')}`;
 
     const newConn: ConnectionRecord = {
       id: connId,
       senderId,
-      senderName: currentUser.name,
-      senderRole: currentUser.role,
-      senderAvatar: resolveAvatarUrl(currentUser.avatar, currentUser.name),
+      senderName: persona.name,
+      senderRole: persona.role,
+      senderAvatar: resolveAvatarUrl(persona.avatar, persona.name),
       recipientId,
       recipientName: partner.name,
       recipientRole: partner.role,
@@ -375,16 +449,19 @@ export const connectionService = {
 
   /** Accept a connection request in MongoDB Atlas */
   async acceptConnection(partnerId: string, connectionId?: string): Promise<void> {
-    const currentUser = getCurrentUserId();
+    const persona = getActiveConnectionPersona();
     const all = this.getRawConnections();
-    const currentNorm = normalizeUserId(currentUser.id);
+    const currentNorm = normalizeUserId(persona.id);
+    const personalNorm = normalizeUserId(persona.personalUserId);
     const partnerNorm = normalizeUserId(partnerId);
 
     let conn = all.find(
       (c) =>
         (connectionId && c.id === connectionId) ||
         (normalizeUserId(c.senderId) === currentNorm && normalizeUserId(c.recipientId) === partnerNorm) ||
-        (normalizeUserId(c.recipientId) === currentNorm && normalizeUserId(c.senderId) === partnerNorm)
+        (normalizeUserId(c.recipientId) === currentNorm && normalizeUserId(c.senderId) === partnerNorm) ||
+        (normalizeUserId(c.senderId) === personalNorm && normalizeUserId(c.recipientId) === partnerNorm) ||
+        (normalizeUserId(c.recipientId) === personalNorm && normalizeUserId(c.senderId) === partnerNorm)
     );
 
     if (!conn) {
@@ -395,8 +472,8 @@ export const connectionService = {
         senderName: 'Partner',
         senderRole: 'Member',
         recipientId: currentNorm,
-        recipientName: currentUser.name,
-        recipientRole: currentUser.role,
+        recipientName: persona.name,
+        recipientRole: persona.role,
         status: 'accepted',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
@@ -434,7 +511,7 @@ export const connectionService = {
     }
 
     // 2. Automated conversation kick-off message
-    const isSender = normalizeUserId(conn.senderId) === currentNorm;
+    const isSender = normalizeUserId(conn.senderId) === currentNorm || normalizeUserId(conn.senderId) === personalNorm;
     const resolvedPartnerId = isSender ? conn.recipientId : conn.senderId;
     const rawPartnerName = isSender ? conn.recipientName : conn.senderName;
     const resolvedPartnerName = (rawPartnerName && rawPartnerName !== 'Partner' && rawPartnerName !== 'Sender') ? rawPartnerName : 'your connection';
@@ -455,16 +532,19 @@ export const connectionService = {
 
   /** Decline a connection request in MongoDB Atlas */
   async declineConnection(partnerId: string, connectionId?: string): Promise<void> {
-    const currentUser = getCurrentUserId();
+    const persona = getActiveConnectionPersona();
     const all = this.getRawConnections();
-    const currentNorm = normalizeUserId(currentUser.id);
+    const currentNorm = normalizeUserId(persona.id);
+    const personalNorm = normalizeUserId(persona.personalUserId);
     const partnerNorm = normalizeUserId(partnerId);
 
     const conn = all.find(
       (c) =>
         (connectionId && c.id === connectionId) ||
         (normalizeUserId(c.senderId) === currentNorm && normalizeUserId(c.recipientId) === partnerNorm) ||
-        (normalizeUserId(c.recipientId) === currentNorm && normalizeUserId(c.senderId) === partnerNorm)
+        (normalizeUserId(c.recipientId) === currentNorm && normalizeUserId(c.senderId) === partnerNorm) ||
+        (normalizeUserId(c.senderId) === personalNorm && normalizeUserId(c.recipientId) === partnerNorm) ||
+        (normalizeUserId(c.recipientId) === personalNorm && normalizeUserId(c.senderId) === partnerNorm)
     );
 
     if (conn) {
@@ -499,71 +579,37 @@ export const connectionService = {
 
   /** Number of pending connection requests received by current user from MongoDB */
   getPendingReceivedCount(): number {
-    const currentUser = getCurrentUserId();
-    const currentNorm = normalizeUserId(currentUser.id);
+    const persona = getActiveConnectionPersona();
+    const currentNorm = normalizeUserId(persona.id).toLowerCase();
+    const personalNorm = normalizeUserId(persona.personalUserId).toLowerCase();
     const all = this.getRawConnections();
-    return all.filter((c) => normalizeUserId(c.recipientId) === currentNorm && c.status === 'pending').length;
+    return all.filter((c) => {
+      const r = normalizeUserId(c.recipientId).toLowerCase();
+      return (r === currentNorm || (!persona.isEntity && r === personalNorm)) && c.status === 'pending';
+    }).length;
   },
 
-  /** Number of established connections for current user (or specified target user) from MongoDB */
+  /** Number of established connections for active persona (or specified target user) from MongoDB */
   getConnectedCount(userId?: string): number {
-    const currentUser = getCurrentUserId();
-    const currentNorm = normalizeUserId(currentUser.id).toLowerCase();
-    const currentEmailNorm = (currentUser as any).email ? normalizeUserId((currentUser as any).email).toLowerCase() : '';
+    const persona = getActiveConnectionPersona();
+    const currentNorm = normalizeUserId(persona.id).toLowerCase();
     const targetNorm = userId ? normalizeUserId(userId).toLowerCase() : currentNorm;
     if (!targetNorm) return 0;
     
     const all = this.getRawConnections();
-    const acceptedCount = all.filter((c) => {
+    return all.filter((c) => {
       if (c.status !== 'accepted') return false;
       const s = normalizeUserId(c.senderId).toLowerCase();
       const r = normalizeUserId(c.recipientId).toLowerCase();
-      if (!userId) {
-        return (
-          s === currentNorm ||
-          r === currentNorm ||
-          (currentEmailNorm && (s === currentEmailNorm || r === currentEmailNorm))
-        );
-      }
       return s === targetNorm || r === targetNorm;
     }).length;
-
-    // For current user, if acceptedCount in raw records is less than accepted partners cache, use the maximum
-    if (!userId && typeof window !== 'undefined') {
-      try {
-        const rawPartners = localStorage.getItem(CONNECTIONS_PARTNERS_KEY);
-        if (rawPartners) {
-          const parsed = JSON.parse(rawPartners);
-          if (Array.isArray(parsed) && parsed.length > acceptedCount) {
-            return parsed.length;
-          }
-        }
-      } catch {}
-    }
-
-    return acceptedCount;
   },
 
-  /** Get all user profiles that current user (or specified target user) has an accepted connection with */
+  /** Get all user profiles that active persona (or specified target user) has an accepted connection with */
   getConnectedPartners(userId?: string): ConnectedPartner[] {
-    const targetNorm = userId ? normalizeUserId(userId).toLowerCase() : normalizeUserId(getCurrentUserId().id).toLowerCase();
+    const persona = getActiveConnectionPersona();
+    const targetNorm = userId ? normalizeUserId(userId).toLowerCase() : normalizeUserId(persona.id).toLowerCase();
     if (!targetNorm) return [];
-
-    // Try reading cached server partners first if checking current user
-    if (!userId && typeof window !== 'undefined') {
-      try {
-        const raw = localStorage.getItem(CONNECTIONS_PARTNERS_KEY);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return parsed.map((p) => ({
-              ...p,
-              avatar: resolveAvatarUrl(p.avatar, p.name),
-            }));
-          }
-        }
-      } catch {}
-    }
 
     const all = this.getRawConnections();
     const connected = all.filter(

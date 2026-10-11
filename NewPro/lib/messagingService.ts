@@ -2,6 +2,7 @@
 
 import { Conversation, ChatMessage, User } from '@/types';
 import { getUserProfile } from './userProfile';
+import { entityContextService } from './entityContextService';
 
 export const CONVERSATIONS_STORAGE_KEY = 'xentro_conversations_v1';
 export const CUSTOM_CONVERSATIONS_KEY = 'xentro_custom_conversations_v2';
@@ -23,6 +24,17 @@ export interface SharedChatMessage {
   createdAt?: string;
   readBy: string[];
   failed?: boolean;
+}
+
+export interface ActiveMessagingPersona {
+  id: string;
+  name: string;
+  role: string;
+  avatar: string;
+  company: string;
+  isEntity: boolean;
+  entityId?: string;
+  personalUserId: string;
 }
 
 export function formatMessageTime(rawTimestamp?: string): string {
@@ -120,6 +132,50 @@ function connectRealtimeStream() {
   }
 }
 
+/**
+ * Returns the active identity based on whether the user is in personal mode
+ * or inside an Entity Workspace (Startup, Investor Org, ESP).
+ */
+export function getActiveMessagingPersona(): ActiveMessagingPersona {
+  const profile = getUserProfile();
+  const personalId = profile.id || '';
+  const personalName = profile.name || 'Member';
+  const personalRole = profile.roleTitle || profile.role || 'Member';
+  const personalAvatar = resolveAvatarUrl(profile.avatar, personalName);
+  const personalCompany = profile.organization || 'Xentro Member';
+
+  if (typeof window !== 'undefined') {
+    try {
+      const activeEntity = entityContextService.getActiveEntity();
+      if (activeEntity && activeEntity.id) {
+        return {
+          id: activeEntity.id,
+          name: activeEntity.name || 'Startup',
+          role: activeEntity.entityType || 'Startup',
+          avatar: resolveAvatarUrl(activeEntity.logo, activeEntity.name),
+          company: activeEntity.name || 'Startup',
+          isEntity: true,
+          entityId: activeEntity.id,
+          personalUserId: personalId,
+        };
+      }
+    } catch (err) {
+      console.debug('[Messaging] Error resolving active entity:', err);
+    }
+  }
+
+  return {
+    id: personalId,
+    name: personalName,
+    role: personalRole,
+    avatar: personalAvatar,
+    company: personalCompany,
+    isEntity: false,
+    entityId: undefined,
+    personalUserId: personalId,
+  };
+}
+
 if (typeof window !== 'undefined') {
   connectRealtimeStream();
 
@@ -136,14 +192,19 @@ if (typeof window !== 'undefined') {
     messagingService.syncFromServer().catch(() => {});
   });
 
+  window.addEventListener('xentro-entity-switched', () => {
+    messagingService.syncFromServer().catch(() => {});
+    window.dispatchEvent(new CustomEvent(CONVERSATIONS_UPDATED_EVENT));
+  });
+
   // Background polling every 4 seconds to guarantee real-time delivery even across different sessions
   setInterval(() => {
-    const profile = getUserProfile();
-    if (profile?.id) {
-      messagingService.syncFromServer(profile.id).catch(() => {});
+    const persona = getActiveMessagingPersona();
+    if (persona.personalUserId || persona.id) {
+      messagingService.syncFromServer().catch(() => {});
       const activeId = messagingService.getActiveConversationId();
       if (activeId) {
-        messagingService.fetchConversationMessages(activeId, profile.id).catch(() => {});
+        messagingService.fetchConversationMessages(activeId).catch(() => {});
       }
     }
   }, 4000);
@@ -155,6 +216,10 @@ function normalizeId(id?: string | null): string {
 }
 
 export const messagingService = {
+  getActiveMessagingPersona(): ActiveMessagingPersona {
+    return getActiveMessagingPersona();
+  },
+
   isAutoReplyEnabled(): boolean {
     if (typeof window === 'undefined') return false;
     try {
@@ -333,11 +398,21 @@ export const messagingService = {
   async syncFromServer(userId?: string): Promise<Conversation[]> {
     if (typeof window === 'undefined') return [];
     try {
-      const profile = getUserProfile();
-      const currentUserId = userId || profile.id || '';
-      if (!currentUserId) return this.getConversations();
+      const persona = getActiveMessagingPersona();
+      const personalId = normalizeId(persona.personalUserId);
+      const entityId = persona.isEntity ? normalizeId(persona.entityId) : '';
 
-      const res = await fetch(`/api/messages?userId=${encodeURIComponent(currentUserId)}`, {
+      const params = new URLSearchParams();
+      if (userId) {
+        params.append('userId', userId);
+      } else {
+        if (personalId) params.append('userId', personalId);
+        if (entityId) params.append('entityId', entityId);
+      }
+
+      if (!params.toString()) return this.getConversations();
+
+      const res = await fetch(`/api/messages?${params.toString()}`, {
         cache: 'no-store',
       });
       if (!res.ok) return this.getConversations();
@@ -370,20 +445,20 @@ export const messagingService = {
           status: 'Active now',
         };
 
-        const participants = rc.participants || [currentUserId, partner.id];
-        const currentAvatar = resolveAvatarUrl(profile.avatar, profile.name);
+        const participants = rc.participants || [persona.id, partner.id];
+        const currentAvatar = resolveAvatarUrl(persona.avatar, persona.name);
 
         const meta: StoredConversationMeta = {
           id: convId,
           user: partnerUser,
           participants,
           users: {
-            [currentUserId]: {
-              id: currentUserId,
-              name: profile.name || 'Member',
-              username: `@${(profile.name || 'member').toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-              role: profile.roleTitle || profile.role || 'Member',
-              company: profile.organization || 'Xentro Member',
+            [persona.id]: {
+              id: persona.id,
+              name: persona.name,
+              username: `@${(persona.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+              role: persona.role,
+              company: persona.company,
               avatar: currentAvatar,
               verified: true,
               status: 'Active now',
@@ -533,12 +608,13 @@ export const messagingService = {
     }
   },
 
-  /** Returns conversations customized for the currently logged-in account */
+  /** Returns conversations customized for the active persona (startup or personal) */
   getConversations(): Conversation[] {
     const rawList = this.getRawMessages();
-    const profile = getUserProfile();
-    const currentUserId = profile.id || '';
+    const persona = getActiveMessagingPersona();
+    const currentUserId = persona.id;
     const currentNorm = normalizeId(currentUserId).toLowerCase();
+    const personalNorm = normalizeId(persona.personalUserId).toLowerCase();
 
     const customList = this.getCustomConversations();
     const result: Conversation[] = [];
@@ -548,30 +624,42 @@ export const messagingService = {
 
       const participants = (c.participants || []).map((p) => normalizeId(p).toLowerCase());
 
-      // If current user is logged in, ensure this user is one of the participants
-      if (currentNorm && participants.length > 0 && !participants.includes(currentNorm)) {
-        continue;
+      // Persona isolation:
+      // In entity mode (Startup), only show conversations involving this entity!
+      // In personal mode, only show conversations involving this personal user!
+      if (persona.isEntity) {
+        if (!participants.includes(currentNorm)) {
+          continue;
+        }
+      } else {
+        if (personalNorm && participants.length > 0 && !participants.includes(personalNorm)) {
+          continue;
+        }
       }
 
       // Resolve partner persona relative to current viewer
       let partnerUser = c.user;
       if (c.users && currentNorm) {
-        const partnerKey = Object.keys(c.users).find((k) => normalizeId(k).toLowerCase() !== currentNorm);
+        const partnerKey = Object.keys(c.users).find((k) => {
+          const kNorm = normalizeId(k).toLowerCase();
+          return kNorm !== currentNorm && kNorm !== personalNorm;
+        });
         if (partnerKey && c.users[partnerKey]) {
           partnerUser = c.users[partnerKey];
         }
       }
 
-      // Safeguard: Never show current user as the partner in their own conversation list
+      // Safeguard: Never show current user or active entity as the partner in their own conversation list
       if (
-        (partnerUser.id && partnerUser.id.toLowerCase() === currentNorm) ||
-        (partnerUser.name && profile.name && partnerUser.name.toLowerCase().trim() === profile.name.toLowerCase().trim())
+        (partnerUser.id && (partnerUser.id.toLowerCase() === currentNorm || partnerUser.id.toLowerCase() === personalNorm)) ||
+        (partnerUser.name && partnerUser.name.toLowerCase().trim() === persona.name.toLowerCase().trim())
       ) {
         let realPartner: User | null = null;
         if (c.users) {
           for (const key of Object.keys(c.users)) {
             const u = c.users[key];
-            if (u && u.id.toLowerCase() !== currentNorm && u.name.toLowerCase().trim() !== (profile.name || '').toLowerCase().trim()) {
+            const uNorm = u?.id?.toLowerCase();
+            if (u && uNorm !== currentNorm && uNorm !== personalNorm && u.name.toLowerCase().trim() !== persona.name.toLowerCase().trim()) {
               realPartner = u;
               break;
             }
@@ -619,12 +707,14 @@ export const messagingService = {
       const convMsgs = dedupedThread.map((m) => {
         const text = m.text || m.content || '';
         const isSystem = text.startsWith('🤝 Connection established') || (m as any).type === 'system' || (m as any).isSystem;
+        const sNorm = normalizeId(m.senderId).toLowerCase();
+        const isMeSender = sNorm === currentNorm || (persona.isEntity && sNorm === personalNorm);
         return {
           id: m.id,
           senderId: m.senderId,
           text,
           timestamp: formatMessageTime(m.timestamp || m.createdAt),
-          isMe: isSystem ? false : (normalizeId(m.senderId).toLowerCase() === currentNorm || m.senderId === currentUserId),
+          isMe: isSystem ? false : isMeSender,
           isSystem: Boolean(isSystem),
           failed: Boolean(m.failed),
         };
@@ -635,7 +725,8 @@ export const messagingService = {
         (m) =>
           (m.conversationId || '').toLowerCase() === c.id.toLowerCase() &&
           normalizeId(m.senderId).toLowerCase() !== currentNorm &&
-          (!m.readBy || !m.readBy.some((r) => normalizeId(r).toLowerCase() === currentNorm))
+          normalizeId(m.senderId).toLowerCase() !== personalNorm &&
+          (!m.readBy || !m.readBy.some((r) => normalizeId(r).toLowerCase() === currentNorm || normalizeId(r).toLowerCase() === personalNorm))
       ).length;
 
       const safePartnerUser: User = {
@@ -690,8 +781,8 @@ export const messagingService = {
     company?: string;
     initialMessage?: string;
   }): string {
-    const profile = getUserProfile();
-    const currentUserId = profile.id || `user_${Date.now()}`;
+    const persona = getActiveMessagingPersona();
+    const currentUserId = persona.id;
     const partnerId = partner.id || `partner_${Date.now()}`;
 
     const currentNorm = normalizeId(currentUserId);
@@ -707,7 +798,7 @@ export const messagingService = {
     const convId = `conv_${sortedPair[0]}_${sortedPair[1]}`;
 
     const partnerAvatar = resolveAvatarUrl(partner.avatar, partner.name);
-    const currentAvatar = resolveAvatarUrl(profile.avatar, profile.name);
+    const currentAvatar = resolveAvatarUrl(persona.avatar, persona.name);
 
     const partnerUser: User = {
       id: partner.id,
@@ -722,10 +813,10 @@ export const messagingService = {
 
     const currentUserObj: User = {
       id: currentUserId,
-      name: profile.name || 'Member',
-      username: `@${(profile.name || 'member').toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-      role: profile.roleTitle || profile.role || 'Member',
-      company: profile.organization || 'Xentro Member',
+      name: persona.name,
+      username: `@${(persona.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+      role: persona.role,
+      company: persona.company,
       avatar: currentAvatar,
       verified: true,
       status: 'Active now',
@@ -777,6 +868,14 @@ export const messagingService = {
           action: 'startConversation',
           partnerId: partner.id,
           userId: currentUserId,
+          partner: {
+            id: partner.id,
+            name: partner.name,
+            role: partner.role || 'Member',
+            avatar: partnerAvatar,
+            company: partner.company || partner.name,
+          },
+          currentUser: currentUserObj,
           initialMessage: partner.initialMessage,
         }),
       })
@@ -802,8 +901,8 @@ export const messagingService = {
     const clean = text.trim();
     if (!clean || !conversationId) return this.getConversations();
 
-    const profile = getUserProfile();
-    const currentUserId = profile.id || `usr_${Date.now()}`;
+    const persona = getActiveMessagingPersona();
+    const currentUserId = persona.id;
 
     const inFlightKey = `${conversationId}:${clean}`;
     if (inFlightSends.has(inFlightKey) && !retryMsgId) {
@@ -817,12 +916,19 @@ export const messagingService = {
     const now = new Date();
     const timeStr = now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true });
 
+    // Look up conversation recipient for cross-user routing in MongoDB
+    const custom = this.getCustomConversations().find(c => c.id.toLowerCase() === conversationId.toLowerCase());
+    let recipientId = '';
+    if (custom) {
+      recipientId = custom.participants?.find(p => normalizeId(p).toLowerCase() !== normalizeId(currentUserId).toLowerCase()) || custom.user?.id || '';
+    }
+
     const newMsg: SharedChatMessage = {
       id: clientMsgId,
       clientMessageId: clientMsgId,
       conversationId,
       senderId: currentUserId,
-      senderName: profile.name || 'Member',
+      senderName: persona.name,
       text: clean,
       content: clean,
       timestamp: timeStr,
@@ -839,12 +945,21 @@ export const messagingService = {
     ];
     this.saveRawMessages(updated);
 
-    // 2. Broadcast to Server API -> writes to MongoDB Atlas collection 'messages'
+    // 2. Broadcast to Server API -> writes to MongoDB Atlas collections 'chat_messages' and 'conversations'
     if (typeof window !== 'undefined') {
       fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send', message: newMsg }),
+        body: JSON.stringify({
+          action: 'send',
+          message: {
+            ...newMsg,
+            senderAvatar: persona.avatar,
+            senderRole: persona.role,
+            recipientId: recipientId || undefined,
+          },
+          partnerId: recipientId || undefined,
+        }),
       })
         .then(async (res) => {
           inFlightSends.delete(inFlightKey);
