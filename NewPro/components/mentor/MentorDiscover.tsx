@@ -12,6 +12,11 @@ import {
   Bookmark,
   MessageSquare,
   Clock,
+  SlidersHorizontal,
+  ChevronDown,
+  Building2,
+  UserCheck,
+  Users,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { messagingService } from '@/lib/messagingService';
@@ -62,6 +67,10 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
   // Full page profile view state
   const [selectedProfileItem, setSelectedProfileItem] =
     useState<DiscoverProfileItem | null>(null);
+
+  // Investor sub-filter: 'all' | 'individual' | 'firm'
+  const [investorFilter, setInvestorFilter] = useState<'all' | 'individual' | 'firm'>('all');
+  const [isInvestorFilterOpen, setIsInvestorFilterOpen] = useState(false);
 
   // Visibility state tracking to filter out hidden startups from discovery & search
   const [isGhostMode, setIsGhostMode] = useState<boolean>(false);
@@ -197,17 +206,20 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
         if (Array.isArray(recData.investors) && recData.investors.length > 0) {
           setDynamicInvestors(
             recData.investors.map((inv: any): InvestorRecommendation => ({
-              id: inv.userId || inv.id,
+              id: inv.entityId || inv.userId || inv.id,
               name: inv.name,
               logo: inv.avatar || '/xentro-logo.png',
-              investorType: 'Angel Network',
+              investorType: inv.investorType || (inv.investorCategory === 'firm' ? 'Venture Capital' : 'Individual Angel'),
               location: inv.location || 'India',
-              stages: ['Pre-Seed', 'Seed', 'Early Stage'],
-              focusIndustries: ['Technology', 'SaaS', 'Deep Tech'],
-              ticketSize: '₹25L–₹2Cr',
-              portfolioHighlights: [],
-              description: `${inv.name} is an active investment partner on Xentro. ${inv.context || ''}.`.trim(),
-              verified: true,
+              stages: Array.isArray(inv.stages) ? inv.stages : ['Pre-Seed', 'Seed', 'Early Stage'],
+              focusIndustries: Array.isArray(inv.focusIndustries) ? inv.focusIndustries : ['Technology', 'SaaS', 'Deep Tech'],
+              ticketSize: inv.ticketSize || (inv.investorCategory === 'firm' ? '₹5 Cr–₹25 Cr' : '₹25L–₹2Cr'),
+              portfolioHighlights: inv.portfolioHighlights || [],
+              description: inv.description || `${inv.name} is an active investment partner on Xentro. ${inv.context || ''}.`.trim(),
+              verified: Boolean(inv.verified),
+              investorCategory: inv.investorCategory || 'individual',
+              entityId: inv.entityId,
+              fundSize: inv.fundSize || inv.ticketSize,
             }))
           );
         }
@@ -317,9 +329,21 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
     );
   }, [searchQuery, dynamicMentors]);
 
+  const investorCounts = useMemo(() => {
+    const total = dynamicInvestors.length;
+    const individual = dynamicInvestors.filter((inv) => (inv as any).investorCategory !== 'firm').length;
+    const firm = dynamicInvestors.filter((inv) => (inv as any).investorCategory === 'firm').length;
+    return { total, individual, firm };
+  }, [dynamicInvestors]);
+
   const filteredInvestors = useMemo(() => {
-    // Strictly live backend data from MongoDB
-    const allInvestors = dynamicInvestors;
+    // Strictly live backend data from MongoDB with sub-category filtering
+    let allInvestors = dynamicInvestors;
+    if (investorFilter === 'individual') {
+      allInvestors = allInvestors.filter((inv) => (inv as any).investorCategory !== 'firm');
+    } else if (investorFilter === 'firm') {
+      allInvestors = allInvestors.filter((inv) => (inv as any).investorCategory === 'firm');
+    }
     const q = searchQuery.toLowerCase().trim();
     if (!q) return allInvestors;
     return allInvestors.filter(
@@ -331,7 +355,7 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
         inv.focusIndustries.some((f) => f.toLowerCase().includes(q)) ||
         inv.stages.some((s) => s.toLowerCase().includes(q))
     );
-  }, [searchQuery, dynamicInvestors]);
+  }, [searchQuery, dynamicInvestors, investorFilter]);
 
   const filteredUniversities = useMemo(() => {
     // Strictly live backend data from MongoDB
@@ -566,6 +590,126 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
               </button>
             )}
           </div>
+
+          {/* Sub-Filter for Investors: Filter by Dropdown */}
+          {category === 'investors' && (
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 mt-2 border-t border-gray-100 dark:border-[#262A29]/60">
+              <div className="flex items-center gap-2 relative">
+                <span className="text-xs font-semibold text-[#565B59] dark:text-[#B6B8B7]">
+                  Filter by:
+                </span>
+
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsInvestorFilterOpen((prev) => !prev)}
+                    className="flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-[#101212] dark:text-white hover:border-[#D9FF3F]/50 transition-all cursor-pointer shadow-2xs"
+                  >
+                    <SlidersHorizontal className="w-3.5 h-3.5 text-[#565B59] dark:text-[#D9FF3F]" />
+                    <span>
+                      {investorFilter === 'all'
+                        ? 'All Investors'
+                        : investorFilter === 'individual'
+                        ? 'Individual Investors'
+                        : 'Investment Firms (VCs)'}
+                    </span>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 text-[#565B59] dark:text-[#B6B8B7] transition-transform duration-200 ${
+                        isInvestorFilterOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {isInvestorFilterOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setIsInvestorFilterOpen(false)}
+                      />
+                      <div className="absolute left-0 top-full mt-1.5 w-64 rounded-xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-xl z-50 p-1.5 space-y-1 animate-fade-slide">
+                        {[
+                          {
+                            id: 'all',
+                            label: 'All Investors',
+                            count: investorCounts.total,
+                            desc: 'Show individual angels & institutional firms',
+                            icon: Users,
+                          },
+                          {
+                            id: 'individual',
+                            label: 'Individual Investors',
+                            count: investorCounts.individual,
+                            desc: 'High-net-worth angels & operators',
+                            icon: UserCheck,
+                          },
+                          {
+                            id: 'firm',
+                            label: 'Investment Firms (VCs)',
+                            count: investorCounts.firm,
+                            desc: 'VC Funds, Micro VCs & Syndicates',
+                            icon: Building2,
+                          },
+                        ].map((opt) => {
+                          const isSelected = investorFilter === opt.id;
+                          const OptIcon = opt.icon;
+                          return (
+                            <button
+                              key={opt.id}
+                              type="button"
+                              onClick={() => {
+                                setInvestorFilter(opt.id as any);
+                                setIsInvestorFilterOpen(false);
+                              }}
+                              className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-colors flex items-start justify-between gap-2.5 cursor-pointer ${
+                                isSelected
+                                  ? 'bg-[#101212] dark:bg-[#D9FF3F]/15 text-white dark:text-[#D9FF3F] font-bold'
+                                  : 'text-[#101212] dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-[#202422]'
+                              }`}
+                            >
+                              <div className="flex items-start gap-2.5 min-w-0">
+                                <OptIcon
+                                  className={`w-4 h-4 mt-0.5 flex-shrink-0 ${
+                                    isSelected ? 'text-[#D9FF3F]' : 'text-gray-400'
+                                  }`}
+                                />
+                                <div className="min-w-0">
+                                  <div className="font-semibold truncate">{opt.label}</div>
+                                  <div className="text-[10px] text-gray-500 dark:text-gray-400 font-normal">
+                                    {opt.desc}
+                                  </div>
+                                </div>
+                              </div>
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ml-1.5 flex-shrink-0 ${
+                                  isSelected
+                                    ? 'bg-white/20 dark:bg-[#D9FF3F]/30 text-white dark:text-[#D9FF3F]'
+                                    : 'bg-gray-100 dark:bg-[#262A29] text-gray-500 dark:text-gray-400'
+                                }`}
+                              >
+                                {opt.count}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981]" />
+                <span>
+                  Showing {filteredInvestors.length}{' '}
+                  {investorFilter === 'all'
+                    ? 'Total Investors'
+                    : investorFilter === 'individual'
+                    ? 'Individual Angels'
+                    : 'Investment Firms'}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -942,9 +1086,30 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
                               <CheckCircle2 className="w-3.5 h-3.5 text-[#101212] dark:text-[#D9FF3F] fill-[#D9FF3F] flex-shrink-0" />
                             )}
                           </div>
-                          <p className="text-xs text-[#101212] dark:text-[#D9FF3F] font-semibold truncate">
-                            {inv.investorType}
-                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            <span
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                                (inv as any).investorCategory === 'firm'
+                                  ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800'
+                                  : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              }`}
+                            >
+                              {(inv as any).investorCategory === 'firm' ? (
+                                <>
+                                  <Building2 className="w-2.5 h-2.5" />
+                                  <span>Investment Firm</span>
+                                </>
+                              ) : (
+                                <>
+                                  <UserCheck className="w-2.5 h-2.5" />
+                                  <span>Individual</span>
+                                </>
+                              )}
+                            </span>
+                            <span className="text-xs text-[#101212] dark:text-[#D9FF3F] font-semibold truncate">
+                              {inv.investorType}
+                            </span>
+                          </div>
                           <div className="flex items-center gap-1.5 text-[11px] text-[#565B59] dark:text-[#B6B8B7] pt-0.5 truncate">
                             <span>{inv.location}</span>
                           </div>

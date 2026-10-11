@@ -38,7 +38,7 @@ export interface InvestorRecommendation {
   id: string;
   name: string;
   logo: string;
-  investorType: 'Venture Capital' | 'Angel Network' | 'Corporate VC' | 'Growth Fund';
+  investorType: 'Venture Capital' | 'Angel Network' | 'Corporate VC' | 'Growth Fund' | 'Individual Angel' | string;
   location: string;
   stages: string[];
   focusIndustries: string[];
@@ -46,6 +46,9 @@ export interface InvestorRecommendation {
   portfolioHighlights?: string[];
   description: string;
   verified?: boolean;
+  investorCategory?: 'individual' | 'firm';
+  entityId?: string;
+  fundSize?: string;
 }
 
 export interface UniversityRecommendation {

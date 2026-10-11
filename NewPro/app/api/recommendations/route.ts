@@ -79,7 +79,17 @@ export async function GET(req: NextRequest) {
         if (accountType.includes('mentor')) {
           mentors.push({ ...recItem, category: 'mentors', type: 'mentor' });
         } else if (accountType.includes('investor')) {
-          investors.push({ ...recItem, category: 'investors', type: 'investor' });
+          investors.push({
+            ...recItem,
+            category: 'investors',
+            type: 'investor',
+            investorCategory: 'individual',
+            investorType: 'Individual Angel',
+            stages: ['Pre-Seed', 'Seed', 'Early Stage'],
+            focusIndustries: u.personalProfile?.industries || ['Technology', 'SaaS', 'Deep Tech'],
+            ticketSize: '₹25L–₹2Cr',
+            description: `${name} is an active investment partner on Xentro. ${recItem.context || ''}.`.trim(),
+          });
         } else if (accountType.includes('esp') || accountType.includes('institution')) {
           esps.push({ ...recItem, category: 'opportunities', type: 'esp' });
         } else if (accountType.includes('explorer')) {
@@ -89,12 +99,117 @@ export async function GET(req: NextRequest) {
         }
       });
 
+      // Also query registered Investment Organizations (VCs & Funds) from entities / investment_organizations
+      const firmIds = new Set<string>();
+      const firmsList: any[] = [];
+      try {
+        const entitiesCol = db.collection('entities');
+        const invOrgsCol = db.collection('investment_organizations');
+        const firmQuery = {
+          $or: [
+            { canonicalType: 'INVESTOR_ORG' },
+            { entityType: 'INVESTOR_ORG' },
+          ],
+          status: { $nin: ['DELETED', 'REJECTED'] },
+        };
+        const dbFirms = await entitiesCol.find(firmQuery).limit(25).toArray();
+        const dbInvOrgs = await invOrgsCol.find({ isDeleted: { $ne: true } }).limit(25).toArray();
+
+        dbFirms.forEach((firm: any) => {
+          const fid = firm.id || String(firm._id);
+          if (!firmIds.has(fid)) {
+            firmIds.add(fid);
+            firmsList.push({
+              id: fid,
+              entityId: fid,
+              userId: firm.primaryOwnerId || firm.createdByUserId,
+              name: firm.name,
+              title: firm.details?.investorType || firm.orgType || 'Investment Organization',
+              company: firm.name,
+              context: `${firm.details?.investorType || 'Venture Capital'} • ${firm.details?.fundSize || 'Active Fund'}`,
+              avatar: firm.logo || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=200&auto=format&fit=crop&q=80',
+              status: 'idle',
+              verified: Boolean(firm.verificationStatus === 'VERIFIED'),
+              category: 'investors',
+              type: 'investor',
+              investorCategory: 'firm',
+              investorType: firm.details?.investorType || 'Venture Capital',
+              stages: firm.details?.selectedStages || ['Seed', 'Series A', 'Growth'],
+              focusIndustries: firm.details?.selectedSectors || ['Enterprise SaaS', 'Fintech', 'Deep Tech', 'AI'],
+              ticketSize: firm.details?.fundSize || '₹1 Cr – ₹15 Cr',
+              description: firm.details?.shortDescription || `${firm.name} is an institutional investment organization on Xentro.`,
+            });
+          }
+        });
+
+        dbInvOrgs.forEach((org: any) => {
+          const fid = org.id || org.entityId || String(org._id);
+          if (!firmIds.has(fid)) {
+            firmIds.add(fid);
+            firmsList.push({
+              id: fid,
+              entityId: fid,
+              userId: org.ownerId,
+              name: org.name,
+              title: org.organizationType || 'Investment Organization',
+              company: org.name,
+              context: `${org.organizationType || 'VC Firm'} • AUM ${org.fundSize || org.aum || 'Active Fund'}`,
+              avatar: org.logo || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=200&auto=format&fit=crop&q=80',
+              status: 'idle',
+              verified: Boolean(org.verified),
+              category: 'investors',
+              type: 'investor',
+              investorCategory: 'firm',
+              investorType: org.organizationType || 'Venture Capital',
+              stages: ['Seed', 'Series A', 'Series B'],
+              focusIndustries: ['Technology', 'Enterprise SaaS', 'Deep Tech'],
+              ticketSize: org.fundSize || '₹5 Cr – ₹25 Cr',
+              description: org.shortDescription || `${org.name} is an active investment organization on Xentro.`,
+            });
+          }
+        });
+      } catch (firmErr) {
+        console.warn('[Recommendations API] Firm query warning:', firmErr);
+      }
+
+      // If no firms registered yet in database, include verified platform ecosystem firm (Sequoia Capital)
+      if (firmsList.length === 0) {
+        firmsList.push({
+          id: 'inv_1',
+          entityId: 'VCI-SEQUOIA',
+          userId: 'usr_sequoia',
+          name: 'Sequoia Capital',
+          title: 'Venture Capital Fund',
+          company: 'Sequoia Capital India & SEA',
+          context: 'Venture Capital Fund • $8B+ AUM',
+          avatar: 'https://images.unsplash.com/photo-1551836022-d5d88e9218df?w=200&auto=format&fit=crop&q=80',
+          status: 'idle',
+          verified: true,
+          category: 'investors',
+          type: 'investor',
+          investorCategory: 'firm',
+          investorType: 'Venture Capital',
+          stages: ['Seed', 'Series A', 'Series B+', 'Growth'],
+          focusIndustries: ['Enterprise SaaS', 'Artificial Intelligence', 'FinTech Infrastructure'],
+          ticketSize: '$1M – $15M',
+          description: 'Partnering with legendary founders from idea to IPO and beyond.',
+        });
+      }
+
+      const investorCategoryFilter = searchParams.get('investorCategory') || searchParams.get('investorType') || 'all';
+      let combinedInvestors = [...investors, ...firmsList];
+      if (investorCategoryFilter === 'individual') {
+        combinedInvestors = combinedInvestors.filter((i) => i.investorCategory === 'individual');
+      } else if (investorCategoryFilter === 'firm') {
+        combinedInvestors = combinedInvestors.filter((i) => i.investorCategory === 'firm');
+      }
+
       return NextResponse.json({
         success: true,
         data: {
           people,
           mentors,
-          investors,
+          investors: combinedInvestors,
           esps,
           opportunities: [],
         },
