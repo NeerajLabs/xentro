@@ -1330,6 +1330,10 @@ export const investorProfilesMap: Record<string, FullInvestorProfile> = {
  * Returns the investor profile or generates a fallback profile if ID is not in map.
  */
 export function getInvestorProfileById(id: string, fallbackData?: any): FullInvestorProfile {
+  if (id === 'VCI-SEQUOIA' || id === 'inv_1') {
+    return { ...investorProfilesMap['inv_1'], id: id || 'inv_1' };
+  }
+
   if (investorProfilesMap[id]) {
     return investorProfilesMap[id];
   }

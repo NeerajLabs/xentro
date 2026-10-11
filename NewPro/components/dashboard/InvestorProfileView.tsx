@@ -88,17 +88,24 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
 
   useEffect(() => {
     if (investorData) {
-      setInvestor(investorData);
+      const normalized = getInvestorProfileById((investorData as any)?.id || investorId || 'inv_1', investorData);
+      setInvestor(normalized);
     }
     const targetId = isOwnProfile ? 'inv_own' : (investorId || (investorData as any)?.id);
     if (targetId && targetId !== 'inv_1') {
       syncInvestorProfileFromBackend(targetId).then((synced) => {
-        if (synced) setInvestor(synced);
+        if (synced) {
+          const normalized = getInvestorProfileById(targetId, synced);
+          setInvestor({ ...normalized, ...synced });
+        }
       }).catch(() => {});
     } else if (!investorData) {
       const fallbackId = isOwnProfile ? 'inv_own' : (investorId || 'inv_1');
       syncInvestorProfileFromBackend(fallbackId).then((synced) => {
-        if (synced) setInvestor(synced);
+        if (synced) {
+          const normalized = getInvestorProfileById(fallbackId, synced);
+          setInvestor({ ...normalized, ...synced });
+        }
       }).catch(() => {});
     }
   }, [investorData, investorId, isOwnProfile]);
@@ -182,19 +189,19 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
   const effectiveOpenToPitches =
     liveSettings.openToPitches !== undefined
       ? liveSettings.openToPitches
-      : investor.connectionPreferences.openToStartupPitches;
+      : investor.connectionPreferences?.openToStartupPitches ?? true;
   const effectiveOpenToConnections =
     liveSettings.openToConnections !== undefined
       ? liveSettings.openToConnections
-      : investor.connectionPreferences.openToConnectionRequests;
+      : investor.connectionPreferences?.openToConnectionRequests ?? true;
   const effectiveWarmIntroPreferred =
     liveSettings.warmIntroPreferred !== undefined
       ? liveSettings.warmIntroPreferred
-      : investor.investmentProcess.warmIntroPreferred;
+      : investor.investmentProcess?.warmIntroPreferred ?? false;
   const effectiveCheque =
     liveSettings.chequeMin && liveSettings.chequeMax
       ? `${liveSettings.chequeMin} – ${liveSettings.chequeMax}`
-      : investor.investmentFocus.ticketSize.formatted;
+      : investor.investmentFocus?.ticketSize?.formatted || '₹25L – ₹2Cr';
 
   // Modals
   const [isPitchModalOpen, setIsPitchModalOpen] = useState(false);
@@ -721,7 +728,7 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
                     Who We Invest In
                   </span>
                   <p className="text-xs text-[#101212] dark:text-white leading-relaxed font-medium">
-                    {investor.overview.whoTheyInvestIn}
+                    {investor.overview?.whoTheyInvestIn || 'High-conviction founders building scalable, high-impact technology companies.'}
                   </p>
                 </div>
 
@@ -730,7 +737,7 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
                     Sectors We Focus On
                   </span>
                   <p className="text-xs text-[#101212] dark:text-white leading-relaxed font-medium">
-                    {investor.overview.sectorsFocus}
+                    {investor.overview?.sectorsFocus || investor.primaryInvestmentFocus || 'Technology · Deep Tech · SaaS'}
                   </p>
                 </div>
 
@@ -739,7 +746,7 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
                     Investment Philosophy
                   </span>
                   <p className="text-xs text-[#101212] dark:text-white leading-relaxed font-medium">
-                    {investor.overview.investmentPhilosophy}
+                    {investor.overview?.investmentPhilosophy || 'First-check partner with founder-first focus and active ecosystem support.'}
                   </p>
                 </div>
 
@@ -748,7 +755,7 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
                     What We Aim To Contribute
                   </span>
                   <p className="text-xs text-[#101212] dark:text-white leading-relaxed font-medium">
-                    {investor.overview.aimToContribute}
+                    {investor.overview?.aimToContribute || 'Strategic guidance, ecosystem introductions, and follow-on fundraising assistance.'}
                   </p>
                 </div>
               </div>
@@ -774,7 +781,7 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
                 </div>
                 <div>
                   <span className="text-[#565B59] dark:text-[#B6B8B7] block mb-0.5">Headquarters</span>
-                  <span className="font-bold text-[#101212] dark:text-white">{investor.location.city}, {investor.location.country}</span>
+                  <span className="font-bold text-[#101212] dark:text-white">{investor.location?.city ? `${investor.location.city}, ` : ''}{investor.location?.country || 'India'}</span>
                 </div>
               </div>
             </div>
@@ -804,7 +811,7 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
                   </div>
                   <div>
                     <span className="text-[#565B59] dark:text-[#B6B8B7] block mb-0.5">Headquarters</span>
-                    <strong className="text-[#101212] dark:text-white">{investor.location.city}, {investor.location.country}</strong>
+                    <strong className="text-[#101212] dark:text-white">{investor.location?.city ? `${investor.location.city}, ` : ''}{investor.location?.country || 'India'}</strong>
                   </div>
                   <div>
                     <span className="text-[#565B59] dark:text-[#B6B8B7] block mb-0.5">Experience Track</span>

@@ -6,7 +6,7 @@ import {
   InvestorTestimonial,
   InvestmentProcessStep,
 } from '@/types/investor';
-import { investorProfilesMap } from '@/data/investorProfilesData';
+import { investorProfilesMap, getInvestorProfileById } from '@/data/investorProfilesData';
 import { investorDomainService } from '@/lib/investorDomainService';
 
 export const INVESTOR_PROFILE_STORAGE_KEY = 'xentro_investor_full_profile_v1';
@@ -243,7 +243,45 @@ export async function syncInvestorProfileFromBackend(
     if (res.ok) {
       const json = await res.json();
       if (json?.success && json?.data) {
-        const profile = json.data as FullInvestorProfile;
+        const raw = json.data;
+        const baseline = getInvestorProfileById(investorId, raw);
+        const profile: FullInvestorProfile = {
+          ...baseline,
+          ...raw,
+          location: { ...baseline.location, ...(raw.location || {}) },
+          overview: { ...baseline.overview, ...(raw.overview || {}) },
+          investmentFocus: {
+            ...baseline.investmentFocus,
+            ...(raw.investmentFocus || {}),
+            ticketSize: { ...baseline.investmentFocus?.ticketSize, ...(raw.investmentFocus?.ticketSize || {}) },
+            geography: { ...baseline.investmentFocus?.geography, ...(raw.investmentFocus?.geography || {}) },
+          },
+          valueBeyondCapital: {
+            ...baseline.valueBeyondCapital,
+            ...(raw.valueBeyondCapital || {}),
+          },
+          investmentCriteria: {
+            ...baseline.investmentCriteria,
+            ...(raw.investmentCriteria || {}),
+          },
+          investmentProcess: {
+            ...baseline.investmentProcess,
+            ...(raw.investmentProcess || {}),
+          },
+          connectionPreferences: {
+            ...baseline.connectionPreferences,
+            ...(raw.connectionPreferences || {}),
+          },
+          experienceStats: {
+            ...baseline.experienceStats,
+            ...(raw.experienceStats || {}),
+          },
+          portfolio: Array.isArray(raw.portfolio) && raw.portfolio.length > 0 ? raw.portfolio : baseline.portfolio,
+          testimonials: Array.isArray(raw.testimonials) && raw.testimonials.length > 0 ? raw.testimonials : baseline.testimonials,
+          content: Array.isArray(raw.content) && raw.content.length > 0 ? raw.content : baseline.content,
+          activities: Array.isArray(raw.activities) && raw.activities.length > 0 ? raw.activities : baseline.activities,
+        };
+
         const serialized = JSON.stringify(profile);
         if (investorId === 'inv_own') {
           localStorage.setItem(INVESTOR_PROFILE_STORAGE_KEY, serialized);
