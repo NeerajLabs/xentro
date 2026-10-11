@@ -1064,28 +1064,8 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
                     )}
                   </div>
 
-                  {/* Switch Persona Workspace & Switch to Personal */}
+                  {/* Switch Persona Workspace */}
                   <EntityAccountSwitcher variant="profile-action" />
-
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        const res = await entityContextService.switchPersona(userProfile.id, null);
-                        showToast(res.message || 'Switched to Personal Account', 'info');
-                        window.dispatchEvent(
-                          new CustomEvent('xentro-navigate-tab', { detail: { tab: res.destinationTab || 'feed' } })
-                        );
-                      } catch (err: any) {
-                        showToast(err.message || 'Failed to switch to personal account', 'error');
-                      }
-                    }}
-                    className="px-3.5 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#262A29] bg-white dark:bg-[#202422] hover:bg-gray-100 dark:hover:bg-[#262A29] text-xs font-bold text-[#101212] dark:text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-subtle active:scale-95"
-                    title={`Switch back to Personal Account (${userProfile.name})`}
-                  >
-                    <ArrowLeftRight className="w-3.5 h-3.5 text-[#9EBE12] dark:text-[#D9FF3F]" />
-                    <span>Switch to Personal</span>
-                  </button>
 
                   {/* Share Profile */}
                   <button

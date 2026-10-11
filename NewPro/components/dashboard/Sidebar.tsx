@@ -203,7 +203,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     { id: 'mentor', label: 'Mentor', icon: GraduationCap },
     { id: 'investor', label: 'Investor', icon: TrendingUp },
     { id: 'esp', label: 'ESP', icon: Grid2X2 },
-    ...(!isExplorer ? [{ id: 'roles', label: 'Accounts & Roles', icon: ShieldCheck }] : []),
     {
       id: 'notifications',
       label: 'Notifications',

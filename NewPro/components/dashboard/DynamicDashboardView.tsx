@@ -22,6 +22,7 @@ import { InvestorDashboard } from './roles/InvestorDashboard';
 import { ESPDashboard } from './roles/ESPDashboard';
 import { ExplorerDashboard } from './roles/ExplorerDashboard';
 import { RoleRequestModal } from './RoleRequestModal';
+import { EntityAccountSwitcher } from './EntityAccountSwitcher';
 import { useToast } from '@/components/ui/Toast';
 import {
   entityContextService,
@@ -113,29 +114,7 @@ export const DynamicDashboardView: React.FC<DynamicDashboardViewProps> = ({ onNa
 
           <div className="flex items-center gap-2 self-start md:self-auto flex-wrap">
             {activeEntity && (
-              <button
-                type="button"
-                onClick={async () => {
-                  try {
-                    const res = await entityContextService.switchPersona(profile.id, null);
-                    showToast(res.message, 'info');
-                    if (onNavigateTab) {
-                      onNavigateTab(res.destinationTab);
-                    } else {
-                      window.dispatchEvent(
-                        new CustomEvent('xentro-navigate-tab', { detail: { tab: res.destinationTab } })
-                      );
-                    }
-                  } catch (err: any) {
-                    showToast(err.message || 'Failed to switch to personal account', 'error');
-                  }
-                }}
-                className="px-3.5 py-2 rounded-xl bg-[#101212] dark:bg-white text-white dark:text-[#101212] hover:bg-[#202422] dark:hover:bg-gray-100 text-xs font-bold flex items-center gap-2 active:scale-95 transition-all cursor-pointer shadow-xs"
-                title="Switch back to Personal Account"
-              >
-                <ArrowLeftRight className="w-3.5 h-3.5 text-[#D9FF3F] dark:text-emerald-600" />
-                <span>Switch to Personal ({profile.name})</span>
-              </button>
+              <EntityAccountSwitcher variant="profile-action" />
             )}
 
             {/* Action to Launch Full Signup / Profile Setup: Dev only */}

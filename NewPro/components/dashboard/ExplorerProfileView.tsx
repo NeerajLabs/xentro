@@ -578,29 +578,19 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
                   <span>Edit Profile</span>
                 </button>
 
-                {/* 2. Upgrade Button (Positioned immediately to the right of Edit Profile) */}
-                <button
-                  type="button"
-                  onClick={() => setIsUpgradeModalOpen(true)}
-                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-all flex items-center gap-1.5 shadow-xs cursor-pointer border border-[#D9FF3F]"
-                  title="Upgrade personal account to Mentor or Individual Investor"
-                >
-                  <TrendingUp className="w-3.5 h-3.5" />
-                  <span>Upgrade</span>
-                </button>
-
-                {/* 3. Switch Persona Action (Positioned immediately to the right of Upgrade, ONLY shown when user has at least one eligible entity membership) */}
+                {/* 2. Switch Persona Action (ONLY shown when user has at least one eligible entity membership) */}
                 {linkedEntities.length > 0 && (
                   <EntityAccountSwitcher variant="profile-action" />
                 )}
 
-                {/* 4. Actions Button */}
+                {/* 3. Actions Button (Single, clean gateway for both role upgrades and entity launching) */}
                 <button
                   type="button"
                   onClick={() => setIsActionsModalOpen(true)}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-[#565B59] dark:text-[#B6B8B7] hover:bg-gray-100 dark:hover:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  className="px-4 py-2 rounded-xl text-xs font-bold bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] transition-all flex items-center gap-1.5 shadow-xs cursor-pointer border border-[#D9FF3F]"
+                  title="Actions: Upgrade personal account or launch an entity organization"
                 >
-                  <Sparkles className="w-3.5 h-3.5 fill-[#101212] dark:fill-white" />
+                  <Sparkles className="w-3.5 h-3.5 fill-[#101212]" />
                   <span>Actions</span>
                 </button>
               </div>
