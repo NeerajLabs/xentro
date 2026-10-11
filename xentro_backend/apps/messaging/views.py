@@ -41,18 +41,46 @@ def check_connection_accepted(user_id, partner_id):
     Returns (is_accepted: bool, status: str, conn_doc: dict).
     """
     conn_col = get_collection("connections")
+    entities_col = get_collection("entities")
     u1, u2 = normalize_id(user_id), normalize_id(partner_id)
     if not u1 or not u2:
         return False, "none", None
-    pair_key = make_pair_key(u1, u2)
-    conn = conn_col.find_one({"pair_key": pair_key})
-    if not conn:
-        conn = conn_col.find_one({
-            "$or": [
-                {"senderId": {"$in": [u1, u1.lower(), u1.upper()]}, "recipientId": {"$in": [u2, u2.lower(), u2.upper()]}},
-                {"senderId": {"$in": [u2, u2.lower(), u2.upper()]}, "recipientId": {"$in": [u1, u1.lower(), u1.upper()]}}
-            ]
-        })
+
+    u1_ids = [u1, u1.lower(), u1.upper()]
+    u2_ids = [u2, u2.lower(), u2.upper()]
+
+    try:
+        owned1 = list(entities_col.find({
+            "$or": [{"primaryOwnerId": u1}, {"createdByUserId": u1}, {"members.userId": u1}],
+            "status": {"$nin": ["DELETED", "ORPHANED_DELETED"]}
+        }, {"id": 1, "entityId": 1}))
+        for ent in owned1:
+            if ent.get("id"):
+                u1_ids.extend([ent["id"], ent["id"].lower(), ent["id"].upper()])
+            if ent.get("entityId"):
+                u1_ids.extend([ent["entityId"], ent["entityId"].lower(), ent["entityId"].upper()])
+
+        owned2 = list(entities_col.find({
+            "$or": [{"primaryOwnerId": u2}, {"createdByUserId": u2}, {"members.userId": u2}],
+            "status": {"$nin": ["DELETED", "ORPHANED_DELETED"]}
+        }, {"id": 1, "entityId": 1}))
+        for ent in owned2:
+            if ent.get("id"):
+                u2_ids.extend([ent["id"], ent["id"].lower(), ent["id"].upper()])
+            if ent.get("entityId"):
+                u2_ids.extend([ent["entityId"], ent["entityId"].lower(), ent["entityId"].upper()])
+    except Exception:
+        pass
+
+    u1_ids = list(set([x for x in u1_ids if x]))
+    u2_ids = list(set([x for x in u2_ids if x]))
+
+    conn = conn_col.find_one({
+        "$or": [
+            {"senderId": {"$in": u1_ids}, "recipientId": {"$in": u2_ids}},
+            {"senderId": {"$in": u2_ids}, "recipientId": {"$in": u1_ids}}
+        ]
+    })
     if not conn:
         return False, "none", None
     status = conn.get("status", "none")
@@ -119,16 +147,44 @@ class ConversationsListView(APIView):
 
     def get(self, request):
         user_id = get_request_user_id(request)
-        if not user_id:
-            return api_error("User identification is required.", status_code=400)
+        entity_id = normalize_id(request.query_params.get("entityId") or request.data.get("entityId"))
+
+        if not user_id and not entity_id:
+            return api_error("User or entity identification is required.", status_code=400)
 
         conv_col = get_collection("conversations")
         users_col = get_collection("users")
+        entities_col = get_collection("entities")
         msg_col = get_collection("messages")
 
-        user_norm = user_id.lower()
+        target_ids = []
+        if user_id:
+            target_ids.extend([user_id, user_id.lower(), user_id.upper()])
+            try:
+                owned = list(entities_col.find({
+                    "$or": [
+                        {"primaryOwnerId": user_id},
+                        {"createdByUserId": user_id},
+                        {"members.userId": user_id}
+                    ],
+                    "status": {"$nin": ["DELETED", "ORPHANED_DELETED"]}
+                }, {"id": 1, "entityId": 1}))
+                for ent in owned:
+                    if ent.get("id"):
+                        target_ids.extend([ent["id"], ent["id"].lower(), ent["id"].upper()])
+                    if ent.get("entityId"):
+                        target_ids.extend([ent["entityId"], ent["entityId"].lower(), ent["entityId"].upper()])
+            except Exception:
+                pass
+
+        if entity_id:
+            target_ids.extend([entity_id, entity_id.lower(), entity_id.upper()])
+
+        target_ids = list(set([t for t in target_ids if t]))
+        target_norm_set = set([t.lower() for t in target_ids])
+
         convs = list(conv_col.find(
-            {"participants": {"$in": [user_id, user_id.lower(), user_id.upper()]}},
+            {"participants": {"$in": target_ids}},
             sort=[("updatedAt", -1)]
         ))
         clean = []
@@ -153,7 +209,7 @@ class ConversationsListView(APIView):
             # Identify the other participant
             other_id = None
             for p in participants:
-                if normalize_id(p).lower() != user_norm:
+                if normalize_id(p).lower() not in target_norm_set:
                     other_id = normalize_id(p)
                     break
 
@@ -161,13 +217,13 @@ class ConversationsListView(APIView):
                 other_id = normalize_id(participants[0])
 
             # Check live connection status in MongoDB
-            is_accepted, conn_status, _ = check_connection_accepted(user_id, other_id)
+            is_accepted, conn_status, _ = check_connection_accepted(user_id or entity_id, other_id)
 
             # Check if conversation already has persisted participantDetails
             p_details = c.get("participantDetails") or {}
             cached_partner = p_details.get(other_id) or p_details.get(other_id.lower() if other_id else "") or {}
 
-            # Resolve other participant profile from users collection
+            # Resolve other participant profile from users or entities collection
             partner_name = cached_partner.get("name") or "Connected Member"
             partner_role = cached_partner.get("role") or "Startup"
             partner_avatar = cached_partner.get("avatar") or ""
@@ -184,8 +240,23 @@ class ConversationsListView(APIView):
                     ]
                 })
 
-                # Fallback: check connections collection for partner identity
+                # Check entities collection for partner identity
                 if not u_doc:
+                    e_doc = entities_col.find_one({
+                        "$or": [
+                            {"id": other_id},
+                            {"entityId": other_id}
+                        ],
+                        "status": {"$nin": ["DELETED", "ORPHANED_DELETED"]}
+                    })
+                    if e_doc:
+                        partner_name = e_doc.get("name") or "Startup"
+                        partner_role = e_doc.get("entityType") or "Startup"
+                        partner_avatar = e_doc.get("logo") or ""
+                        partner_company = e_doc.get("name") or "Startup"
+
+                # Fallback: check connections collection for partner identity
+                if not u_doc and partner_name == "Connected Member":
                     conn_col = get_collection("connections")
                     conn_doc = conn_col.find_one({
                         "$or": [

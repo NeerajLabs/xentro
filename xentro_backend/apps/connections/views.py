@@ -50,18 +50,46 @@ class ConnectionListView(APIView):
 
     def get(self, request):
         user_id = get_request_user_id(request)
-        if not user_id:
-            return api_error("User identification is required.", status_code=400)
+        entity_id = normalize_id(request.query_params.get("entityId") or request.data.get("entityId"))
+
+        if not user_id and not entity_id:
+            return api_error("User or entity identification is required.", status_code=400)
 
         conn_col = get_collection("connections")
         users_col = get_collection("users")
+        entities_col = get_collection("entities")
+
+        target_ids = []
+        if user_id:
+            target_ids.extend([user_id, user_id.lower(), user_id.upper()])
+            try:
+                owned = list(entities_col.find({
+                    "$or": [
+                        {"primaryOwnerId": user_id},
+                        {"createdByUserId": user_id},
+                        {"members.userId": user_id}
+                    ],
+                    "status": {"$nin": ["DELETED", "ORPHANED_DELETED"]}
+                }, {"id": 1, "entityId": 1}))
+                for ent in owned:
+                    if ent.get("id"):
+                        target_ids.extend([ent["id"], ent["id"].lower(), ent["id"].upper()])
+                    if ent.get("entityId"):
+                        target_ids.extend([ent["entityId"], ent["entityId"].lower(), ent["entityId"].upper()])
+            except Exception:
+                pass
+
+        if entity_id:
+            target_ids.extend([entity_id, entity_id.lower(), entity_id.upper()])
+
+        target_ids = list(set([t for t in target_ids if t]))
 
         status_filter = request.query_params.get("status")
 
         query = {
             "$or": [
-                {"senderId": {"$in": [user_id, user_id.lower(), user_id.upper()]}},
-                {"recipientId": {"$in": [user_id, user_id.lower(), user_id.upper()]}}
+                {"senderId": {"$in": target_ids}},
+                {"recipientId": {"$in": target_ids}}
             ]
         }
         if status_filter:
@@ -75,12 +103,16 @@ class ConnectionListView(APIView):
         pending_received = 0
         pending_sent = 0
 
+        target_norm_set = set([t.lower() for t in target_ids])
+
         for c in raw_conns:
             c.pop("_id", None)
-            is_sender = (normalize_id(c.get("senderId")) == user_id)
-            partner_id = c.get("recipientId") if is_sender else c.get("senderId")
+            s_id = normalize_id(c.get("senderId"))
+            r_id = normalize_id(c.get("recipientId"))
+            is_sender = s_id.lower() in target_norm_set
+            partner_id = r_id if is_sender else s_id
 
-            # Check if partner user exists and is active in MongoDB
+            # Check if partner user OR entity exists in MongoDB
             u_doc = users_col.find_one({
                 "id": partner_id,
                 "isActive": {"$ne": False},
@@ -88,20 +120,32 @@ class ConnectionListView(APIView):
                 "deleted": {"$ne": True},
                 "is_deleted": {"$ne": True}
             })
+            e_doc = None
             if not u_doc:
-                # Partner user was removed by admin; exclude this connection
+                e_doc = entities_col.find_one({
+                    "$or": [{"id": partner_id}, {"entityId": partner_id}],
+                    "status": {"$nin": ["DELETED", "ORPHANED_DELETED"]}
+                })
+
+            if not u_doc and not e_doc:
+                # Neither active user nor active entity found; skip
                 continue
 
             clean_conns.append(c)
 
             if c.get("status") == "accepted":
                 total_connected += 1
-                partner_name = u_doc.get("fullName") or (c.get("recipientName") if is_sender else c.get("senderName"))
-                partner_avatar = u_doc.get("avatar") or (c.get("recipientAvatar") if is_sender else c.get("senderAvatar"))
-                partner_role = c.get("recipientRole") if is_sender else c.get("senderRole")
-                roles = u_doc.get("activeRoles") or []
-                if roles and not partner_role:
-                    partner_role = roles[0]
+                if u_doc:
+                    partner_name = u_doc.get("fullName") or (c.get("recipientName") if is_sender else c.get("senderName"))
+                    partner_avatar = u_doc.get("avatar") or (c.get("recipientAvatar") if is_sender else c.get("senderAvatar"))
+                    partner_role = c.get("recipientRole") if is_sender else c.get("senderRole")
+                    roles = u_doc.get("activeRoles") or []
+                    if roles and not partner_role:
+                        partner_role = roles[0]
+                else:
+                    partner_name = e_doc.get("name") or (c.get("recipientName") if is_sender else c.get("senderName"))
+                    partner_avatar = e_doc.get("logo") or (c.get("recipientAvatar") if is_sender else c.get("senderAvatar"))
+                    partner_role = e_doc.get("entityType") or (c.get("recipientRole") if is_sender else c.get("senderRole"))
 
                 accepted_partners.append({
                     "id": partner_id,
@@ -112,7 +156,7 @@ class ConnectionListView(APIView):
                     "connectedAt": c.get("updatedAt") or c.get("createdAt")
                 })
             elif c.get("status") == "pending":
-                if normalize_id(c.get("recipientId")) == user_id:
+                if r_id.lower() in target_norm_set:
                     pending_received += 1
                 else:
                     pending_sent += 1
