@@ -1,6 +1,7 @@
 'use client';
 
 import { getUserProfile } from './userProfile';
+import { getActiveConnectionPersona } from './connectionService';
 
 export const NOTIFICATIONS_STORAGE_KEY = 'xentro_real_notifications_v3';
 export const NOTIFICATIONS_UPDATED_EVENT = 'xentro-notifications-updated';
@@ -92,11 +93,15 @@ export const notificationService = {
   async syncFromServer(userId?: string): Promise<NotificationItem[]> {
     if (typeof window === 'undefined') return [];
     try {
-      const profile = getUserProfile();
-      const currentUserId = userId || profile.id || '';
-      if (!currentUserId) return this.getNotifications();
+      const persona = getActiveConnectionPersona();
+      const currentUserId = userId || persona.personalUserId || '';
+      const entityId = persona.isEntity ? persona.entityId : '';
 
-      const res = await fetch(`/api/notifications?userId=${encodeURIComponent(currentUserId)}`, {
+      const params = new URLSearchParams();
+      if (currentUserId) params.set('userId', currentUserId);
+      if (entityId) params.set('entityId', entityId);
+
+      const res = await fetch(`/api/notifications?${params.toString()}`, {
         cache: 'no-store',
       });
       if (!res.ok) return this.getNotifications();
@@ -107,14 +112,12 @@ export const notificationService = {
 
       const currentRaw = this.getRawNotifications();
       const map = new Map<string, NotificationItem>();
-      // Keep other users' notifications if any
-      currentRaw.filter((n) => n.userId !== currentUserId).forEach((n) => map.set(n.id, n));
+      currentRaw.forEach((n) => map.set(n.id, n));
 
-      // Put authentic MongoDB notifications
       serverNotifs.forEach((sn: any) => {
         map.set(sn.id, {
           id: sn.id,
-          userId: currentUserId,
+          userId: sn.userId || currentUserId,
           category: sn.category || 'system',
           title: sn.title || 'New Notification',
           description: sn.description || '',
@@ -136,6 +139,7 @@ export const notificationService = {
         (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
       this.saveRawNotifications(merged);
+      window.dispatchEvent(new CustomEvent(NOTIFICATIONS_UPDATED_EVENT));
       return this.getNotifications();
     } catch (err) {
       console.debug('[Notifications] syncFromServer error:', err);
@@ -143,14 +147,20 @@ export const notificationService = {
     }
   },
 
-  /** Get notifications for the currently logged-in persona */
+  /** Get notifications for the currently logged-in persona and owned entities */
   getNotifications(): NotificationItem[] {
-    const profile = getUserProfile();
-    const currentUserId = profile.id || '';
-    if (!currentUserId) return [];
+    const persona = getActiveConnectionPersona();
+    const currentId = normalizeUserId(persona.id).toLowerCase();
+    const personalId = normalizeUserId(persona.personalUserId).toLowerCase();
+    const entityId = persona.isEntity ? normalizeUserId(persona.entityId).toLowerCase() : '';
+
+    if (!currentId && !personalId) return [];
 
     const stored = this.getRawNotifications();
-    return stored.filter((n) => normalizeUserId(n.userId).toLowerCase() === currentUserId.toLowerCase());
+    return stored.filter((n) => {
+      const u = normalizeUserId(n.userId).toLowerCase();
+      return u === currentId || u === personalId || (entityId && u === entityId);
+    });
   },
 
   getUnreadCount(): number {
@@ -237,3 +247,15 @@ export const notificationService = {
     }
   },
 };
+
+// Auto-sync on window load, persona switch, and incoming connection events
+if (typeof window !== 'undefined') {
+  notificationService.syncFromServer().catch(() => {});
+  window.addEventListener('xentro-entity-switched', () => {
+    notificationService.syncFromServer().catch(() => {});
+  });
+  window.addEventListener('xentro-connection-event', () => {
+    notificationService.syncFromServer().catch(() => {});
+  });
+}
+

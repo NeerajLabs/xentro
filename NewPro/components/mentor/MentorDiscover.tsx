@@ -11,10 +11,12 @@ import {
   X,
   Bookmark,
   MessageSquare,
+  Clock,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { messagingService } from '@/lib/messagingService';
 import { toggleStartupBookmark, getBookmarkedStartups } from '@/lib/startupBookmarkState';
+import { connectionService, CONNECTIONS_UPDATED_EVENT } from '@/lib/connectionService';
 import { getBackendBaseUrl } from '@/lib/backendUrl';
 import {
   DiscoverCategory,
@@ -89,14 +91,22 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
         setBookmarkedStartupIds(ce.detail.bookmarks.map((b: any) => b.id));
       }
     };
+    const handleConnUpdate = () => {
+      setConnectedMap((prev) => ({ ...prev }));
+    };
 
     window.addEventListener('xentro-ghost-mode-changed', handleGhostChanged);
     window.addEventListener('xentro-visibility-changed', handleVisibilityChanged);
     window.addEventListener('xentro-startup-bookmarks-changed', handleBookmarksChanged);
+    window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnUpdate);
+    window.addEventListener('xentro-connection-event', handleConnUpdate);
+    connectionService.syncFromServer().catch(() => {});
     return () => {
       window.removeEventListener('xentro-ghost-mode-changed', handleGhostChanged);
       window.removeEventListener('xentro-visibility-changed', handleVisibilityChanged);
       window.removeEventListener('xentro-startup-bookmarks-changed', handleBookmarksChanged);
+      window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnUpdate);
+      window.removeEventListener('xentro-connection-event', handleConnUpdate);
     };
   }, []);
 
@@ -339,14 +349,28 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
     );
   }, [searchQuery, dynamicESPs]);
 
-  // Universal connect toggle handler
-  const handleToggleConnect = (id: string, name: string) => {
-    const nextState = !connectedMap[id];
-    setConnectedMap((prev) => ({ ...prev, [id]: nextState }));
-    if (nextState) {
-      showToast(`Connected with ${name}!`, 'success');
-    } else {
-      showToast(`Disconnected from ${name}.`, 'info');
+  // Authoritative connect handler via connectionService
+  const handleToggleConnect = async (target: { id: string; name: string; role?: string; avatar?: string }) => {
+    const status = connectionService.getConnectionStatus(target.id);
+    if (status === 'none') {
+      await connectionService.requestConnection({
+        id: target.id,
+        name: target.name,
+        role: target.role || 'Member',
+        avatar: target.avatar || '/xentro-logo.png',
+      });
+      setConnectedMap((prev) => ({ ...prev, [target.id]: true }));
+      showToast(`Connection request sent to ${target.name}! Status: Pending Approval`, 'success');
+    } else if (status === 'pending') {
+      connectionService.cancelConnection(target.id);
+      setConnectedMap((prev) => ({ ...prev, [target.id]: false }));
+      showToast(`Cancelled connection request to ${target.name}.`, 'info');
+    } else if (status === 'received') {
+      await connectionService.acceptConnection(target.id);
+      setConnectedMap((prev) => ({ ...prev, [target.id]: true }));
+      showToast(`Connection accepted! You and ${target.name} are now connected.`, 'success');
+    } else if (status === 'connected') {
+      showToast(`You are already connected with ${target.name}.`, 'info');
     }
   };
 
@@ -551,7 +575,10 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
         {category === 'startups' && filteredStartups.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredStartups.map((st) => {
-                const isConnected = connectedMap[st.id];
+                const connStatus = connectionService.getConnectionStatus(st.id);
+                const isConnected = connStatus === 'connected';
+                const isPending = connStatus === 'pending';
+                const isReceived = connStatus === 'received';
                 return (
                   <div
                     key={st.id}
@@ -600,10 +627,19 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
                         </button>
 
                         <button
-                          onClick={() => handleToggleConnect(st.id, st.name)}
+                          onClick={() => handleToggleConnect({
+                            id: st.id,
+                            name: st.name,
+                            role: st.industry || 'Startup',
+                            avatar: st.logo || '/xentro-logo.png',
+                          })}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                             isConnected
                               ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              : isPending
+                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+                              : isReceived
+                              ? 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-xs active:scale-95'
                               : 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-xs active:scale-95'
                           }`}
                         >
@@ -611,6 +647,16 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
                             <>
                               <Check className="w-3.5 h-3.5" />
                               <span>Connected</span>
+                            </>
+                          ) : isPending ? (
+                            <>
+                              <Clock className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                              <span>Pending</span>
+                            </>
+                          ) : isReceived ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Accept</span>
                             </>
                           ) : (
                             <>
@@ -701,7 +747,10 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
         {category === 'mentors' && filteredMentors.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredMentors.map((mentor) => {
-                const isConnected = connectedMap[mentor.id];
+                const connStatus = connectionService.getConnectionStatus(mentor.id);
+                const isConnected = connStatus === 'connected';
+                const isPending = connStatus === 'pending';
+                const isReceived = connStatus === 'received';
                 return (
                   <div
                     key={mentor.id}
@@ -743,10 +792,19 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
                       {/* Top Right Connect and Message Buttons */}
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <button
-                          onClick={() => handleToggleConnect(mentor.id, mentor.name)}
+                          onClick={() => handleToggleConnect({
+                            id: mentor.id,
+                            name: mentor.name,
+                            role: mentor.title || 'Mentor',
+                            avatar: mentor.avatar || '/xentro-logo.png',
+                          })}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                             isConnected
                               ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              : isPending
+                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+                              : isReceived
+                              ? 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-xs active:scale-95'
                               : 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-xs active:scale-95'
                           }`}
                         >
@@ -754,6 +812,16 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
                             <>
                               <Check className="w-3.5 h-3.5" />
                               <span>Connected</span>
+                            </>
+                          ) : isPending ? (
+                            <>
+                              <Clock className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                              <span>Pending</span>
+                            </>
+                          ) : isReceived ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Accept</span>
                             </>
                           ) : (
                             <>
@@ -843,7 +911,10 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
         {category === 'investors' && filteredInvestors.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredInvestors.map((inv) => {
-                const isConnected = connectedMap[inv.id];
+                const connStatus = connectionService.getConnectionStatus(inv.id);
+                const isConnected = connStatus === 'connected';
+                const isPending = connStatus === 'pending';
+                const isReceived = connStatus === 'received';
                 return (
                   <div
                     key={inv.id}
@@ -881,10 +952,19 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
                       {/* Top Right Connect and Message Buttons */}
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <button
-                          onClick={() => handleToggleConnect(inv.id, inv.name)}
+                          onClick={() => handleToggleConnect({
+                            id: inv.id,
+                            name: inv.name,
+                            role: inv.investorType || 'Investor',
+                            avatar: inv.logo || '/xentro-logo.png',
+                          })}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                             isConnected
                               ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              : isPending
+                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+                              : isReceived
+                              ? 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-xs active:scale-95'
                               : 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-xs active:scale-95'
                           }`}
                         >
@@ -892,6 +972,16 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
                             <>
                               <Check className="w-3.5 h-3.5" />
                               <span>Connected</span>
+                            </>
+                          ) : isPending ? (
+                            <>
+                              <Clock className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                              <span>Pending</span>
+                            </>
+                          ) : isReceived ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Accept</span>
                             </>
                           ) : (
                             <>
@@ -1001,7 +1091,10 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
         {category === 'esps' && filteredUniversities.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {filteredUniversities.map((uni) => {
-                const isConnected = connectedMap[uni.id];
+                const connStatus = connectionService.getConnectionStatus(uni.id);
+                const isConnected = connStatus === 'connected';
+                const isPending = connStatus === 'pending';
+                const isReceived = connStatus === 'received';
                 return (
                   <div
                     key={uni.id}
@@ -1035,10 +1128,19 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
                       {/* Top Right Connect and Message Buttons */}
                       <div className="flex items-center gap-1.5 flex-shrink-0">
                         <button
-                          onClick={() => handleToggleConnect(uni.id, uni.name)}
+                          onClick={() => handleToggleConnect({
+                            id: uni.id,
+                            name: uni.name,
+                            role: uni.institutionType || 'Institution',
+                            avatar: uni.logo || '/xentro-logo.png',
+                          })}
                           className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer ${
                             isConnected
                               ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                              : isPending
+                              ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800'
+                              : isReceived
+                              ? 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-xs active:scale-95'
                               : 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-xs active:scale-95'
                           }`}
                         >
@@ -1046,6 +1148,16 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
                             <>
                               <Check className="w-3.5 h-3.5" />
                               <span>Connected</span>
+                            </>
+                          ) : isPending ? (
+                            <>
+                              <Clock className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                              <span>Pending</span>
+                            </>
+                          ) : isReceived ? (
+                            <>
+                              <Check className="w-3.5 h-3.5" />
+                              <span>Accept</span>
                             </>
                           ) : (
                             <>

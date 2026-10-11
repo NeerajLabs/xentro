@@ -170,12 +170,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
     window.addEventListener(CONVERSATIONS_UPDATED_EVENT, refresh);
     window.addEventListener(CONNECTIONS_UPDATED_EVENT, refresh);
     window.addEventListener('xentro-role-changed', refresh);
+    window.addEventListener('xentro-entity-switched', refresh);
+    window.addEventListener('xentro-connection-event', refresh);
 
     return () => {
       window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, refresh);
       window.removeEventListener(CONVERSATIONS_UPDATED_EVENT, refresh);
       window.removeEventListener(CONNECTIONS_UPDATED_EVENT, refresh);
       window.removeEventListener('xentro-role-changed', refresh);
+      window.removeEventListener('xentro-entity-switched', refresh);
+      window.removeEventListener('xentro-connection-event', refresh);
     };
   }, []);
 

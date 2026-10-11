@@ -167,13 +167,24 @@ export const Header: React.FC<HeaderProps> = ({
 
   useEffect(() => {
     const refresh = () => setNotifications(notificationService.getNotifications());
+    notificationService.syncFromServer().then(refresh).catch(() => {});
+
+    const interval = setInterval(() => {
+      notificationService.syncFromServer().then(refresh).catch(() => {});
+    }, 20000);
+
     window.addEventListener(NOTIFICATIONS_UPDATED_EVENT, refresh);
     window.addEventListener(CONVERSATIONS_UPDATED_EVENT, refresh);
     window.addEventListener('xentro-role-changed', refresh);
+    window.addEventListener('xentro-entity-switched', refresh);
+    window.addEventListener('xentro-connection-event', refresh);
     return () => {
+      clearInterval(interval);
       window.removeEventListener(NOTIFICATIONS_UPDATED_EVENT, refresh);
       window.removeEventListener(CONVERSATIONS_UPDATED_EVENT, refresh);
       window.removeEventListener('xentro-role-changed', refresh);
+      window.removeEventListener('xentro-entity-switched', refresh);
+      window.removeEventListener('xentro-connection-event', refresh);
     };
   }, []);
 

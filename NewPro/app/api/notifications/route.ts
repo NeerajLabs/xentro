@@ -1,91 +1,145 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getBackendBaseUrl } from '@/lib/backendUrl';
+import { getDatabase } from '@/lib/mongodb';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const BACKEND_BASE = getBackendBaseUrl();
+async function resolveTargetIds(db: any, userId?: string, entityId?: string): Promise<string[]> {
+  const ids: string[] = [];
+  if (userId) {
+    ids.push(userId, userId.toLowerCase(), userId.toUpperCase());
+    try {
+      const owned = await db.collection('entities').find({
+        $or: [
+          { primaryOwnerId: userId },
+          { createdByUserId: userId },
+          { 'members.userId': userId },
+        ],
+        status: { $nin: ['DELETED', 'ORPHANED_DELETED'] },
+      }).project({ id: 1, entityId: 1 }).toArray();
+
+      owned.forEach((ent: any) => {
+        if (ent.id) ids.push(ent.id, ent.id.toLowerCase(), ent.id.toUpperCase());
+        if (ent.entityId) ids.push(ent.entityId, ent.entityId.toLowerCase(), ent.entityId.toUpperCase());
+      });
+    } catch (err) {
+      console.warn('[Notifications] Error resolving owned entities:', err);
+    }
+  }
+
+  if (entityId) {
+    ids.push(entityId, entityId.toLowerCase(), entityId.toUpperCase());
+  }
+
+  return Array.from(new Set(ids.filter(Boolean)));
+}
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId');
+    const userId = searchParams.get('userId')?.trim();
+    const entityId = searchParams.get('entityId')?.trim();
 
-    if (!userId) {
+    if (!userId && !entityId) {
       return NextResponse.json({ success: true, notifications: [], unreadCount: 0 });
     }
 
-    const res = await fetch(`${BACKEND_BASE}/notifications/?userId=${encodeURIComponent(userId)}`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Id': userId,
-      },
-      cache: 'no-store',
+    const db = await getDatabase();
+    const notifsCol = db.collection('notifications');
+
+    const targetIds = await resolveTargetIds(db, userId, entityId);
+
+    const rawNotifs = await notifsCol
+      .find({
+        $or: [
+          { userId: { $in: targetIds } },
+          { recipientId: { $in: targetIds } },
+        ],
+      })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .toArray();
+
+    const notifications = rawNotifs.map((n: any) => ({
+      id: n.id || String(n._id),
+      userId: n.userId || n.recipientId,
+      category: n.category || 'general',
+      title: n.title || 'New Notification',
+      description: n.description || n.message || '',
+      time: n.time || 'Recently',
+      unread: n.unread !== undefined ? Boolean(n.unread) : !Boolean(n.read),
+      avatar: n.avatar || '/xentro-logo.png',
+      actorName: n.actorName || n.senderName || '',
+      actorRole: n.actorRole || n.senderRole || '',
+      actorId: n.actorId || n.senderId || '',
+      connectionId: n.connectionId || '',
+      actionRequired: Boolean(n.actionRequired),
+      actionType: n.actionType || '',
+      targetTab: n.targetTab || 'notifications',
+      createdAt: n.createdAt || new Date().toISOString(),
+    }));
+
+    const unreadCount = notifications.filter((n) => n.unread).length;
+
+    return NextResponse.json({
+      success: true,
+      notifications,
+      unreadCount,
+      source: 'mongodb-atlas',
     });
-
-    if (res.ok) {
-      const data = await res.json();
-      return NextResponse.json({
-        success: true,
-        notifications: data?.data?.notifications || [],
-        unreadCount: data?.data?.unreadCount || 0,
-      });
-    }
-
-    return NextResponse.json({ success: true, notifications: [], unreadCount: 0 });
   } catch (err: any) {
-    return NextResponse.json({ success: false, error: err?.message, notifications: [] }, { status: 500 });
+    console.error('[Notifications GET] Error:', err);
+    return NextResponse.json({ success: false, error: err?.message, notifications: [], unreadCount: 0 }, { status: 500 });
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body = await req.json().catch(() => ({}));
     const action = body?.action || 'markRead';
-    const userId = body?.userId;
+    const userId = body?.userId?.trim();
+    const entityId = body?.entityId?.trim();
     const notificationId = body?.notificationId;
 
+    const db = await getDatabase();
+    const notifsCol = db.collection('notifications');
+
     if (action === 'markRead' && notificationId) {
-      const res = await fetch(`${BACKEND_BASE}/notifications/${encodeURIComponent(notificationId)}/read/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(userId ? { 'X-User-Id': userId } : {}),
-        },
-      });
-      const data = await res.json().catch(() => ({}));
-      return NextResponse.json({ success: res.ok, data });
+      await notifsCol.updateMany(
+        { $or: [{ id: notificationId }, { _id: notificationId }] },
+        { $set: { unread: false, read: true, updatedAt: new Date().toISOString() } }
+      );
+      return NextResponse.json({ success: true, message: 'Notification marked as read' });
     }
 
-    if (action === 'markAllRead' && userId) {
-      const res = await fetch(`${BACKEND_BASE}/notifications/mark-all-read/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Id': userId,
+    const targetIds = await resolveTargetIds(db, userId, entityId);
+
+    if (action === 'markAllRead' && targetIds.length > 0) {
+      await notifsCol.updateMany(
+        {
+          $or: [
+            { userId: { $in: targetIds } },
+            { recipientId: { $in: targetIds } },
+          ],
         },
-        body: JSON.stringify({ userId }),
-      });
-      const data = await res.json().catch(() => ({}));
-      return NextResponse.json({ success: res.ok, data });
+        { $set: { unread: false, read: true, updatedAt: new Date().toISOString() } }
+      );
+      return NextResponse.json({ success: true, message: 'All notifications marked as read' });
     }
 
-    if (action === 'clear' && userId) {
-      const res = await fetch(`${BACKEND_BASE}/notifications/clear/`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-User-Id': userId,
-        },
-        body: JSON.stringify({ userId }),
+    if (action === 'clear' && targetIds.length > 0) {
+      await notifsCol.deleteMany({
+        $or: [
+          { userId: { $in: targetIds } },
+          { recipientId: { $in: targetIds } },
+        ],
       });
-      const data = await res.json().catch(() => ({}));
-      return NextResponse.json({ success: res.ok, data });
+      return NextResponse.json({ success: true, message: 'Notifications cleared' });
     }
 
-    return NextResponse.json({ success: false, error: 'Unsupported action' }, { status: 400 });
+    return NextResponse.json({ success: false, error: 'Invalid parameters for notification action' }, { status: 400 });
   } catch (err: any) {
+    console.error('[Notifications POST] Error:', err);
     return NextResponse.json({ success: false, error: err?.message }, { status: 500 });
   }
 }
