@@ -12,6 +12,7 @@ import {
   ImportPreviewData,
   ValidationErrorItem,
 } from '@/types/finance';
+import { entityContextService } from './entityContextService';
 
 const STORAGE_KEY_UPDATES = 'xentro_finances_updates_v2';
 const STORAGE_KEY_REVENUE = 'xentro_finances_revenue_v2';
@@ -57,10 +58,144 @@ class FinanceService {
     return typeof window !== 'undefined';
   }
 
+  private getActiveEntityId(): string | null {
+    if (!this.isBrowser()) return null;
+    return entityContextService.getActiveEntityId();
+  }
+
+  private getUserId(): string {
+    if (!this.isBrowser()) return '';
+    try {
+      const prof = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
+      if (prof) {
+        const p = JSON.parse(prof);
+        return p.id || p.userId || p.email || '';
+      }
+    } catch {}
+    return '';
+  }
+
+  private getStored(key: string): string | null {
+    if (!this.isBrowser()) return null;
+    const eid = this.getActiveEntityId();
+    if (eid) {
+      const scoped = localStorage.getItem(`${key}_${eid}`);
+      if (scoped !== null && scoped !== undefined) return scoped;
+    }
+    return localStorage.getItem(key);
+  }
+
+  private setStored(key: string, value: string): void {
+    if (!this.isBrowser()) return;
+    const eid = this.getActiveEntityId();
+    if (eid) {
+      localStorage.setItem(`${key}_${eid}`, value);
+    }
+    localStorage.setItem(key, value);
+    this.syncToMongoBackend();
+  }
+
+  private async syncToMongoBackend() {
+    if (!this.isBrowser()) return;
+    const eid = this.getActiveEntityId();
+    if (!eid) return;
+
+    try {
+      const metrics = this.calculateMetrics();
+      const updates = this.getFinancialUpdates();
+      const funding = this.getFundingHistory();
+      const capTable = this.getCapitalStructure();
+      const forecasts = this.getForecasts();
+      const revenue = this.getRevenueBreakdown();
+      const expenses = this.getExpenseBreakdown();
+      const grants = this.getGrants();
+      const visibility = this.getVisibilityConfig();
+      const userId = this.getUserId();
+
+      await fetch(`/api/startups/${eid}/financials`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': userId,
+        },
+        body: JSON.stringify({
+          userId,
+          revenueCurrentMonth: `₹${(metrics.totalRevenue || 0).toLocaleString('en-IN')}`,
+          expensesCurrentMonth: `₹${(metrics.totalExpenses || 0).toLocaleString('en-IN')}`,
+          burnRateMonthly: `₹${(metrics.grossBurn || 0).toLocaleString('en-IN')}`,
+          cashAvailable: `₹${(metrics.closingCash || 0).toLocaleString('en-IN')}`,
+          runwayMonths: metrics.runwayMonths || 0,
+          mrr: `₹${(metrics.mrr || 0).toLocaleString('en-IN')}`,
+          arr: `₹${(metrics.arr || 0).toLocaleString('en-IN')}`,
+          growthPct: `${metrics.revenueGrowthPct || 0}%`,
+          totalFundingRaised: `₹${(metrics.totalFundingRaised || 0).toLocaleString('en-IN')}`,
+          visibility,
+          fundingHistory: funding,
+          capTable,
+          forecasts,
+          financialUpdates: updates,
+          revenueBreakdown: revenue,
+          expenseBreakdown: expenses,
+          grants,
+        }),
+      });
+    } catch (err) {
+      console.warn('[FinanceService] Background sync to MongoDB failed:', err);
+    }
+  }
+
+  public async syncFinancialsFromBackend(targetEntityId?: string | null): Promise<boolean> {
+    if (!this.isBrowser()) return false;
+    const eid = targetEntityId !== undefined ? targetEntityId : this.getActiveEntityId();
+    if (!eid) return false;
+
+    try {
+      const userId = this.getUserId();
+      const res = await fetch(`/api/startups/${eid}/financials?userId=${encodeURIComponent(userId)}`, {
+        headers: { 'x-user-id': userId },
+      });
+      if (!res.ok) return false;
+      const json = await res.json();
+      if (!json.success || !json.data) return false;
+
+      const data = json.data;
+      if (Array.isArray(data.financialUpdates) && data.financialUpdates.length > 0) {
+        localStorage.setItem(`${STORAGE_KEY_UPDATES}_${eid}`, JSON.stringify(data.financialUpdates));
+      }
+      if (Array.isArray(data.fundingHistory) && data.fundingHistory.length > 0) {
+        localStorage.setItem(`${STORAGE_KEY_FUNDING}_${eid}`, JSON.stringify(data.fundingHistory));
+      }
+      if (Array.isArray(data.capTable) && data.capTable.length > 0) {
+        localStorage.setItem(`${STORAGE_KEY_CAP_STRUCTURE}_${eid}`, JSON.stringify(data.capTable));
+      }
+      if (Array.isArray(data.forecasts) && data.forecasts.length > 0) {
+        localStorage.setItem(`${STORAGE_KEY_FORECASTS}_${eid}`, JSON.stringify(data.forecasts));
+      }
+      if (Array.isArray(data.revenueBreakdown) && data.revenueBreakdown.length > 0) {
+        localStorage.setItem(`${STORAGE_KEY_REVENUE}_${eid}`, JSON.stringify(data.revenueBreakdown));
+      }
+      if (Array.isArray(data.expenseBreakdown) && data.expenseBreakdown.length > 0) {
+        localStorage.setItem(`${STORAGE_KEY_EXPENSES}_${eid}`, JSON.stringify(data.expenseBreakdown));
+      }
+      if (Array.isArray(data.grants) && data.grants.length > 0) {
+        localStorage.setItem(`${STORAGE_KEY_GRANTS}_${eid}`, JSON.stringify(data.grants));
+      }
+      if (data.visibility) {
+        localStorage.setItem(`${STORAGE_KEY_VISIBILITY}_${eid}`, JSON.stringify(data.visibility));
+      }
+
+      this.notifyUpdate();
+      return true;
+    } catch (err) {
+      console.warn('[FinanceService] Failed to fetch financials from MongoDB:', err);
+      return false;
+    }
+  }
+
   // --- Storage Getters & Setters ---
   public getFinancialUpdates(): FinancialUpdateRecord[] {
     if (!this.isBrowser()) return [];
-    const stored = localStorage.getItem(STORAGE_KEY_UPDATES);
+    const stored = this.getStored(STORAGE_KEY_UPDATES);
     if (!stored) return [];
     try {
       const parsed = JSON.parse(stored);
@@ -76,13 +211,13 @@ class FinanceService {
 
   public setFinancialUpdates(updates: FinancialUpdateRecord[]) {
     if (!this.isBrowser()) return;
-    localStorage.setItem(STORAGE_KEY_UPDATES, JSON.stringify(updates));
+    this.setStored(STORAGE_KEY_UPDATES, JSON.stringify(updates));
     this.notifyUpdate();
   }
 
   public getRevenueBreakdown(): RevenueBreakdownItem[] {
     if (!this.isBrowser()) return [];
-    const stored = localStorage.getItem(STORAGE_KEY_REVENUE);
+    const stored = this.getStored(STORAGE_KEY_REVENUE);
     if (!stored) return [];
     try {
       const parsed = JSON.parse(stored);
@@ -98,13 +233,13 @@ class FinanceService {
 
   public setRevenueBreakdown(items: RevenueBreakdownItem[]) {
     if (!this.isBrowser()) return;
-    localStorage.setItem(STORAGE_KEY_REVENUE, JSON.stringify(items));
+    this.setStored(STORAGE_KEY_REVENUE, JSON.stringify(items));
     this.notifyUpdate();
   }
 
   public getExpenseBreakdown(): ExpenseBreakdownItem[] {
     if (!this.isBrowser()) return [];
-    const stored = localStorage.getItem(STORAGE_KEY_EXPENSES);
+    const stored = this.getStored(STORAGE_KEY_EXPENSES);
     if (!stored) return [];
     try {
       const parsed = JSON.parse(stored);
@@ -120,13 +255,13 @@ class FinanceService {
 
   public setExpenseBreakdown(items: ExpenseBreakdownItem[]) {
     if (!this.isBrowser()) return;
-    localStorage.setItem(STORAGE_KEY_EXPENSES, JSON.stringify(items));
+    this.setStored(STORAGE_KEY_EXPENSES, JSON.stringify(items));
     this.notifyUpdate();
   }
 
   public getFundingHistory(): FundingRoundItem[] {
     if (!this.isBrowser()) return [];
-    const stored = localStorage.getItem(STORAGE_KEY_FUNDING);
+    const stored = this.getStored(STORAGE_KEY_FUNDING);
     if (!stored) return [];
     try {
       const parsed = JSON.parse(stored);
@@ -142,13 +277,13 @@ class FinanceService {
 
   public setFundingHistory(items: FundingRoundItem[]) {
     if (!this.isBrowser()) return;
-    localStorage.setItem(STORAGE_KEY_FUNDING, JSON.stringify(items));
+    this.setStored(STORAGE_KEY_FUNDING, JSON.stringify(items));
     this.notifyUpdate();
   }
 
   public getGrants(): GrantItem[] {
     if (!this.isBrowser()) return [];
-    const stored = localStorage.getItem(STORAGE_KEY_GRANTS);
+    const stored = this.getStored(STORAGE_KEY_GRANTS);
     if (!stored) return [];
     try {
       const parsed = JSON.parse(stored);
@@ -164,13 +299,13 @@ class FinanceService {
 
   public setGrants(items: GrantItem[]) {
     if (!this.isBrowser()) return;
-    localStorage.setItem(STORAGE_KEY_GRANTS, JSON.stringify(items));
+    this.setStored(STORAGE_KEY_GRANTS, JSON.stringify(items));
     this.notifyUpdate();
   }
 
   public getCapitalStructure(): CapitalStructureItem[] {
     if (!this.isBrowser()) return [];
-    const stored = localStorage.getItem(STORAGE_KEY_CAP_STRUCTURE);
+    const stored = this.getStored(STORAGE_KEY_CAP_STRUCTURE);
     if (!stored) return [];
     try {
       const parsed = JSON.parse(stored);
@@ -186,7 +321,7 @@ class FinanceService {
 
   public setCapitalStructure(items: CapitalStructureItem[]) {
     if (!this.isBrowser()) return;
-    localStorage.setItem(STORAGE_KEY_CAP_STRUCTURE, JSON.stringify(items));
+    this.setStored(STORAGE_KEY_CAP_STRUCTURE, JSON.stringify(items));
     this.notifyUpdate();
   }
 
@@ -215,7 +350,7 @@ class FinanceService {
 
   public getForecasts(): FinancialForecastItem[] {
     if (!this.isBrowser()) return [];
-    const stored = localStorage.getItem(STORAGE_KEY_FORECASTS);
+    const stored = this.getStored(STORAGE_KEY_FORECASTS);
     if (!stored) return [];
     try {
       const parsed = JSON.parse(stored);
@@ -231,13 +366,13 @@ class FinanceService {
 
   public setForecasts(items: FinancialForecastItem[]) {
     if (!this.isBrowser()) return;
-    localStorage.setItem(STORAGE_KEY_FORECASTS, JSON.stringify(items));
+    this.setStored(STORAGE_KEY_FORECASTS, JSON.stringify(items));
     this.notifyUpdate();
   }
 
   public getSourceVersions(): FinanceSourceFileVersion[] {
     if (!this.isBrowser()) return [];
-    const stored = localStorage.getItem(STORAGE_KEY_VERSIONS);
+    const stored = this.getStored(STORAGE_KEY_VERSIONS);
     if (!stored) return [];
     try {
       const parsed = JSON.parse(stored);
@@ -253,13 +388,13 @@ class FinanceService {
 
   public setSourceVersions(items: FinanceSourceFileVersion[]) {
     if (!this.isBrowser()) return;
-    localStorage.setItem(STORAGE_KEY_VERSIONS, JSON.stringify(items));
+    this.setStored(STORAGE_KEY_VERSIONS, JSON.stringify(items));
     this.notifyUpdate();
   }
 
   public getVisibilityConfig(): FinanceVisibilityConfig {
     if (!this.isBrowser()) return INITIAL_VISIBILITY_CONFIG;
-    const stored = localStorage.getItem(STORAGE_KEY_VISIBILITY);
+    const stored = this.getStored(STORAGE_KEY_VISIBILITY);
     if (!stored) {
       this.setVisibilityConfig(INITIAL_VISIBILITY_CONFIG);
       return INITIAL_VISIBILITY_CONFIG;
@@ -273,7 +408,7 @@ class FinanceService {
 
   public setVisibilityConfig(config: FinanceVisibilityConfig) {
     if (!this.isBrowser()) return;
-    localStorage.setItem(STORAGE_KEY_VISIBILITY, JSON.stringify(config));
+    this.setStored(STORAGE_KEY_VISIBILITY, JSON.stringify(config));
     this.notifyUpdate();
   }
 
@@ -800,3 +935,19 @@ Dec 2026,720000,780000,60000,3440000,57.3,Baseline`,
 }
 
 export const financeService = new FinanceService();
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('xentro-active-entity-changed', (e: Event) => {
+    const ce = e as CustomEvent;
+    if (ce.detail?.entityId) {
+      financeService.syncFinancialsFromBackend(ce.detail.entityId);
+    }
+  });
+
+  setTimeout(() => {
+    const id = entityContextService.getActiveEntityId();
+    if (id) {
+      financeService.syncFinancialsFromBackend(id);
+    }
+  }, 150);
+}

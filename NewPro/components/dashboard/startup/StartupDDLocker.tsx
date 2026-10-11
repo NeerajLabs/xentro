@@ -36,11 +36,36 @@ import {
   DDFolderType,
 } from '@/data/startupWorkspaceData';
 import { useToast } from '@/components/ui/Toast';
+import { entityContextService } from '@/lib/entityContextService';
 
 const DD_DOCUMENTS_KEY = 'xentro_startup_dd_documents';
 const DD_AUDIT_LOG_KEY = 'xentro_startup_dd_audit';
 const DD_ACTIVE_ACCESS_KEY = 'xentro_startup_dd_active_access';
 const DD_ACCESS_REQUESTS_KEY = 'xentro_startup_dd_access_requests';
+
+const getActiveEntityId = () => typeof window !== 'undefined' ? entityContextService.getActiveEntityId() : null;
+const getUserId = () => {
+  if (typeof window === 'undefined') return '';
+  try {
+    const p = JSON.parse(localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile') || '{}');
+    return p.id || p.userId || p.email || '';
+  } catch { return ''; }
+};
+
+const syncDiligenceAction = async (action: string, payload: Record<string, any>) => {
+  const eid = getActiveEntityId();
+  if (!eid) return;
+  try {
+    const userId = getUserId();
+    await fetch(`/api/startups/${eid}/diligence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-user-id': userId },
+      body: JSON.stringify({ action, ...payload, userId }),
+    });
+  } catch (err) {
+    console.warn('[DD Locker] Backend sync error:', err);
+  }
+};
 
 export const StartupDDLocker: React.FC = () => {
   const { showToast } = useToast();
@@ -82,65 +107,103 @@ export const StartupDDLocker: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
 
-  // Hydrate from localStorage
+  // Hydrate from localStorage & MongoDB Atlas
   useEffect(() => {
-    try {
-      const storedDocs = localStorage.getItem(DD_DOCUMENTS_KEY);
-      if (storedDocs) {
-        const parsed = JSON.parse(storedDocs);
-        if (Array.isArray(parsed)) {
-          if (parsed.some((d: any) => d?.id?.startsWith('doc_') && parseInt(d.id.replace('doc_', ''), 10) <= 12)) {
-            localStorage.removeItem(DD_DOCUMENTS_KEY);
-            setDocuments([]);
-          } else {
-            setDocuments(parsed);
+    const eid = getActiveEntityId();
+
+    const loadLocal = () => {
+      try {
+        const storedDocs = (eid ? localStorage.getItem(`${DD_DOCUMENTS_KEY}_${eid}`) : null) || localStorage.getItem(DD_DOCUMENTS_KEY);
+        if (storedDocs) {
+          const parsed = JSON.parse(storedDocs);
+          if (Array.isArray(parsed)) {
+            if (parsed.some((d: any) => d?.id?.startsWith('doc_') && parseInt(d.id.replace('doc_', ''), 10) <= 12)) {
+              localStorage.removeItem(DD_DOCUMENTS_KEY);
+              setDocuments([]);
+            } else {
+              setDocuments(parsed);
+            }
           }
         }
-      }
-      const storedAudit = localStorage.getItem(DD_AUDIT_LOG_KEY);
-      if (storedAudit) {
-        const parsed = JSON.parse(storedAudit);
-        if (Array.isArray(parsed)) {
-          if (parsed.some((a: any) => a?.id?.startsWith('aud_'))) {
-            localStorage.removeItem(DD_AUDIT_LOG_KEY);
-            setAuditLog([]);
-          } else {
-            setAuditLog(parsed);
+        const storedAudit = (eid ? localStorage.getItem(`${DD_AUDIT_LOG_KEY}_${eid}`) : null) || localStorage.getItem(DD_AUDIT_LOG_KEY);
+        if (storedAudit) {
+          const parsed = JSON.parse(storedAudit);
+          if (Array.isArray(parsed)) {
+            if (parsed.some((a: any) => a?.id?.startsWith('aud_'))) {
+              localStorage.removeItem(DD_AUDIT_LOG_KEY);
+              setAuditLog([]);
+            } else {
+              setAuditLog(parsed);
+            }
           }
         }
-      }
-      const storedActive = localStorage.getItem(DD_ACTIVE_ACCESS_KEY);
-      if (storedActive) {
-        const parsed = JSON.parse(storedActive);
-        if (Array.isArray(parsed)) {
-          if (parsed.some((a: any) => a?.id?.startsWith('acc_'))) {
-            localStorage.removeItem(DD_ACTIVE_ACCESS_KEY);
-            setActiveAccessList([]);
-          } else {
-            setActiveAccessList(parsed);
+        const storedActive = (eid ? localStorage.getItem(`${DD_ACTIVE_ACCESS_KEY}_${eid}`) : null) || localStorage.getItem(DD_ACTIVE_ACCESS_KEY);
+        if (storedActive) {
+          const parsed = JSON.parse(storedActive);
+          if (Array.isArray(parsed)) {
+            if (parsed.some((a: any) => a?.id?.startsWith('acc_'))) {
+              localStorage.removeItem(DD_ACTIVE_ACCESS_KEY);
+              setActiveAccessList([]);
+            } else {
+              setActiveAccessList(parsed);
+            }
           }
         }
-      }
-      const storedReqs = localStorage.getItem(DD_ACCESS_REQUESTS_KEY);
-      if (storedReqs) {
-        const parsed = JSON.parse(storedReqs);
-        if (Array.isArray(parsed)) {
-          if (parsed.some((r: any) => r?.id?.startsWith('req_'))) {
-            localStorage.removeItem(DD_ACCESS_REQUESTS_KEY);
-            setAccessRequests([]);
-          } else {
-            setAccessRequests(parsed);
+        const storedReqs = (eid ? localStorage.getItem(`${DD_ACCESS_REQUESTS_KEY}_${eid}`) : null) || localStorage.getItem(DD_ACCESS_REQUESTS_KEY);
+        if (storedReqs) {
+          const parsed = JSON.parse(storedReqs);
+          if (Array.isArray(parsed)) {
+            if (parsed.some((r: any) => r?.id?.startsWith('req_'))) {
+              localStorage.removeItem(DD_ACCESS_REQUESTS_KEY);
+              setAccessRequests([]);
+            } else {
+              setAccessRequests(parsed);
+            }
           }
         }
+      } catch (err) {
+        console.error('Failed to load DD locker data from localStorage:', err);
       }
-    } catch (err) {
-      console.error('Failed to load DD locker data from localStorage:', err);
+    };
+
+    loadLocal();
+
+    // Fetch authoritative data from MongoDB
+    if (eid) {
+      const userId = getUserId();
+      fetch(`/api/startups/${eid}/diligence?userId=${encodeURIComponent(userId)}`, {
+        headers: { 'x-user-id': userId },
+      })
+        .then((res) => res.json())
+        .then((json) => {
+          if (json.success && json.data) {
+            if (Array.isArray(json.data.documents) && json.data.documents.length > 0) {
+              setDocuments(json.data.documents);
+              localStorage.setItem(`${DD_DOCUMENTS_KEY}_${eid}`, JSON.stringify(json.data.documents));
+            }
+            if (Array.isArray(json.data.accessRequests)) {
+              setAccessRequests(json.data.accessRequests);
+              localStorage.setItem(`${DD_ACCESS_REQUESTS_KEY}_${eid}`, JSON.stringify(json.data.accessRequests));
+            }
+            if (Array.isArray(json.data.activeAccess)) {
+              setActiveAccessList(json.data.activeAccess);
+              localStorage.setItem(`${DD_ACTIVE_ACCESS_KEY}_${eid}`, JSON.stringify(json.data.activeAccess));
+            }
+            if (Array.isArray(json.data.auditLog)) {
+              setAuditLog(json.data.auditLog);
+              localStorage.setItem(`${DD_AUDIT_LOG_KEY}_${eid}`, JSON.stringify(json.data.auditLog));
+            }
+          }
+        })
+        .catch((err) => console.warn('[DD Locker] Failed to fetch from MongoDB:', err));
     }
   }, []);
 
   const updateDocumentsAndPersist = (newDocs: DDDocument[]) => {
     setDocuments(newDocs);
     try {
+      const eid = getActiveEntityId();
+      if (eid) localStorage.setItem(`${DD_DOCUMENTS_KEY}_${eid}`, JSON.stringify(newDocs));
       localStorage.setItem(DD_DOCUMENTS_KEY, JSON.stringify(newDocs));
     } catch (err) {
       console.error('Failed to persist DD docs:', err);
@@ -150,6 +213,8 @@ export const StartupDDLocker: React.FC = () => {
   const updateActiveAccessAndPersist = (newAccess: DDActiveAccess[]) => {
     setActiveAccessList(newAccess);
     try {
+      const eid = getActiveEntityId();
+      if (eid) localStorage.setItem(`${DD_ACTIVE_ACCESS_KEY}_${eid}`, JSON.stringify(newAccess));
       localStorage.setItem(DD_ACTIVE_ACCESS_KEY, JSON.stringify(newAccess));
     } catch (err) {
       console.error('Failed to persist active access:', err);
@@ -159,6 +224,8 @@ export const StartupDDLocker: React.FC = () => {
   const updateRequestsAndPersist = (newReqs: DDAccessRequest[]) => {
     setAccessRequests(newReqs);
     try {
+      const eid = getActiveEntityId();
+      if (eid) localStorage.setItem(`${DD_ACCESS_REQUESTS_KEY}_${eid}`, JSON.stringify(newReqs));
       localStorage.setItem(DD_ACCESS_REQUESTS_KEY, JSON.stringify(newReqs));
     } catch (err) {
       console.error('Failed to persist requests:', err);
@@ -168,6 +235,8 @@ export const StartupDDLocker: React.FC = () => {
   const updateAuditLogAndPersist = (newAudit: DDActivityLogItem[]) => {
     setAuditLog(newAudit);
     try {
+      const eid = getActiveEntityId();
+      if (eid) localStorage.setItem(`${DD_AUDIT_LOG_KEY}_${eid}`, JSON.stringify(newAudit));
       localStorage.setItem(DD_AUDIT_LOG_KEY, JSON.stringify(newAudit));
     } catch (err) {
       console.error('Failed to persist DD audit log:', err);
@@ -265,6 +334,8 @@ export const StartupDDLocker: React.FC = () => {
     };
     updateAuditLogAndPersist([newAuditItem, ...auditLog]);
 
+    syncDiligenceAction('UPLOAD_DOCUMENT', { document: doc, actorName: activeName, organization: activeOrg });
+
     setIsUploading(false);
     setUploadProgress(0);
     setSelectedFile(null);
@@ -297,6 +368,9 @@ export const StartupDDLocker: React.FC = () => {
       timestamp: 'Just now',
     };
     updateAuditLogAndPersist([newAuditItem, ...auditLog]);
+
+    syncDiligenceAction('DELETE_DOCUMENT', { documentId: id, documentName: name, actorName: activeName, organization: activeOrg });
+
     showToast(`Deleted "${name}"`, 'info');
   };
 
@@ -334,17 +408,21 @@ export const StartupDDLocker: React.FC = () => {
     };
     updateAuditLogAndPersist([newLogItem, ...auditLog]);
 
+    syncDiligenceAction('APPROVE_REQUEST', { requestId: approvingRequest.id, grantedFolders: selectedGrantFolders, expiryDate: expiryStr });
+
     showToast(`Granted DD access to ${approvingRequest.userName} (${approvingRequest.organization}) for 14 days`, 'success');
     setApprovingRequest(null);
   };
 
   const handleRejectRequest = (reqId: string, name: string) => {
     updateRequestsAndPersist(accessRequests.filter((r) => r.id !== reqId));
+    syncDiligenceAction('REJECT_REQUEST', { requestId: reqId });
     showToast(`Declined DD access request from ${name}`, 'info');
   };
 
   const handleRevokeAccess = (id: string, name: string) => {
     updateActiveAccessAndPersist(activeAccessList.filter((a) => a.id !== id));
+    syncDiligenceAction('REVOKE_ACCESS', { requestId: id });
     showToast(`Revoked DD access for ${name}`, 'info');
   };
 

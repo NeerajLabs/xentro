@@ -12,6 +12,7 @@ import {
   TalentApplicantStage,
   TalentAskStatus,
 } from '@/types/startup';
+import { entityContextService } from './entityContextService';
 
 // Local Storage Keys
 export const TEAM_STORAGE_KEY = 'xentro_startup_team_v1';
@@ -249,13 +250,113 @@ function normalizeMember(m: any): StartupTeamMember {
 }
 
 /* =========================================================================
-   TEAM MEMBERS SERVICE
+   TEAM MEMBERS SERVICE & MONGO SYNCHRONIZATION
    ========================================================================= */
+
+function getActiveEntityId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return entityContextService.getActiveEntityId();
+}
+
+function getUserId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const prof = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
+    if (prof) {
+      const p = JSON.parse(prof);
+      return p.id || p.userId || p.email || '';
+    }
+  } catch {}
+  return '';
+}
+
+function getStoredTeamItem(key: string): string | null {
+  if (typeof window === 'undefined') return null;
+  const eid = getActiveEntityId();
+  if (eid) {
+    const scoped = localStorage.getItem(`${key}_${eid}`);
+    if (scoped !== null && scoped !== undefined) return scoped;
+  }
+  return localStorage.getItem(key);
+}
+
+function setStoredTeamItem(key: string, val: string): void {
+  if (typeof window === 'undefined') return;
+  const eid = getActiveEntityId();
+  if (eid) {
+    localStorage.setItem(`${key}_${eid}`, val);
+  }
+  localStorage.setItem(key, val);
+}
+
+async function syncTeamActionToBackend(action: string, payload: Record<string, any>) {
+  if (typeof window === 'undefined') return;
+  const eid = getActiveEntityId();
+  if (!eid) return;
+
+  try {
+    const userId = getUserId();
+    await fetch(`/api/startups/${eid}/team`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+      },
+      body: JSON.stringify({
+        action,
+        ...payload,
+        userId,
+      }),
+    });
+  } catch (err) {
+    console.warn('[StartupTeamService] Background sync to MongoDB failed:', err);
+  }
+}
+
+export async function syncTeamFromBackend(targetEntityId?: string | null): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const eid = targetEntityId !== undefined ? targetEntityId : getActiveEntityId();
+  if (!eid) return false;
+
+  try {
+    const userId = getUserId();
+    const res = await fetch(`/api/startups/${eid}/team?userId=${encodeURIComponent(userId)}`, {
+      headers: { 'x-user-id': userId },
+    });
+    if (!res.ok) return false;
+    const json = await res.json();
+    if (!json.success || !json.data) return false;
+
+    const data = json.data;
+    if (data.talentAsks && Array.isArray(data.talentAsks)) {
+      setStoredTeamItem(TALENT_ASKS_STORAGE_KEY, JSON.stringify(data.talentAsks));
+      window.dispatchEvent(
+        new CustomEvent('xentro-startup-talent-changed', {
+          detail: { asks: data.talentAsks },
+        })
+      );
+    }
+
+    if (data.applicants && Array.isArray(data.applicants)) {
+      setStoredTeamItem(TALENT_APPLICANTS_STORAGE_KEY, JSON.stringify(data.applicants));
+      window.dispatchEvent(
+        new CustomEvent('xentro-startup-applicants-changed', {
+          detail: { applicants: data.applicants },
+        })
+      );
+    }
+
+    return true;
+  } catch (err) {
+    console.warn('[StartupTeamService] Failed to sync team from MongoDB:', err);
+    return false;
+  }
+}
 
 export function getStartupMembers(): StartupTeamMember[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(TEAM_STORAGE_KEY);
+    const raw = getStoredTeamItem(TEAM_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
@@ -277,7 +378,7 @@ export function getStartupMembers(): StartupTeamMember[] {
       }
     }
 
-    const legacyRaw = localStorage.getItem(LEGACY_TEAM_STORAGE_KEY);
+    const legacyRaw = getStoredTeamItem(LEGACY_TEAM_STORAGE_KEY);
     if (legacyRaw) {
       const legacyParsed = JSON.parse(legacyRaw);
       if (Array.isArray(legacyParsed)) {
@@ -308,15 +409,17 @@ export function getStartupMembers(): StartupTeamMember[] {
 export function saveStartupMembers(members: StartupTeamMember[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(TEAM_STORAGE_KEY, JSON.stringify(members));
-    // Also sync to legacy store for backward compatibility
-    localStorage.setItem(LEGACY_TEAM_STORAGE_KEY, JSON.stringify(members));
+    setStoredTeamItem(TEAM_STORAGE_KEY, JSON.stringify(members));
+    setStoredTeamItem(LEGACY_TEAM_STORAGE_KEY, JSON.stringify(members));
 
     window.dispatchEvent(
       new CustomEvent('xentro-startup-team-changed', {
         detail: { members },
       })
     );
+
+    const categorized = categorizePublicTeamMembers(members);
+    syncTeamActionToBackend('SYNC_ALL_TEAM', { publicTeam: categorized });
   } catch (err) {
     console.error('Failed to save startup members:', err);
   }
@@ -545,7 +648,7 @@ export function categorizePublicTeamMembers(members: StartupTeamMember[]) {
 export function getTalentAsks(): StartupTalentAsk[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(TALENT_ASKS_STORAGE_KEY);
+    const raw = getStoredTeamItem(TALENT_ASKS_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
@@ -566,12 +669,13 @@ export function getTalentAsks(): StartupTalentAsk[] {
 export function saveTalentAsks(asks: StartupTalentAsk[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(TALENT_ASKS_STORAGE_KEY, JSON.stringify(asks));
+    setStoredTeamItem(TALENT_ASKS_STORAGE_KEY, JSON.stringify(asks));
     window.dispatchEvent(
       new CustomEvent('xentro-startup-talent-changed', {
         detail: { asks },
       })
     );
+    syncTeamActionToBackend('SYNC_ALL_TEAM', { talentAsks: asks });
   } catch (err) {
     console.error('Failed to save talent asks:', err);
   }
@@ -622,6 +726,7 @@ export function deleteTalentAsk(id: string): boolean {
   const current = getTalentAsks();
   const updated = current.filter((a) => a.id !== id);
   saveTalentAsks(updated);
+  syncTeamActionToBackend('DELETE_TALENT_ASK', { askId: id });
   return true;
 }
 
@@ -639,7 +744,7 @@ export function getPublicTalentAsks(): StartupTalentAsk[] {
 export function getTalentApplicants(talentAskId?: string): TalentApplicant[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(TALENT_APPLICANTS_STORAGE_KEY);
+    const raw = getStoredTeamItem(TALENT_APPLICANTS_STORAGE_KEY);
     let all: TalentApplicant[] = [];
     if (raw) {
       const parsed = JSON.parse(raw);
@@ -660,12 +765,13 @@ export function getTalentApplicants(talentAskId?: string): TalentApplicant[] {
 export function saveTalentApplicants(applicants: TalentApplicant[]): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(TALENT_APPLICANTS_STORAGE_KEY, JSON.stringify(applicants));
+    setStoredTeamItem(TALENT_APPLICANTS_STORAGE_KEY, JSON.stringify(applicants));
     window.dispatchEvent(
       new CustomEvent('xentro-startup-applicants-changed', {
         detail: { applicants },
       })
     );
+    syncTeamActionToBackend('SYNC_ALL_TEAM', { applicants });
   } catch (err) {
     console.error('Failed to save applicants:', err);
   }
@@ -777,3 +883,20 @@ export function convertApplicantToMember(
 
   return member;
 }
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('xentro-active-entity-changed', (e: Event) => {
+    const ce = e as CustomEvent;
+    if (ce.detail?.entityId) {
+      syncTeamFromBackend(ce.detail.entityId);
+    }
+  });
+
+  setTimeout(() => {
+    const id = entityContextService.getActiveEntityId();
+    if (id) {
+      syncTeamFromBackend(id);
+    }
+  }, 140);
+}
+

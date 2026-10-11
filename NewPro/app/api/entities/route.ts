@@ -152,6 +152,8 @@ export async function POST(req: NextRequest) {
       name: entityName,
       username: `@${entityName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}${Math.floor(10 + Math.random() * 90)}`,
       officialEmail: officialEmail || user.email,
+      createdByUserId: user.id,
+      currentOwnerUserId: user.id,
       primaryOwnerId: user.id,
       primaryOwnerName: user.fullName,
       verificationStatus,
@@ -164,6 +166,119 @@ export async function POST(req: NextRequest) {
     };
 
     await entitiesCol.insertOne(entityDoc);
+
+    // If STARTUP entity, seed dedicated startups collection record
+    if (canonicalType === 'STARTUP') {
+      const startupsCol = db.collection('startups');
+      const startupDetails = body.details || {};
+      const startupDoc = {
+        entityId,
+        name: entityName,
+        createdByUserId: user.id,
+        currentOwnerUserId: user.id,
+        identity: {
+          name: entityName,
+          logo: startupDetails.logo || '/xentro-logo.png',
+          banner: startupDetails.banner || null,
+          tagline: startupDetails.pitch || startupDetails.tagline || 'Building next-generation solutions',
+          stage: startupDetails.stage || 'MVP',
+          industry: startupDetails.sector || startupDetails.industry || 'Technology & Innovation',
+          subSector: startupDetails.subSector || '',
+          businessModelType: startupDetails.businessModelType || 'B2B',
+          foundedYear: startupDetails.foundedYear || new Date().getFullYear(),
+          location: startupDetails.location || 'India',
+          operatingGeography: ['India'],
+          website: startupDetails.website || '',
+          linkedin: startupDetails.linkedin || '',
+          isVerified: verificationStatus === 'VERIFIED',
+        },
+        overview: {
+          whatItDoes: startupDetails.pitch || `Official venture profile for ${entityName}.`,
+          whoItServes: startupDetails.whoItServes || 'Ecosystem enterprises and partners',
+          currentStage: startupDetails.stage || 'Active Venture',
+          coreValueProp: startupDetails.pitch || 'Scaling innovative solutions.',
+        },
+        unsdg: [],
+        pitchVideo: null,
+        pitchDeck: null,
+        problem: {
+          problemStatement: '',
+          targetUsers: '',
+          painPoints: [],
+          whyItMatters: '',
+          existingAlternatives: '',
+        },
+        solution: {
+          overview: '',
+          howItSolves: '',
+          coreValueProp: '',
+          keyDifferentiators: [],
+        },
+        product: {
+          name: `${entityName} Product`,
+          category: startupDetails.sector || 'Software',
+          description: '',
+          status: 'MVP',
+          keyFeatures: [],
+          screenshots: [],
+          demoLink: '',
+        },
+        companyInfo: {
+          legalName: entityName,
+          incorporationStatus: 'Active',
+          incorporationDate: '',
+          registeredLocation: startupDetails.location || 'India',
+          isDPIITRecognised: false,
+          isMSMERegistered: false,
+        },
+        market: {
+          targetCustomer: '',
+          primarySegment: startupDetails.sector || '',
+          businessModelCategory: 'B2B',
+          targetGeography: ['India'],
+          marketOpportunity: '',
+        },
+        businessModel: {
+          businessModel: 'B2B',
+          revenueModel: 'Direct / Subscription',
+          pricingModel: '',
+          revenueStreams: [],
+          customerType: 'Enterprise',
+          salesModel: 'Direct',
+        },
+        publicTeam: {
+          founders: [
+            {
+              id: 'founder_1',
+              name: user.fullName || 'Founder',
+              role: 'Founder & CEO',
+              roleCategory: 'founder',
+              avatar: user.avatar || '/xentro-logo.png',
+              bio: `Founder & Lead at ${entityName}.`,
+              isFullTime: true,
+              isVerified: true,
+            },
+          ],
+          leadership: [],
+          core: [],
+          advisors: [],
+        },
+        metrics: {
+          profileCompletionPct: 75,
+          profileViews: 0,
+          profileViewsDelta: '+0% this week',
+          connectionsCount: 0,
+          askResponsesCount: 0,
+          opportunitiesAppliedCount: 0,
+          ddRequestsCount: 0,
+        },
+        visibility: 'PUBLIC',
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      await startupsCol.insertOne(startupDoc);
+    }
 
     const isPrivilegedOrg = canonicalType === 'INVESTOR_ORG';
     const requestedOrgRole = body.requestedRole || roleInOrg;

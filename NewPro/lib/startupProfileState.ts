@@ -11,9 +11,9 @@ import {
   StartupMarket,
   StartupBusinessModel,
 } from '@/types/startup';
+import { entityContextService } from './entityContextService';
 
 export type FieldVisibility = 'Public' | 'Connections Only' | 'Approved Users' | 'Private' | 'Request Access';
-
 export type StartupOverallVisibility = 'Public' | 'Limited' | 'Private' | 'Ghost Mode';
 
 export interface StartupPrivacySettings {
@@ -41,27 +41,120 @@ export const defaultStartupPrivacySettings: StartupPrivacySettings = {
 const OVERALL_VISIBILITY_KEY = 'xentro_startup_overall_visibility';
 const GHOST_MODE_KEY = 'xentro_startup_ghost_mode';
 const PRIVACY_SETTINGS_KEY = 'xentro_startup_privacy_settings';
+const STARTUP_BANNER_KEY = 'xentro_startup_banner_image';
+const STARTUP_AVATAR_KEY = 'xentro_startup_avatar_image';
+const STARTUP_PITCH_VIDEO_KEY = 'xentro_startup_pitch_video';
+const STARTUP_PITCH_DECK_KEY = 'xentro_startup_pitch_deck';
+const STARTUP_TEAM_KEY = 'xentro_startup_team_members';
+const STARTUP_PROBLEM_KEY = 'xentro_startup_problem';
+const STARTUP_SOLUTION_KEY = 'xentro_startup_solution';
+const STARTUP_PRODUCT_KEY = 'xentro_startup_product';
+const STARTUP_COMPANY_INFO_KEY = 'xentro_startup_company_info';
+const STARTUP_MARKET_KEY = 'xentro_startup_market';
+const STARTUP_BUSINESS_MODEL_KEY = 'xentro_startup_business_model';
+const BASIC_INFO_KEY = 'xentro_startup_basic_info';
 
-export function getStartupOverallVisibility(): StartupOverallVisibility {
+/* ==================== MULTI-ENTITY HELPERS ==================== */
+
+function getActiveEntityId(): string | null {
+  if (typeof window === 'undefined') return null;
+  return entityContextService.getActiveEntityId();
+}
+
+function getUserId(): string {
+  if (typeof window === 'undefined') return '';
+  try {
+    const prof = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
+    if (prof) {
+      const p = JSON.parse(prof);
+      return p.id || p.userId || p.email || '';
+    }
+  } catch {}
+  return '';
+}
+
+function getScopedKey(baseKey: string, entityId?: string | null): string {
+  const eid = entityId !== undefined ? entityId : getActiveEntityId();
+  return eid ? `${baseKey}_${eid}` : baseKey;
+}
+
+function getStoredValue(baseKey: string, entityId?: string | null): string | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const eid = entityId !== undefined ? entityId : getActiveEntityId();
+    if (eid) {
+      const scopedVal = localStorage.getItem(`${baseKey}_${eid}`);
+      if (scopedVal !== null && scopedVal !== undefined) return scopedVal;
+    }
+    return localStorage.getItem(baseKey);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredValue(baseKey: string, value: string, entityId?: string | null): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const eid = entityId !== undefined ? entityId : getActiveEntityId();
+    if (eid) {
+      localStorage.setItem(`${baseKey}_${eid}`, value);
+    }
+    // Also keep legacy store in sync for backward compatibility
+    localStorage.setItem(baseKey, value);
+  } catch (err) {
+    console.error(`Failed to store ${baseKey}:`, err);
+  }
+}
+
+/**
+ * Dispatches targeted atomic updates to MongoDB Atlas backend asynchronously.
+ */
+async function syncToBackend(patch: Record<string, any>, targetEntityId?: string | null) {
+  if (typeof window === 'undefined') return;
+  const eid = targetEntityId !== undefined ? targetEntityId : getActiveEntityId();
+  if (!eid) return;
+
+  try {
+    const userId = getUserId();
+    await fetch(`/api/startups/${eid}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-user-id': userId,
+      },
+      body: JSON.stringify({
+        ...patch,
+        userId,
+      }),
+    });
+  } catch (err) {
+    console.warn('[StartupProfileState] Background sync to MongoDB failed (will retry):', err);
+  }
+}
+
+/* ==================== OVERALL VISIBILITY & GHOST MODE ==================== */
+
+export function getStartupOverallVisibility(entityId?: string | null): StartupOverallVisibility {
   if (typeof window === 'undefined') return 'Public';
   try {
-    const val = localStorage.getItem(OVERALL_VISIBILITY_KEY) as StartupOverallVisibility;
+    const val = getStoredValue(OVERALL_VISIBILITY_KEY, entityId) as StartupOverallVisibility;
     if (val && ['Public', 'Limited', 'Private', 'Ghost Mode'].includes(val)) {
       return val;
     }
-    const ghost = localStorage.getItem(GHOST_MODE_KEY) === 'true';
+    const ghost = getStoredValue(GHOST_MODE_KEY, entityId) === 'true';
     return ghost ? 'Ghost Mode' : 'Public';
   } catch {
     return 'Public';
   }
 }
 
-export function setStartupOverallVisibility(vis: StartupOverallVisibility): void {
+export function setStartupOverallVisibility(vis: StartupOverallVisibility, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(OVERALL_VISIBILITY_KEY, vis);
+    setStoredValue(OVERALL_VISIBILITY_KEY, vis, entityId);
     const isGhost = vis === 'Ghost Mode';
-    localStorage.setItem(GHOST_MODE_KEY, String(isGhost));
+    setStoredValue(GHOST_MODE_KEY, String(isGhost), entityId);
+
     window.dispatchEvent(
       new CustomEvent('xentro-ghost-mode-changed', {
         detail: { isGhostMode: isGhost },
@@ -72,31 +165,33 @@ export function setStartupOverallVisibility(vis: StartupOverallVisibility): void
         detail: { visibility: vis },
       })
     );
+
+    syncToBackend({ visibility: vis }, entityId);
   } catch (err) {
     console.error('Failed to save visibility state:', err);
   }
 }
 
-export function getStartupGhostMode(): boolean {
+export function getStartupGhostMode(entityId?: string | null): boolean {
   if (typeof window === 'undefined') return false;
   try {
-    const vis = getStartupOverallVisibility();
+    const vis = getStartupOverallVisibility(entityId);
     return vis === 'Ghost Mode';
   } catch {
     return false;
   }
 }
 
-export function setStartupGhostMode(isGhost: boolean): void {
+export function setStartupGhostMode(isGhost: boolean, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(GHOST_MODE_KEY, String(isGhost));
+    setStoredValue(GHOST_MODE_KEY, String(isGhost), entityId);
     if (isGhost) {
-      localStorage.setItem(OVERALL_VISIBILITY_KEY, 'Ghost Mode');
+      setStoredValue(OVERALL_VISIBILITY_KEY, 'Ghost Mode', entityId);
     } else {
-      const currentVis = localStorage.getItem(OVERALL_VISIBILITY_KEY);
+      const currentVis = getStoredValue(OVERALL_VISIBILITY_KEY, entityId);
       if (currentVis === 'Ghost Mode') {
-        localStorage.setItem(OVERALL_VISIBILITY_KEY, 'Public');
+        setStoredValue(OVERALL_VISIBILITY_KEY, 'Public', entityId);
       }
     }
     window.dispatchEvent(
@@ -109,16 +204,18 @@ export function setStartupGhostMode(isGhost: boolean): void {
         detail: { visibility: isGhost ? 'Ghost Mode' : 'Public' },
       })
     );
+
+    syncToBackend({ visibility: isGhost ? 'Ghost Mode' : 'Public' }, entityId);
   } catch (err) {
     console.error('Failed to save ghost mode state:', err);
   }
 }
 
-export function getStartupPrivacySettings(): StartupPrivacySettings {
+export function getStartupPrivacySettings(entityId?: string | null): StartupPrivacySettings {
   if (typeof window === 'undefined') return defaultStartupPrivacySettings;
   try {
-    const stored = localStorage.getItem(PRIVACY_SETTINGS_KEY);
-    const vis = getStartupOverallVisibility();
+    const stored = getStoredValue(PRIVACY_SETTINGS_KEY, entityId);
+    const vis = getStartupOverallVisibility(entityId);
     const ghost = vis === 'Ghost Mode';
     if (stored) {
       const parsed = JSON.parse(stored);
@@ -130,43 +227,43 @@ export function getStartupPrivacySettings(): StartupPrivacySettings {
   }
 }
 
-export function saveStartupPrivacySettings(settings: Partial<StartupPrivacySettings>): void {
+export function saveStartupPrivacySettings(settings: Partial<StartupPrivacySettings>, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    const current = getStartupPrivacySettings();
+    const current = getStartupPrivacySettings(entityId);
     const updated = { ...current, ...settings };
     if (settings.isGhostMode !== undefined) {
-      setStartupGhostMode(settings.isGhostMode);
+      setStartupGhostMode(settings.isGhostMode, entityId);
     }
-    localStorage.setItem(PRIVACY_SETTINGS_KEY, JSON.stringify(updated));
+    setStoredValue(PRIVACY_SETTINGS_KEY, JSON.stringify(updated), entityId);
     window.dispatchEvent(
       new CustomEvent('xentro-privacy-settings-changed', {
         detail: { settings: updated },
       })
     );
+    if (updated.visibility) {
+      syncToBackend({ visibility: updated.visibility }, entityId);
+    }
   } catch (err) {
     console.error('Failed to save privacy settings:', err);
   }
 }
 
-const STARTUP_BANNER_KEY = 'xentro_startup_banner_image';
-const STARTUP_AVATAR_KEY = 'xentro_startup_avatar_image';
+/* ==================== BANNER & AVATAR ==================== */
 
-export function getStartupBanner(): string | null {
+export function getStartupBanner(entityId?: string | null): string | null {
   if (typeof window === 'undefined') return null;
-  try {
-    return localStorage.getItem(STARTUP_BANNER_KEY);
-  } catch {
-    return null;
-  }
+  return getStoredValue(STARTUP_BANNER_KEY, entityId);
 }
 
-export function setStartupBanner(bannerUrl: string | null): void {
+export function setStartupBanner(bannerUrl: string | null, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
     if (bannerUrl) {
-      localStorage.setItem(STARTUP_BANNER_KEY, bannerUrl);
+      setStoredValue(STARTUP_BANNER_KEY, bannerUrl, entityId);
     } else {
+      const eid = entityId !== undefined ? entityId : getActiveEntityId();
+      if (eid) localStorage.removeItem(`${STARTUP_BANNER_KEY}_${eid}`);
       localStorage.removeItem(STARTUP_BANNER_KEY);
     }
     window.dispatchEvent(
@@ -174,26 +271,25 @@ export function setStartupBanner(bannerUrl: string | null): void {
         detail: { banner: bannerUrl },
       })
     );
+    syncToBackend({ identity: { banner: bannerUrl } }, entityId);
   } catch (err) {
     console.error('Failed to save banner:', err);
   }
 }
 
-export function getStartupAvatar(): string | null {
+export function getStartupAvatar(entityId?: string | null): string | null {
   if (typeof window === 'undefined') return null;
-  try {
-    return localStorage.getItem(STARTUP_AVATAR_KEY);
-  } catch {
-    return null;
-  }
+  return getStoredValue(STARTUP_AVATAR_KEY, entityId);
 }
 
-export function setStartupAvatar(avatarUrl: string | null): void {
+export function setStartupAvatar(avatarUrl: string | null, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
     if (avatarUrl) {
-      localStorage.setItem(STARTUP_AVATAR_KEY, avatarUrl);
+      setStoredValue(STARTUP_AVATAR_KEY, avatarUrl, entityId);
     } else {
+      const eid = entityId !== undefined ? entityId : getActiveEntityId();
+      if (eid) localStorage.removeItem(`${STARTUP_AVATAR_KEY}_${eid}`);
       localStorage.removeItem(STARTUP_AVATAR_KEY);
     }
     window.dispatchEvent(
@@ -201,13 +297,13 @@ export function setStartupAvatar(avatarUrl: string | null): void {
         detail: { avatar: avatarUrl },
       })
     );
+    syncToBackend({ identity: { logo: avatarUrl } }, entityId);
   } catch (err) {
     console.error('Failed to save avatar:', err);
   }
 }
 
 /* ==================== PITCH VIDEO STATE ==================== */
-const STARTUP_PITCH_VIDEO_KEY = 'xentro_startup_pitch_video';
 
 export const defaultStartupPitchVideo: ElevatorPitchVideo = {
   videoUrl: '',
@@ -218,10 +314,10 @@ export const defaultStartupPitchVideo: ElevatorPitchVideo = {
   lastUpdated: 'Recently',
 };
 
-export function getStartupPitchVideo(): ElevatorPitchVideo | null {
+export function getStartupPitchVideo(entityId?: string | null): ElevatorPitchVideo | null {
   if (typeof window === 'undefined') return defaultStartupPitchVideo;
   try {
-    const raw = localStorage.getItem(STARTUP_PITCH_VIDEO_KEY);
+    const raw = getStoredValue(STARTUP_PITCH_VIDEO_KEY, entityId);
     if (!raw) return defaultStartupPitchVideo;
     if (raw === 'null') return null;
     return JSON.parse(raw);
@@ -230,26 +326,26 @@ export function getStartupPitchVideo(): ElevatorPitchVideo | null {
   }
 }
 
-export function setStartupPitchVideo(video: ElevatorPitchVideo | null): void {
+export function setStartupPitchVideo(video: ElevatorPitchVideo | null, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
     if (video) {
-      localStorage.setItem(STARTUP_PITCH_VIDEO_KEY, JSON.stringify(video));
+      setStoredValue(STARTUP_PITCH_VIDEO_KEY, JSON.stringify(video), entityId);
     } else {
-      localStorage.setItem(STARTUP_PITCH_VIDEO_KEY, 'null');
+      setStoredValue(STARTUP_PITCH_VIDEO_KEY, 'null', entityId);
     }
     window.dispatchEvent(
       new CustomEvent('xentro-pitch-video-changed', {
         detail: { video },
       })
     );
+    syncToBackend({ pitchVideo: video }, entityId);
   } catch (err) {
     console.error('Failed to save pitch video:', err);
   }
 }
 
 /* ==================== PITCH DECK STATE ==================== */
-const STARTUP_PITCH_DECK_KEY = 'xentro_startup_pitch_deck';
 
 export const defaultStartupPitchDeck: PitchDeckDoc = {
   title: 'Xentro_PreSeed_Deck_Q3_2026.pdf',
@@ -271,49 +367,48 @@ export const defaultStartupPitchDeck: PitchDeckDoc = {
   ],
 };
 
-export function getStartupPitchDeck(): PitchDeckDoc | null {
+export function getStartupPitchDeck(entityId?: string | null): PitchDeckDoc | null {
   if (typeof window === 'undefined') return null;
   try {
-    const raw = localStorage.getItem(STARTUP_PITCH_DECK_KEY);
-    // No uploaded deck yet => empty (demo deck is only for viewing showcase profiles)
-    if (!raw) return null;
-    if (raw === 'null' || raw === '""') return null;
+    const raw = getStoredValue(STARTUP_PITCH_DECK_KEY, entityId);
+    if (!raw || raw === 'null' || raw === '""') return null;
     return JSON.parse(raw);
   } catch {
     return null;
   }
 }
 
-export function setStartupPitchDeck(deck: PitchDeckDoc | null): void {
+export function setStartupPitchDeck(deck: PitchDeckDoc | null, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
     if (deck) {
-      localStorage.setItem(STARTUP_PITCH_DECK_KEY, JSON.stringify(deck));
+      setStoredValue(STARTUP_PITCH_DECK_KEY, JSON.stringify(deck), entityId);
     } else {
-      localStorage.setItem(STARTUP_PITCH_DECK_KEY, 'null');
+      setStoredValue(STARTUP_PITCH_DECK_KEY, 'null', entityId);
     }
     window.dispatchEvent(
       new CustomEvent('xentro-pitch-deck-changed', {
         detail: { deck },
       })
     );
+    syncToBackend({ pitchDeck: deck }, entityId);
   } catch (err) {
     console.error('Failed to save pitch deck:', err);
   }
 }
 
-export function uploadStartupPitchDeck(deck: PitchDeckDoc): PitchDeckDoc {
-  setStartupPitchDeck(deck);
+export function uploadStartupPitchDeck(deck: PitchDeckDoc, entityId?: string | null): PitchDeckDoc {
+  setStartupPitchDeck(deck, entityId);
   return deck;
 }
 
-export function replaceStartupPitchDeck(deck: PitchDeckDoc): PitchDeckDoc {
-  setStartupPitchDeck(deck);
+export function replaceStartupPitchDeck(deck: PitchDeckDoc, entityId?: string | null): PitchDeckDoc {
+  setStartupPitchDeck(deck, entityId);
   return deck;
 }
 
-export function updateStartupPitchDeckMetadata(metadata: Partial<PitchDeckDoc>): PitchDeckDoc | null {
-  const current = getStartupPitchDeck();
+export function updateStartupPitchDeckMetadata(metadata: Partial<PitchDeckDoc>, entityId?: string | null): PitchDeckDoc | null {
+  const current = getStartupPitchDeck(entityId);
   if (!current) return null;
   const nowFormatted = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const updated: PitchDeckDoc = {
@@ -322,23 +417,22 @@ export function updateStartupPitchDeckMetadata(metadata: Partial<PitchDeckDoc>):
     lastUpdated: nowFormatted,
     updatedAt: nowFormatted,
   };
-  setStartupPitchDeck(updated);
+  setStartupPitchDeck(updated, entityId);
   return updated;
 }
 
-export function removeStartupPitchDeck(): void {
-  setStartupPitchDeck(null);
+export function removeStartupPitchDeck(entityId?: string | null): void {
+  setStartupPitchDeck(null, entityId);
 }
 
 /* ==================== TEAM STATE ==================== */
-const STARTUP_TEAM_KEY = 'xentro_startup_team_members';
 
 export const defaultStartupTeamMembers: StartupTeamMember[] = [];
 
-export function getStartupTeamMembers(): StartupTeamMember[] {
+export function getStartupTeamMembers(entityId?: string | null): StartupTeamMember[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem('xentro_startup_team_v1') || localStorage.getItem(STARTUP_TEAM_KEY);
+    const raw = getStoredValue('xentro_startup_team_v1', entityId) || getStoredValue(STARTUP_TEAM_KEY, entityId);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) return parsed;
@@ -365,20 +459,22 @@ export function getStartupTeamMembers(): StartupTeamMember[] {
       isVerified: true,
       isFullTime: true,
       xentroProfile: '@founder',
-    }
+    },
   ];
 }
 
-export function setStartupTeamMembers(members: StartupTeamMember[]): void {
+export function setStartupTeamMembers(members: StartupTeamMember[], entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STARTUP_TEAM_KEY, JSON.stringify(members));
-    localStorage.setItem('xentro_startup_team_v1', JSON.stringify(members));
+    setStoredValue(STARTUP_TEAM_KEY, JSON.stringify(members), entityId);
+    setStoredValue('xentro_startup_team_v1', JSON.stringify(members), entityId);
     window.dispatchEvent(
       new CustomEvent('xentro-startup-team-changed', {
         detail: { members },
       })
     );
+    const categorized = categorizeTeamMembers(members);
+    syncToBackend({ publicTeam: categorized }, entityId);
   } catch (err) {
     console.error('Failed to save team members:', err);
   }
@@ -424,7 +520,6 @@ export function categorizeTeamMembers(members: StartupTeamMember[]) {
 }
 
 /* ==================== PROBLEM STATE ==================== */
-const STARTUP_PROBLEM_KEY = 'xentro_startup_problem';
 
 export const defaultStartupProblem: StartupProblem = {
   problemStatement: '',
@@ -434,13 +529,15 @@ export const defaultStartupProblem: StartupProblem = {
   existingAlternatives: '',
 };
 
-export function getStartupProblem(): StartupProblem {
+export function getStartupProblem(entityId?: string | null): StartupProblem {
   if (typeof window === 'undefined') return defaultStartupProblem;
   try {
-    const raw = localStorage.getItem(STARTUP_PROBLEM_KEY);
+    const raw = getStoredValue(STARTUP_PROBLEM_KEY, entityId);
     if (!raw) return defaultStartupProblem;
     const parsed = JSON.parse(raw);
     if (parsed && parsed.existingAlternatives?.includes('Collibra')) {
+      const eid = entityId !== undefined ? entityId : getActiveEntityId();
+      if (eid) localStorage.removeItem(`${STARTUP_PROBLEM_KEY}_${eid}`);
       localStorage.removeItem(STARTUP_PROBLEM_KEY);
       return defaultStartupProblem;
     }
@@ -450,22 +547,22 @@ export function getStartupProblem(): StartupProblem {
   }
 }
 
-export function setStartupProblem(problem: StartupProblem): void {
+export function setStartupProblem(problem: StartupProblem, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STARTUP_PROBLEM_KEY, JSON.stringify(problem));
+    setStoredValue(STARTUP_PROBLEM_KEY, JSON.stringify(problem), entityId);
     window.dispatchEvent(
       new CustomEvent('xentro-startup-problem-changed', {
         detail: { problem },
       })
     );
+    syncToBackend({ problem }, entityId);
   } catch (err) {
     console.error('Failed to save startup problem:', err);
   }
 }
 
 /* ==================== SOLUTION STATE ==================== */
-const STARTUP_SOLUTION_KEY = 'xentro_startup_solution';
 
 export const defaultStartupSolution: StartupSolution = {
   overview: '',
@@ -474,13 +571,15 @@ export const defaultStartupSolution: StartupSolution = {
   keyDifferentiators: [],
 };
 
-export function getStartupSolution(): StartupSolution {
+export function getStartupSolution(entityId?: string | null): StartupSolution {
   if (typeof window === 'undefined') return defaultStartupSolution;
   try {
-    const raw = localStorage.getItem(STARTUP_SOLUTION_KEY);
+    const raw = getStoredValue(STARTUP_SOLUTION_KEY, entityId);
     if (!raw) return defaultStartupSolution;
     const parsed = JSON.parse(raw);
     if (parsed && (parsed.howItSolves?.includes('Kinetix') || parsed.overview?.includes('Kinetix'))) {
+      const eid = entityId !== undefined ? entityId : getActiveEntityId();
+      if (eid) localStorage.removeItem(`${STARTUP_SOLUTION_KEY}_${eid}`);
       localStorage.removeItem(STARTUP_SOLUTION_KEY);
       return defaultStartupSolution;
     }
@@ -490,22 +589,22 @@ export function getStartupSolution(): StartupSolution {
   }
 }
 
-export function setStartupSolution(solution: StartupSolution): void {
+export function setStartupSolution(solution: StartupSolution, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STARTUP_SOLUTION_KEY, JSON.stringify(solution));
+    setStoredValue(STARTUP_SOLUTION_KEY, JSON.stringify(solution), entityId);
     window.dispatchEvent(
       new CustomEvent('xentro-startup-solution-changed', {
         detail: { solution },
       })
     );
+    syncToBackend({ solution }, entityId);
   } catch (err) {
     console.error('Failed to save startup solution:', err);
   }
 }
 
 /* ==================== PRODUCT STATE ==================== */
-const STARTUP_PRODUCT_KEY = 'xentro_startup_product';
 
 export const defaultStartupProduct: StartupProduct = {
   name: '',
@@ -518,13 +617,15 @@ export const defaultStartupProduct: StartupProduct = {
   productWebsite: '',
 };
 
-export function getStartupProduct(): StartupProduct {
+export function getStartupProduct(entityId?: string | null): StartupProduct {
   if (typeof window === 'undefined') return defaultStartupProduct;
   try {
-    const raw = localStorage.getItem(STARTUP_PRODUCT_KEY);
+    const raw = getStoredValue(STARTUP_PRODUCT_KEY, entityId);
     if (!raw) return defaultStartupProduct;
     const parsed = JSON.parse(raw);
     if (parsed && (parsed.name?.includes('Kinetix') || parsed.demoLink?.includes('kinetix'))) {
+      const eid = entityId !== undefined ? entityId : getActiveEntityId();
+      if (eid) localStorage.removeItem(`${STARTUP_PRODUCT_KEY}_${eid}`);
       localStorage.removeItem(STARTUP_PRODUCT_KEY);
       return defaultStartupProduct;
     }
@@ -534,22 +635,22 @@ export function getStartupProduct(): StartupProduct {
   }
 }
 
-export function setStartupProduct(product: StartupProduct): void {
+export function setStartupProduct(product: StartupProduct, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STARTUP_PRODUCT_KEY, JSON.stringify(product));
+    setStoredValue(STARTUP_PRODUCT_KEY, JSON.stringify(product), entityId);
     window.dispatchEvent(
       new CustomEvent('xentro-startup-product-changed', {
         detail: { product },
       })
     );
+    syncToBackend({ product }, entityId);
   } catch (err) {
     console.error('Failed to save startup product:', err);
   }
 }
 
 /* ==================== COMPANY INFO STATE ==================== */
-const STARTUP_COMPANY_INFO_KEY = 'xentro_startup_company_info';
 
 export const defaultStartupCompanyInfo: StartupCompanyInfo = {
   legalName: 'Venture Entity',
@@ -565,10 +666,10 @@ export const defaultStartupCompanyInfo: StartupCompanyInfo = {
   incubatorAffiliation: 'Xentro Cohort',
 };
 
-export function getStartupCompanyInfo(): StartupCompanyInfo {
+export function getStartupCompanyInfo(entityId?: string | null): StartupCompanyInfo {
   if (typeof window === 'undefined') return defaultStartupCompanyInfo;
   try {
-    const raw = localStorage.getItem(STARTUP_COMPANY_INFO_KEY);
+    const raw = getStoredValue(STARTUP_COMPANY_INFO_KEY, entityId);
     if (raw) return { ...defaultStartupCompanyInfo, ...JSON.parse(raw) };
   } catch {}
 
@@ -577,16 +678,9 @@ export function getStartupCompanyInfo(): StartupCompanyInfo {
   let regNo = '';
   let regType = 'Pvt Ltd';
   try {
-    const rawEntities = localStorage.getItem('xentro_startup_entities');
-    if (rawEntities) {
-      const parsed = JSON.parse(rawEntities);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        const ent = parsed[parsed.length - 1];
-        startupName = ent.startupName || '';
-        location = ent.location || '';
-        regNo = ent.regNo || '';
-        regType = ent.regType || 'Pvt Ltd';
-      }
+    const active = entityContextService.getActiveEntity();
+    if (active && active.name) {
+      startupName = active.name;
     }
     if (!startupName) {
       const prof = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
@@ -613,22 +707,22 @@ export function getStartupCompanyInfo(): StartupCompanyInfo {
   };
 }
 
-export function setStartupCompanyInfo(companyInfo: StartupCompanyInfo): void {
+export function setStartupCompanyInfo(companyInfo: StartupCompanyInfo, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STARTUP_COMPANY_INFO_KEY, JSON.stringify(companyInfo));
+    setStoredValue(STARTUP_COMPANY_INFO_KEY, JSON.stringify(companyInfo), entityId);
     window.dispatchEvent(
       new CustomEvent('xentro-startup-company-info-changed', {
         detail: { companyInfo },
       })
     );
+    syncToBackend({ companyInfo }, entityId);
   } catch (err) {
     console.error('Failed to save startup company info:', err);
   }
 }
 
 /* ==================== MARKET STATE ==================== */
-const STARTUP_MARKET_KEY = 'xentro_startup_market';
 
 export const defaultStartupMarket: StartupMarket = {
   targetCustomer: '',
@@ -643,10 +737,10 @@ export const defaultStartupMarket: StartupMarket = {
   competitiveLandscape: '',
 };
 
-export function getStartupMarket(): StartupMarket {
+export function getStartupMarket(entityId?: string | null): StartupMarket {
   if (typeof window === 'undefined') return defaultStartupMarket;
   try {
-    const raw = localStorage.getItem(STARTUP_MARKET_KEY);
+    const raw = getStoredValue(STARTUP_MARKET_KEY, entityId);
     if (!raw) return defaultStartupMarket;
     return { ...defaultStartupMarket, ...JSON.parse(raw) };
   } catch {
@@ -654,22 +748,22 @@ export function getStartupMarket(): StartupMarket {
   }
 }
 
-export function setStartupMarket(market: StartupMarket): void {
+export function setStartupMarket(market: StartupMarket, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STARTUP_MARKET_KEY, JSON.stringify(market));
+    setStoredValue(STARTUP_MARKET_KEY, JSON.stringify(market), entityId);
     window.dispatchEvent(
       new CustomEvent('xentro-startup-market-changed', {
         detail: { market },
       })
     );
+    syncToBackend({ market }, entityId);
   } catch (err) {
     console.error('Failed to save startup market:', err);
   }
 }
 
 /* ==================== BUSINESS MODEL STATE ==================== */
-const STARTUP_BUSINESS_MODEL_KEY = 'xentro_startup_business_model';
 
 export const defaultStartupBusinessModel: StartupBusinessModel = {
   businessModel: '',
@@ -680,10 +774,10 @@ export const defaultStartupBusinessModel: StartupBusinessModel = {
   salesModel: '',
 };
 
-export function getStartupBusinessModel(): StartupBusinessModel {
+export function getStartupBusinessModel(entityId?: string | null): StartupBusinessModel {
   if (typeof window === 'undefined') return defaultStartupBusinessModel;
   try {
-    const raw = localStorage.getItem(STARTUP_BUSINESS_MODEL_KEY);
+    const raw = getStoredValue(STARTUP_BUSINESS_MODEL_KEY, entityId);
     if (!raw) return defaultStartupBusinessModel;
     return { ...defaultStartupBusinessModel, ...JSON.parse(raw) };
   } catch {
@@ -691,19 +785,22 @@ export function getStartupBusinessModel(): StartupBusinessModel {
   }
 }
 
-export function setStartupBusinessModel(businessModel: StartupBusinessModel): void {
+export function setStartupBusinessModel(businessModel: StartupBusinessModel, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(STARTUP_BUSINESS_MODEL_KEY, JSON.stringify(businessModel));
+    setStoredValue(STARTUP_BUSINESS_MODEL_KEY, JSON.stringify(businessModel), entityId);
     window.dispatchEvent(
       new CustomEvent('xentro-startup-business-model-changed', {
         detail: { businessModel },
       })
     );
+    syncToBackend({ businessModel }, entityId);
   } catch (err) {
     console.error('Failed to save startup business model:', err);
   }
 }
+
+/* ==================== BASIC INFO STATE ==================== */
 
 export interface StartupBasicInfo {
   startupName: string;
@@ -741,30 +838,172 @@ export const defaultStartupBasicInfo: StartupBasicInfo = {
   impactAreas: '',
 };
 
-const BASIC_INFO_KEY = 'xentro_startup_basic_info';
-
-export function getStartupBasicInfo(): StartupBasicInfo {
+export function getStartupBasicInfo(entityId?: string | null): StartupBasicInfo {
   if (typeof window === 'undefined') return defaultStartupBasicInfo;
   try {
-    const raw = localStorage.getItem(BASIC_INFO_KEY);
-    if (!raw) return defaultStartupBasicInfo;
-    return { ...defaultStartupBasicInfo, ...JSON.parse(raw) };
-  } catch {
-    return defaultStartupBasicInfo;
+    const raw = getStoredValue(BASIC_INFO_KEY, entityId);
+    if (raw) return { ...defaultStartupBasicInfo, ...JSON.parse(raw) };
+  } catch {}
+
+  const active = entityContextService.getActiveEntity();
+  if (active) {
+    return {
+      ...defaultStartupBasicInfo,
+      startupName: active.name || '',
+      tagline: active.pitch || '',
+      logo: active.logo || '/xentro-logo.png',
+      stage: active.stage || 'MVP',
+      industry: active.sector || 'Technology & Innovation',
+      website: active.website || '',
+    };
   }
+
+  return defaultStartupBasicInfo;
 }
 
-export function setStartupBasicInfo(info: StartupBasicInfo): void {
+export function setStartupBasicInfo(info: StartupBasicInfo, entityId?: string | null): void {
   if (typeof window === 'undefined') return;
   try {
-    localStorage.setItem(BASIC_INFO_KEY, JSON.stringify(info));
+    setStoredValue(BASIC_INFO_KEY, JSON.stringify(info), entityId);
     window.dispatchEvent(
       new CustomEvent('xentro-startup-basic-info-changed', {
         detail: { basicInfo: info },
       })
+    );
+
+    // Sync mapped identity & overview directly to MongoDB Atlas
+    syncToBackend(
+      {
+        identity: {
+          name: info.startupName,
+          tagline: info.tagline,
+          logo: info.logo,
+          stage: info.stage,
+          industry: info.industry,
+          subSector: info.subSector,
+          businessModelType: info.businessModel,
+          foundedYear: info.foundedYear,
+          location: info.headquarters,
+          operatingGeography: info.operatingGeography ? [info.operatingGeography] : [],
+          website: info.website,
+          linkedin: info.linkedin,
+        },
+        overview: {
+          whatItDoes: info.overview,
+          coreValueProp: info.tagline,
+          currentStage: info.stage,
+        },
+      },
+      entityId
     );
   } catch (err) {
     console.error('Failed to save startup basic info:', err);
   }
 }
 
+/* ==================== MONGODB ATLAS SYNCHRONIZATION ENGINE ==================== */
+
+/**
+ * Fetches authoritative profile from MongoDB Atlas for the given entityId,
+ * populates the entity-scoped localStorage cache, and notifies all UI views.
+ */
+export async function syncStartupProfileFromBackend(targetEntityId?: string | null): Promise<boolean> {
+  if (typeof window === 'undefined') return false;
+  const eid = targetEntityId !== undefined ? targetEntityId : getActiveEntityId();
+  if (!eid) return false;
+
+  try {
+    const userId = getUserId();
+    const res = await fetch(`/api/startups/${eid}?userId=${encodeURIComponent(userId)}`, {
+      headers: {
+        'x-user-id': userId,
+      },
+    });
+
+    if (!res.ok) return false;
+    const json = await res.json();
+    if (!json.success || !json.data) return false;
+
+    const data = json.data;
+
+    // 1. Identity & Basic Info
+    if (data.identity) {
+      const basicInfo: StartupBasicInfo = {
+        startupName: data.identity.name || '',
+        tagline: data.identity.tagline || '',
+        logo: data.identity.logo || '/xentro-logo.png',
+        stage: data.identity.stage || '',
+        industry: data.identity.industry || '',
+        subSector: data.identity.subSector || '',
+        businessModel: data.identity.businessModelType || '',
+        foundedYear: String(data.identity.foundedYear || ''),
+        headquarters: data.identity.location || '',
+        operatingGeography: Array.isArray(data.identity.operatingGeography)
+          ? data.identity.operatingGeography.join(', ')
+          : '',
+        website: data.identity.website || '',
+        linkedin: data.identity.linkedin || '',
+        overview: data.overview?.whatItDoes || '',
+        unsdgs: Array.isArray(data.unsdg) ? data.unsdg.join(', ') : '',
+        impactAreas: '',
+      };
+      setStoredValue(BASIC_INFO_KEY, JSON.stringify(basicInfo), eid);
+      if (data.identity.banner) {
+        setStoredValue(STARTUP_BANNER_KEY, data.identity.banner, eid);
+      }
+      if (data.identity.logo) {
+        setStoredValue(STARTUP_AVATAR_KEY, data.identity.logo, eid);
+      }
+    }
+
+    // 2. Sections
+    if (data.problem) setStoredValue(STARTUP_PROBLEM_KEY, JSON.stringify(data.problem), eid);
+    if (data.solution) setStoredValue(STARTUP_SOLUTION_KEY, JSON.stringify(data.solution), eid);
+    if (data.product) setStoredValue(STARTUP_PRODUCT_KEY, JSON.stringify(data.product), eid);
+    if (data.companyInfo) setStoredValue(STARTUP_COMPANY_INFO_KEY, JSON.stringify(data.companyInfo), eid);
+    if (data.market) setStoredValue(STARTUP_MARKET_KEY, JSON.stringify(data.market), eid);
+    if (data.businessModel) setStoredValue(STARTUP_BUSINESS_MODEL_KEY, JSON.stringify(data.businessModel), eid);
+    if (data.pitchVideo) setStoredValue(STARTUP_PITCH_VIDEO_KEY, JSON.stringify(data.pitchVideo), eid);
+    if (data.pitchDeck) setStoredValue(STARTUP_PITCH_DECK_KEY, JSON.stringify(data.pitchDeck), eid);
+    if (data.visibility) {
+      setStoredValue(OVERALL_VISIBILITY_KEY, data.visibility, eid);
+      setStoredValue(GHOST_MODE_KEY, String(data.visibility === 'Ghost Mode'), eid);
+    }
+
+    // Emit events so all listening components re-render with authoritative data
+    window.dispatchEvent(new CustomEvent('xentro-startup-basic-info-changed', { detail: { basicInfo: getStartupBasicInfo(eid) } }));
+    window.dispatchEvent(new CustomEvent('xentro-startup-problem-changed', { detail: { problem: getStartupProblem(eid) } }));
+    window.dispatchEvent(new CustomEvent('xentro-startup-solution-changed', { detail: { solution: getStartupSolution(eid) } }));
+    window.dispatchEvent(new CustomEvent('xentro-startup-product-changed', { detail: { product: getStartupProduct(eid) } }));
+    window.dispatchEvent(new CustomEvent('xentro-startup-company-info-changed', { detail: { companyInfo: getStartupCompanyInfo(eid) } }));
+    window.dispatchEvent(new CustomEvent('xentro-startup-market-changed', { detail: { market: getStartupMarket(eid) } }));
+    window.dispatchEvent(new CustomEvent('xentro-startup-business-model-changed', { detail: { businessModel: getStartupBusinessModel(eid) } }));
+    window.dispatchEvent(new CustomEvent('xentro-pitch-video-changed', { detail: { video: getStartupPitchVideo(eid) } }));
+    window.dispatchEvent(new CustomEvent('xentro-pitch-deck-changed', { detail: { deck: getStartupPitchDeck(eid) } }));
+    window.dispatchEvent(new CustomEvent('xentro-visibility-changed', { detail: { visibility: getStartupOverallVisibility(eid) } }));
+    window.dispatchEvent(new CustomEvent('xentro-ghost-mode-changed', { detail: { isGhostMode: getStartupGhostMode(eid) } }));
+
+    return true;
+  } catch (err) {
+    console.warn('[StartupProfileState] Failed to fetch profile from MongoDB:', err);
+    return false;
+  }
+}
+
+// Global browser listeners to automatically synchronize whenever entity switches
+if (typeof window !== 'undefined') {
+  window.addEventListener('xentro-active-entity-changed', (e: Event) => {
+    const ce = e as CustomEvent;
+    if (ce.detail?.entityId) {
+      syncStartupProfileFromBackend(ce.detail.entityId);
+    }
+  });
+
+  // Initial sync on startup
+  setTimeout(() => {
+    const currentId = entityContextService.getActiveEntityId();
+    if (currentId) {
+      syncStartupProfileFromBackend(currentId);
+    }
+  }, 100);
+}
