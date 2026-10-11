@@ -128,6 +128,9 @@ export const CreateInvestorOrganizationModal: React.FC<CreateInvestorOrganizatio
           legalName: legalName || name,
           officialEmail: officialEmail || currentUser.email || 'investor@fund.vc',
           orgType,
+          userId: currentUser.id,
+          userEmail: currentUser.email,
+          skipOtpIfAuthenticated: true,
           details: {
             investorType: orgType,
             organizationType: orgType,
