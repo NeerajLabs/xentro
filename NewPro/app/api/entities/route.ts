@@ -280,6 +280,132 @@ export async function POST(req: NextRequest) {
       await startupsCol.insertOne(startupDoc);
     }
 
+    // If INVESTOR_ORG entity, seed dedicated investment_organizations collection record
+    if (canonicalType === 'INVESTOR_ORG') {
+      const invOrgCol = db.collection('investment_organizations');
+      const details = body.details || body;
+      const invOrgDoc = {
+        entityId,
+        name: entityName,
+        legalName: body.legalName || details.legalName || entityName,
+        organizationType: details.investorType || details.organizationType || body.orgType || 'VC Firm',
+        logo: details.logo || body.logo || '/xentro-logo.png',
+        banner: details.banner || body.banner || '',
+        shortDescription: details.pitch || details.shortDescription || body.shortDescription || `Early-stage investment fund backing technology startups across India.`,
+        website: details.website || body.website || '',
+        linkedIn: details.linkedIn || details.linkedin || body.linkedIn || '',
+        headquarters: {
+          city: details.city || details.headquarters?.city || body.city || 'Bengaluru',
+          state: details.state || details.headquarters?.state || body.state || 'Karnataka',
+          country: details.country || details.headquarters?.country || body.country || 'India',
+        },
+        foundedYear: details.foundedYear || body.foundedYear || '2026',
+        officialEmail: officialEmail || user.email,
+        fundSize: details.fundSize || body.fundSize || '₹250 Cr',
+        aum: details.aum || body.aum || details.fundSize || '₹250 Cr AUM',
+        operatingRegions: details.operatingRegions || ['India'],
+        verified: false,
+        ownerId: user.id,
+        currentOwnerUserId: user.id,
+        createdByUserId: user.id,
+        about: {
+          overview: details.about?.overview || details.shortDescription || `${entityName} is an institutional venture fund.`,
+          thesis: details.about?.thesis || details.thesis || body.thesis || 'We back visionary founders building scalable, compounding technology companies.',
+          mission: details.about?.mission || `Empowering founders to build enduring tech enterprises.`,
+          assetsInfo: details.about?.assetsInfo || details.fundSize || body.fundSize || 'Active fund deployment',
+          fundGeneration: details.about?.fundGeneration || 'Active Deployment',
+          geographicPresence: details.about?.geographicPresence || `${details.city || body.city || 'Bengaluru'}, India`,
+        },
+        investmentFocus: details.investmentFocus || {
+          sectors: details.selectedSectors || details.sectors || ['Enterprise SaaS', 'FinTech', 'AI & Machine Learning'],
+          stages: details.selectedStages || details.stages || ['Seed', 'Series A'],
+          geography: {
+            countries: [details.country || body.country || 'India'],
+            regions: [details.city || body.city || 'Bengaluru'],
+          },
+          businessModels: ['B2B', 'SaaS', 'Marketplace'],
+          ticketSize: details.ticketSize || {
+            min: details.minTicket || '₹1 Cr',
+            max: details.maxTicket || '₹5 Cr',
+            formatted: `${details.minTicket || '₹1 Cr'} – ${details.maxTicket || '₹5 Cr'}`,
+          },
+          leadInvestorPreference: 'Lead or Co-Lead',
+          investmentInstruments: ['Equity', 'CCPS', 'SAFE notes'],
+        },
+        valueBeyondCapital: details.valueBeyondCapital || {
+          supportAreas: ['Go-To-Market Acceleration', 'Customer Introductions', 'Follow-On Syndication'],
+          whatIBringToFounders: 'Hands-on platform support in enterprise scaling, executive hiring, and fundraising guidance.',
+          advisoryCapabilities: ['GTM Playbooks', 'Pricing Strategy', 'Enterprise Sales'],
+        },
+        investmentCriteria: details.investmentCriteria || {
+          evaluationCriteria: ['High founder integrity and velocity', 'Demonstrated customer demand', 'Defensible technology moat'],
+          preferredTraction: ['MVP', 'Early Revenue'],
+          diligenceHighlights: ['Customer references', 'Financial audit'],
+        },
+        investmentProcess: details.investmentProcess || {
+          stages: [
+            { stepNumber: 1, title: 'Initial Deal Review & Screening', description: 'Deck review within 48 hours.', estimatedTime: '2-3 Days' },
+            { stepNumber: 2, title: 'Partner Discussion', description: 'Discussion on product roadmap and traction.', estimatedTime: '1 Week' },
+            { stepNumber: 3, title: 'Due Diligence & Term Sheet', description: 'Cap table evaluation and investment memo.', estimatedTime: '1-2 Weeks' },
+          ],
+          preferredConnectionMethod: 'Platform pitch submission',
+          informationRequiredInitially: ['Pitch Deck (PDF)', 'Metrics'],
+          typicalDecisionTimeline: '2 to 3 weeks',
+          pitchDeckRequirements: 'PDF deck with traction and financial summary',
+          warmIntroPreferred: false,
+          unsolicitedPitchesAccepted: true,
+        },
+        experienceStats: {
+          totalInvestments: 0,
+          activePortfolio: 0,
+          followOnInvestments: 0,
+          exits: 0,
+          yearsOfExperience: '1 Year',
+          industriesInvested: (details.selectedSectors || details.sectors || []).length || 3,
+        },
+        portfolio: [],
+        testimonials: [],
+        connectionPreferences: details.connectionPreferences || {
+          openToConnectionRequests: true,
+          openToStartupPitches: true,
+          introductionPreferred: false,
+          currentlyInvesting: true,
+          notAcceptingNewPitches: false,
+          guidelines: 'Happy to review pitches from mission-driven founders.',
+        },
+        subscription: {
+          tier: 'institutional',
+          status: 'active',
+          currentPeriodEnd: '2026-12-31T23:59:59Z',
+          cancelAtPeriodEnd: false,
+          seatsIncluded: 15,
+          seatsUsed: 1,
+          dealFlowLimit: -1,
+          dueDiligenceExportsLimit: 100,
+          monthlyPrice: 11490,
+          currency: 'INR',
+        },
+        billingAccount: {
+          organizationName: entityName,
+          billingEmail: officialEmail || user.email,
+          gstin: details.gstin || '',
+          pan: details.pan || '',
+          taxExempt: false,
+          billingAddress: {
+            line1: 'Corporate Office',
+            city: details.city || body.city || 'Bengaluru',
+            state: details.state || body.state || 'Karnataka',
+            country: details.country || body.country || 'India',
+            postalCode: '560001',
+          },
+        },
+        createdAt: nowIso,
+        updatedAt: nowIso,
+      };
+
+      await invOrgCol.insertOne(invOrgDoc);
+    }
+
     const isPrivilegedOrg = canonicalType === 'INVESTOR_ORG';
     const requestedOrgRole = body.requestedRole || roleInOrg;
 

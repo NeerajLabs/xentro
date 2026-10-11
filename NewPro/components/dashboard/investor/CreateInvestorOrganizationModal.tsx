@@ -111,12 +111,68 @@ export const CreateInvestorOrganizationModal: React.FC<CreateInvestorOrganizatio
     setStep((s) => Math.max(1, s - 1));
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim()) return;
 
     try {
+      const currentUser = getUserProfile();
+      let entityId = `org_${Date.now()}`;
+
+      // Call central entity registration endpoint to persist in MongoDB Atlas
+      try {
+        const payload = {
+          entityType: 'INVESTOR_ORG',
+          canonicalType: 'INVESTOR_ORG',
+          entityName: name,
+          legalName: legalName || name,
+          officialEmail: officialEmail || currentUser.email || 'investor@fund.vc',
+          orgType,
+          details: {
+            investorType: orgType,
+            organizationType: orgType,
+            legalName: legalName || name,
+            shortDescription:
+              shortDescription ||
+              `Early-stage ${orgType} backing pioneering technology startups across ${country}.`,
+            website: website || 'https://xentro.io',
+            linkedIn: linkedIn || 'https://linkedin.com',
+            city: city || 'Bengaluru',
+            country: country || 'India',
+            foundedYear: foundedYear || '2026',
+            fundSize: fundSize || '₹100 Cr',
+            aum: aum || fundSize || '₹100 Cr AUM',
+            selectedSectors,
+            selectedStages,
+            minTicket,
+            maxTicket,
+            thesis: thesis || 'We back high-conviction founders solving mission-critical problems with sustainable unit economics.',
+            officialEmail: officialEmail || currentUser.email,
+          },
+        };
+
+        const res = await fetch('/api/entities', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-user-id': currentUser.id || '',
+          },
+          body: JSON.stringify(payload),
+        });
+
+        if (res.ok) {
+          const resData = await res.json();
+          if (resData.success && resData.data?.entity?.id) {
+            entityId = resData.data.entity.id;
+          }
+        }
+      } catch (networkErr) {
+        console.warn('Network error while registering entity on server, falling back to local creation:', networkErr);
+      }
+
       const created = investorOrganizationService.createInvestorOrganization({
+        id: entityId,
+        entityId,
         name,
         organizationType: orgType,
         logo: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80',
@@ -127,7 +183,7 @@ export const CreateInvestorOrganizationModal: React.FC<CreateInvestorOrganizatio
           `Early-stage ${orgType} backing pioneering technology startups across ${country}.`,
         website: website || 'https://xentro.io',
         linkedIn: linkedIn || 'https://linkedin.com',
-        officialEmail,
+        officialEmail: officialEmail || currentUser.email,
         headquarters: {
           city: city || 'Bengaluru',
           country: country || 'India',
@@ -137,9 +193,9 @@ export const CreateInvestorOrganizationModal: React.FC<CreateInvestorOrganizatio
         fundSize: fundSize || '₹100 Cr',
         aum: aum || fundSize || '₹100 Cr AUM',
         verified: false, // Rule #27: cannot manually self-verify
-        ownerId: 'usr_rajesh_singhania',
-        ownerName,
-        ownerEmail: officialEmail,
+        ownerId: currentUser.id || 'usr_investor',
+        ownerName: ownerName || currentUser.name || 'Managing Partner',
+        ownerEmail: officialEmail || currentUser.email,
 
         about: {
           overview:
@@ -248,7 +304,7 @@ export const CreateInvestorOrganizationModal: React.FC<CreateInvestorOrganizatio
 
         billingAccount: {
           organizationName: legalName || name,
-          billingEmail: officialEmail,
+          billingEmail: officialEmail || currentUser.email,
           taxExempt: false,
           billingAddress: {
             line1: 'Corporate Office',

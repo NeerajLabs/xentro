@@ -145,6 +145,10 @@ export async function POST(req: NextRequest) {
 
     if (id?.startsWith('verif_ent_')) {
       const entityId = id.replace('verif_ent_', '');
+      const membershipsCol = db.collection('memberships');
+      const roleReqCol = db.collection('role_requests');
+      const invOrgCol = db.collection('investment_organizations');
+
       await entitiesCol.updateOne(
         { id: entityId },
         {
@@ -159,6 +163,53 @@ export async function POST(req: NextRequest) {
         }
       );
 
+      if (action === 'APPROVE') {
+        // 1. Promote pending memberships to ACTIVE with full RBAC permissions
+        await membershipsCol.updateMany(
+          { entityId, status: { $in: ['PENDING_ADMIN_VERIFICATION', 'PENDING', 'pending'] } },
+          {
+            $set: {
+              status: 'ACTIVE',
+              permissions: [
+                'OWNER',
+                'ADMIN',
+                'MANAGE_ORGANIZATION',
+                'MANAGE_TEAM',
+                'MANAGE_BILLING',
+                'VIEW_DEAL_FLOW',
+                'EDIT_DEAL_FLOW',
+                'CREATE_INVESTMENT_DECISION',
+                'VIEW_PORTFOLIO',
+                'EDIT_PORTFOLIO',
+                'ACCESS_DILIGENCE_VAULT',
+                'REQUEST_DILIGENCE',
+                'SCHEDULE_MEETINGS',
+                'PUBLISH_CONTENT',
+                'EXPORT_DATA',
+              ],
+              updatedAt: now,
+            },
+          }
+        );
+
+        // 2. Mark role requests approved
+        await roleReqCol.updateMany(
+          { entityId, status: 'PENDING' },
+          { $set: { status: 'APPROVED', reviewedBy: reviewerName || 'ADMIN_CONSOLE', updatedAt: now } }
+        );
+
+        // 3. Mark investment_organizations as verified
+        await invOrgCol.updateOne(
+          { $or: [{ entityId }, { id: entityId }] },
+          { $set: { verified: true, updatedAt: now } }
+        );
+      } else {
+        await roleReqCol.updateMany(
+          { entityId, status: 'PENDING' },
+          { $set: { status: 'REJECTED', rejectionReason: notes || '', updatedAt: now } }
+        );
+      }
+
       await auditCol.insertOne({
         action: `ENTITY_VERIFICATION_${action}`,
         entityId,
@@ -170,7 +221,7 @@ export async function POST(req: NextRequest) {
 
       return NextResponse.json({
         success: true,
-        message: `Entity verification marked as ${targetStatus}.`,
+        message: `Entity verification marked as ${targetStatus} and memberships synchronized.`,
       });
     }
 

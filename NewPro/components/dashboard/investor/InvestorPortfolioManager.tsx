@@ -47,32 +47,117 @@ interface PortfolioItem {
   };
 }
 
-const mockPortfolio: PortfolioItem[] = [];
-
 export const InvestorPortfolioManager: React.FC = () => {
   const { showToast } = useToast();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedSector, setSelectedSector] = useState('All');
   const [activeTab, setActiveTab] = useState<'holdings' | 'updates'>('holdings');
   const [selectedCompany, setSelectedCompany] = useState<PortfolioItem | null>(null);
+  const [portfolio, setPortfolio] = useState<PortfolioItem[]>([]);
+  const [metrics, setMetrics] = useState({
+    investedCapital: '$0.00',
+    estimatedFairValue: '$0.00',
+    unrealizedMOIC: '0.00x',
+    grossFundIRR: '0.0%',
+  });
   const [activeContext, setActiveContext] = useState(() =>
     investorOrganizationService.getActiveContext()
   );
 
+  const loadPortfolioData = async () => {
+    const ctx = investorOrganizationService.getActiveContext();
+    setActiveContext(ctx);
+
+    if (ctx.type === 'organization' && ctx.organizationId) {
+      try {
+        const res = await investorOrganizationService.fetchPortfolioFromApi(ctx.organizationId);
+        if (res && res.data) {
+          const mapped: PortfolioItem[] = res.data.map((h: any, idx: number) => ({
+            id: h.id || `port_${idx}`,
+            name: h.name || h.startupName || 'Portfolio Startup',
+            logo: h.logo || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=120&auto=format&fit=crop&q=80',
+            sector: h.sector || 'Enterprise AI',
+            stageInvested: h.stageInvested || 'Seed',
+            investmentYear: h.investmentYear || '2025',
+            checkInvested: h.checkInvested || h.checkSize || '$250k',
+            equityPercentage: h.equityPercentage || '5.0%',
+            currentMultiple: h.currentMultiple ? (typeof h.currentMultiple === 'number' ? `${h.currentMultiple.toFixed(2)}x` : String(h.currentMultiple)) : '1.00x',
+            growthMoM: h.growthMoM || '+15% MoM',
+            boardSeat: h.boardSeat || 'None',
+            status: h.status || 'Healthy',
+            recentUpdate: h.recentUpdate || {
+              title: 'Quarterly Operating Update',
+              date: 'Recent',
+              summary: 'Healthy growth and positive customer traction.',
+            },
+          }));
+          setPortfolio(mapped);
+          if (res.metrics) {
+            setMetrics({
+              investedCapital: res.metrics.investedCapital || '$0.00',
+              estimatedFairValue: res.metrics.estimatedFairValue || '$0.00',
+              unrealizedMOIC: res.metrics.unrealizedMOIC || '0.00x',
+              grossFundIRR: res.metrics.grossFundIRR || '0.0%',
+            });
+          }
+          return;
+        }
+      } catch (err) {
+        console.warn('Failed to load portfolio from API:', err);
+      }
+    }
+
+    // Fallback to scoped local portfolio
+    const local = investorOrganizationService.getScopedPortfolio(ctx);
+    if (local.length === 0) {
+      setPortfolio([]);
+      setMetrics({
+        investedCapital: '$0.00',
+        estimatedFairValue: '$0.00',
+        unrealizedMOIC: '0.00x',
+        grossFundIRR: '0.0%',
+      });
+    } else {
+      const mapped: PortfolioItem[] = local.map((h: any, idx: number) => ({
+        id: h.id || `port_${idx}`,
+        name: h.name || 'Portfolio Startup',
+        logo: h.logo || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=120&auto=format&fit=crop&q=80',
+        sector: h.sector || 'Enterprise AI',
+        stageInvested: h.stageInvested || 'Seed',
+        investmentYear: h.investmentYear || '2025',
+        checkInvested: h.checkInvested || '$250k',
+        equityPercentage: h.equityPercentage || '5.0%',
+        currentMultiple: h.currentMultiple || '1.00x',
+        growthMoM: h.growthMoM || '+10% MoM',
+        boardSeat: h.boardSeat || 'None',
+        status: h.status || 'Healthy',
+        recentUpdate: h.recentUpdate || {
+          title: 'Quarterly Update',
+          date: 'Recent',
+          summary: 'Operating as forecasted.',
+        },
+      }));
+      setPortfolio(mapped);
+    }
+  };
+
   React.useEffect(() => {
+    loadPortfolioData();
     const handleContextChange = () => {
-      setActiveContext(investorOrganizationService.getActiveContext());
+      loadPortfolioData();
     };
     window.addEventListener(INVESTOR_ORG_EVENTS.CONTEXT_CHANGED, handleContextChange);
+    window.addEventListener(INVESTOR_ORG_EVENTS.ORG_UPDATED, handleContextChange);
     return () => {
       window.removeEventListener(INVESTOR_ORG_EVENTS.CONTEXT_CHANGED, handleContextChange);
+      window.removeEventListener(INVESTOR_ORG_EVENTS.ORG_UPDATED, handleContextChange);
     };
   }, []);
 
   const isOrg = activeContext.type === 'organization';
   const activeOrg = isOrg ? investorOrganizationService.getActiveOrganization() : null;
 
-  const filteredPortfolio = mockPortfolio.filter((item) => {
+  const filteredPortfolio = portfolio.filter((item) => {
     const matchesSearch =
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.sector.toLowerCase().includes(searchTerm.toLowerCase());
@@ -103,7 +188,7 @@ export const InvestorPortfolioManager: React.FC = () => {
                 <Briefcase className="w-5 h-5 text-[#9EBE12] dark:text-[#D9FF3F]" />
                 <span>
                   {isOrg
-                    ? `${activeOrg?.name || 'Apex Ventures'} Portfolio Performance`
+                    ? `${activeOrg?.name || 'Venture Fund'} Portfolio Performance`
                     : 'Personal Angel Portfolio & Holdings'}
                 </span>
               </h2>
@@ -131,25 +216,25 @@ export const InvestorPortfolioManager: React.FC = () => {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]">
             <span className="text-[11px] text-[#565B59] dark:text-[#8E9390] block">Invested Capital</span>
-            <span className="text-xl font-bold font-sora text-[#101212] dark:text-white">{filteredPortfolio.length > 0 ? '$8.45M' : '$0.00'}</span>
+            <span className="text-xl font-bold font-sora text-[#101212] dark:text-white">{metrics.investedCapital}</span>
             <span className="text-[10px] text-gray-400 block mt-0.5">Across {filteredPortfolio.length} Active Cos</span>
           </div>
 
           <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]">
             <span className="text-[11px] text-[#565B59] dark:text-[#8E9390] block">Estimated Fair Value</span>
-            <span className="text-xl font-bold font-sora text-emerald-600 dark:text-emerald-400">{filteredPortfolio.length > 0 ? '$28.73M' : '$0.00'}</span>
-            <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">{filteredPortfolio.length > 0 ? '+$6.2M in last 12m' : 'No valuation changes'}</span>
+            <span className="text-xl font-bold font-sora text-emerald-600 dark:text-emerald-400">{metrics.estimatedFairValue}</span>
+            <span className="text-[10px] text-emerald-600 font-semibold block mt-0.5">{filteredPortfolio.length > 0 ? `${filteredPortfolio.length} Active Holdings` : 'No valuation changes'}</span>
           </div>
 
           <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]">
             <span className="text-[11px] text-[#565B59] dark:text-[#8E9390] block">Unrealized MOIC</span>
-            <span className="text-xl font-bold font-sora text-[#101212] dark:text-white">{filteredPortfolio.length > 0 ? '3.40x' : '0.00x'}</span>
+            <span className="text-xl font-bold font-sora text-[#101212] dark:text-white">{metrics.unrealizedMOIC}</span>
             <span className="text-[10px] text-gray-400 block mt-0.5">Net TVPI Multiple</span>
           </div>
 
           <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]">
             <span className="text-[11px] text-[#565B59] dark:text-[#8E9390] block">Gross Fund IRR</span>
-            <span className="text-xl font-bold font-sora text-emerald-600 dark:text-emerald-400">{filteredPortfolio.length > 0 ? '31.4%' : '0.0%'}</span>
+            <span className="text-xl font-bold font-sora text-emerald-600 dark:text-emerald-400">{metrics.grossFundIRR}</span>
             <span className="text-[10px] text-gray-400 block mt-0.5">Benchmark IRR</span>
           </div>
         </div>

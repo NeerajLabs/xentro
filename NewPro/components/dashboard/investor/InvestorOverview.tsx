@@ -167,18 +167,25 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
               <span>Team & RBAC</span>
             </button>
           ) : (
-            <button
-              onClick={() => {
-                investorOrganizationService.setActiveContext({
-                  type: 'organization',
-                  organizationId: 'org_apex_vc',
-                });
-                showToast('Switched to Apex Ventures Entity Account', 'success');
-              }}
-              className="px-3 py-1.5 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-xs font-bold text-[#101212] transition-all flex items-center gap-1.5 cursor-pointer"
-            >
-              <span>Switch to Apex Ventures</span>
-            </button>
+            (() => {
+              const allOrgs = investorOrganizationService.getOrganizations();
+              const targetOrg = allOrgs[0];
+              if (!targetOrg) return null;
+              return (
+                <button
+                  onClick={() => {
+                    investorOrganizationService.setActiveContext({
+                      type: 'organization',
+                      organizationId: targetOrg.id,
+                    });
+                    showToast(`Switched to ${targetOrg.name}`, 'success');
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-xs font-bold text-[#101212] transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>Switch to {targetOrg.name.length > 18 ? targetOrg.name.slice(0, 18) + '...' : targetOrg.name}</span>
+                </button>
+              );
+            })()
           )}
 
           <button
@@ -241,7 +248,7 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold font-sora text-[#101212] dark:text-white">
-              {activeOrg?.aum || activeOrg?.fundSize || '$0'}
+              {activeOrg?.aum || activeOrg?.fundSize || '₹0'}
             </span>
             <span className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
               Available
@@ -268,7 +275,9 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
             </span>
           </div>
           <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
-            3.4x average unrealized multiple
+            {(activeOrg?.portfolio || []).length > 0
+              ? 'Active portfolio holdings'
+              : 'No active holdings'}
           </p>
         </div>
       </div>

@@ -77,7 +77,20 @@ export const InvestorDealFlowCRM: React.FC = () => {
   const [stageNote, setStageNote] = useState('');
 
   useEffect(() => {
-    const refreshDeals = () => {
+    const refreshDeals = async () => {
+      const ctx = investorOrganizationService.getActiveContext();
+      if (ctx.type === 'organization' && ctx.organizationId) {
+        try {
+          const apiDeals = await investorOrganizationService.fetchDealsFromApi(ctx.organizationId);
+          if (apiDeals && apiDeals.length > 0) {
+            setDeals(apiDeals);
+            setMembers(investorDomainService.getMembers());
+            return;
+          }
+        } catch (err) {
+          console.warn('Failed to load deals from API:', err);
+        }
+      }
       setDeals(investorOrganizationService.getScopedDeals());
       setMembers(investorDomainService.getMembers());
     };
@@ -116,7 +129,7 @@ export const InvestorDealFlowCRM: React.FC = () => {
     setTermNotes(deal.termSheet?.notes || 'Standard NVCA term sheet with 1 board observer seat and pro-rata rights.');
   };
 
-  const handleSaveTermSheet = (e: React.FormEvent) => {
+  const handleSaveTermSheet = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!termSheetDeal) return;
 
@@ -131,20 +144,52 @@ export const InvestorDealFlowCRM: React.FC = () => {
 
     investorDomainService.updateTermSheet(termSheetDeal.id, termSheet);
     investorDomainService.updateDealStage(termSheetDeal.id, 'term_discussion', `Term Sheet issued: ${termAmount} for ${termEquity}`);
+    
+    const activeCtx = investorOrganizationService.getActiveContext();
+    if (activeCtx.type === 'organization' && activeCtx.organizationId) {
+      await investorOrganizationService.updateDealViaApi(activeCtx.organizationId, {
+        dealId: termSheetDeal.id,
+        stage: 'term_discussion',
+        termSheet,
+        note: { text: `Term Sheet issued: ${termAmount} for ${termEquity}` },
+      });
+    }
+
     showToast(`Term sheet issued to ${termSheetDeal.startupName}!`, 'success');
     setTermSheetDeal(null);
   };
 
-  const handleAssignMember = (dealId: string, memberId: string) => {
+  const handleAssignMember = async (dealId: string, memberId: string) => {
     const member = members.find((m) => m.id === memberId);
     if (!member) return;
-    investorDomainService.assignDeal(dealId, member.id, `${member.name} (${member.role})`);
+    const memberTitle = `${member.name} (${member.role})`;
+    investorDomainService.assignDeal(dealId, member.id, memberTitle);
+
+    const activeCtx = investorOrganizationService.getActiveContext();
+    if (activeCtx.type === 'organization' && activeCtx.organizationId) {
+      await investorOrganizationService.updateDealViaApi(activeCtx.organizationId, {
+        dealId,
+        assignedMemberId: member.id,
+        assignedMemberName: memberTitle,
+      });
+    }
+
     showToast(`Deal assigned to ${member.name}`, 'success');
   };
 
-  const handleAddNote = (dealId: string) => {
+  const handleAddNote = async (dealId: string) => {
     if (!newNoteText.trim()) return;
-    investorDomainService.addDealNote(dealId, newNoteText.trim());
+    const noteText = newNoteText.trim();
+    investorDomainService.addDealNote(dealId, noteText);
+
+    const activeCtx = investorOrganizationService.getActiveContext();
+    if (activeCtx.type === 'organization' && activeCtx.organizationId) {
+      await investorOrganizationService.updateDealViaApi(activeCtx.organizationId, {
+        dealId,
+        note: { text: noteText },
+      });
+    }
+
     showToast('Internal note saved to deal file', 'success');
     setNewNoteText('');
     // refresh selected deal
@@ -152,10 +197,20 @@ export const InvestorDealFlowCRM: React.FC = () => {
     if (updated) setSelectedDeal(updated);
   };
 
-  const handleExecuteMoveStage = (e: React.FormEvent) => {
+  const handleExecuteMoveStage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!moveStageDeal) return;
     investorDomainService.updateDealStage(moveStageDeal.id, targetStage, stageNote);
+
+    const activeCtx = investorOrganizationService.getActiveContext();
+    if (activeCtx.type === 'organization' && activeCtx.organizationId) {
+      await investorOrganizationService.updateDealViaApi(activeCtx.organizationId, {
+        dealId: moveStageDeal.id,
+        stage: targetStage,
+        note: stageNote ? { text: stageNote } : undefined,
+      });
+    }
+
     showToast(`Moved ${moveStageDeal.startupName} to ${targetStage.replace('_', ' ').toUpperCase()}`, 'success');
     setMoveStageDeal(null);
     setStageNote('');

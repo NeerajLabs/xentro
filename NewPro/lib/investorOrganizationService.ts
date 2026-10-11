@@ -652,6 +652,24 @@ class InvestorOrganizationService {
     if (typeof window === 'undefined') return;
     try {
       localStorage.setItem(INVESTOR_ORG_STORAGE_KEYS.ACTIVE_CONTEXT, JSON.stringify(context));
+      
+      // Synchronize with global entity context and persona switcher
+      if (context.type === 'organization' && context.organizationId) {
+        localStorage.setItem('xentro_active_entity_id', context.organizationId);
+        window.dispatchEvent(
+          new CustomEvent('xentro-active-entity-changed', {
+            detail: { entityId: context.organizationId },
+          })
+        );
+      } else {
+        localStorage.removeItem('xentro_active_entity_id');
+        window.dispatchEvent(
+          new CustomEvent('xentro-active-entity-changed', {
+            detail: { entityId: null },
+          })
+        );
+      }
+
       window.dispatchEvent(
         new CustomEvent(INVESTOR_ORG_EVENTS.CONTEXT_CHANGED, {
           detail: { context },
@@ -715,11 +733,13 @@ class InvestorOrganizationService {
 
   createInvestorOrganization(
     data: Omit<InvestorOrganization, 'id' | 'createdAt' | 'updatedAt' | 'deals' | 'diligenceDocs' | 'meetings'> & {
+      id?: string;
+      entityId?: string;
       ownerName?: string;
       ownerEmail?: string;
     }
   ): InvestorOrganization {
-    const orgId = `org_${Date.now()}`;
+    const orgId = data.id || data.entityId || `org_${Date.now()}`;
     const now = new Date().toISOString();
 
     const newOrg: InvestorOrganization = {
@@ -733,8 +753,10 @@ class InvestorOrganizationService {
     };
 
     const orgs = this.getOrganizations();
-    orgs.push(newOrg);
-    this.saveOrganizations(orgs);
+    // avoid duplicates
+    const filtered = orgs.filter((o) => o.id !== orgId);
+    filtered.push(newOrg);
+    this.saveOrganizations(filtered);
 
     // Create Owner membership for creator using authenticated user identity
     const currentProfile = getUserProfile();
@@ -757,7 +779,7 @@ class InvestorOrganizationService {
       personalAccountVerified: true,
     };
 
-    const memberships = this.getAllMemberships();
+    const memberships = this.getAllMemberships().filter((m) => m.organizationId !== orgId);
     memberships.push(creatorMembership);
     this.saveMemberships(memberships);
 
@@ -787,6 +809,22 @@ class InvestorOrganizationService {
 
     orgs[index] = updated;
     this.saveOrganizations(orgs);
+
+    // Asynchronously synchronize with MongoDB Atlas backend
+    if (typeof window !== 'undefined') {
+      const user = getUserProfile();
+      fetch(`/api/investors/organizations/${orgId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id || '',
+        },
+        body: JSON.stringify(updates),
+      }).catch((err) => {
+        console.warn('[InvestorOrganizationService] Background sync failed:', err);
+      });
+    }
+
     return updated;
   }
 
@@ -903,6 +941,18 @@ class InvestorOrganizationService {
     members.push(newMember);
     this.saveMemberships(members);
 
+    if (typeof window !== 'undefined') {
+      const user = getUserProfile();
+      fetch(`/api/investors/organizations/${data.organizationId}/team`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id || '',
+        },
+        body: JSON.stringify(data),
+      }).catch((err) => console.warn('[InvestorOrganizationService] Team invite sync failed:', err));
+    }
+
     return newInvite;
   }
 
@@ -986,6 +1036,19 @@ class InvestorOrganizationService {
 
     members[memberIndex] = member;
     this.saveMemberships(members);
+
+    if (typeof window !== 'undefined') {
+      const user = getUserProfile();
+      fetch(`/api/investors/organizations/${orgId}/team`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id || '',
+        },
+        body: JSON.stringify({ memberId, role: newRole }),
+      }).catch((err) => console.warn('[InvestorOrganizationService] Member role sync failed:', err));
+    }
+
     return { success: true };
   }
 
@@ -1021,6 +1084,19 @@ class InvestorOrganizationService {
     members[memberIndex].portfolioAccessMode = portfolioMode;
 
     this.saveMemberships(members);
+
+    if (typeof window !== 'undefined') {
+      const user = getUserProfile();
+      fetch(`/api/investors/organizations/${orgId}/team`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id || '',
+        },
+        body: JSON.stringify({ memberId, dealAccessMode: dealMode, portfolioAccessMode: portfolioMode }),
+      }).catch((err) => console.warn('[InvestorOrganizationService] Access mode sync failed:', err));
+    }
+
     return members[memberIndex];
   }
 
@@ -1038,6 +1114,19 @@ class InvestorOrganizationService {
     members[memberIndex].canAccessWorkspace = canAccessWorkspace;
 
     this.saveMemberships(members);
+
+    if (typeof window !== 'undefined') {
+      const user = getUserProfile();
+      fetch(`/api/investors/organizations/${orgId}/team`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id || '',
+        },
+        body: JSON.stringify({ memberId, isPublicTeam, canAccessWorkspace }),
+      }).catch((err) => console.warn('[InvestorOrganizationService] Visibility sync failed:', err));
+    }
+
     return members[memberIndex];
   }
 
@@ -1068,6 +1157,19 @@ class InvestorOrganizationService {
     // RULE 33: Removing membership does NOT touch personal account, startup or mentor roles
     const updated = members.filter((m) => m.id !== memberId);
     this.saveMemberships(updated);
+
+    if (typeof window !== 'undefined') {
+      const user = getUserProfile();
+      fetch(`/api/investors/organizations/${orgId}/team`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': user.id || '',
+        },
+        body: JSON.stringify({ memberId }),
+      }).catch((err) => console.warn('[InvestorOrganizationService] Member removal sync failed:', err));
+    }
+
     return { success: true };
   }
 
@@ -1096,6 +1198,126 @@ class InvestorOrganizationService {
 
     this.saveMemberships(members);
     return { success: true };
+  }
+
+  // -----------------------------------------------------------------------
+  // ASYNC API CLIENT HELPERS
+  // -----------------------------------------------------------------------
+
+  async fetchOrganizationsFromApi(userId?: string): Promise<InvestorOrganization[]> {
+    if (typeof window === 'undefined') return this.getOrganizations();
+    try {
+      const callerId = userId || getUserProfile().id || '';
+      const res = await fetch(`/api/investors/organizations?userId=${encodeURIComponent(callerId)}`);
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success && Array.isArray(body.data) && body.data.length > 0) {
+          const current = this.getOrganizations();
+          const merged = [...body.data];
+          current.forEach((c) => {
+            if (!merged.some((m) => m.id === c.id)) {
+              merged.push(c);
+            }
+          });
+          this.saveOrganizations(merged);
+          return merged;
+        }
+      }
+    } catch (e) {
+      console.warn('[InvestorOrganizationService] Failed to fetch organizations from API:', e);
+    }
+    return this.getOrganizations();
+  }
+
+  async fetchDealsFromApi(orgId: string): Promise<InvestorDeal[]> {
+    if (typeof window === 'undefined' || !orgId) return [];
+    try {
+      const callerId = getUserProfile().id || '';
+      const res = await fetch(`/api/investors/organizations/${orgId}/deals?userId=${encodeURIComponent(callerId)}`);
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success && Array.isArray(body.data)) {
+          const org = this.getOrganizationById(orgId);
+          if (org) {
+            this.updateInvestorOrganization(orgId, { deals: body.data });
+          }
+          window.dispatchEvent(
+            new CustomEvent('xentro-investor-deals-changed', { detail: { deals: body.data } })
+          );
+          return body.data;
+        }
+      }
+    } catch (e) {
+      console.warn('[InvestorOrganizationService] Failed to fetch deals from API:', e);
+    }
+    return this.getScopedDeals();
+  }
+
+  async updateDealViaApi(orgId: string, payload: any): Promise<boolean> {
+    if (typeof window === 'undefined' || !orgId) return false;
+    try {
+      const callerId = getUserProfile().id || '';
+      const res = await fetch(`/api/investors/organizations/${orgId}/deals`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': callerId,
+        },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) {
+        await this.fetchDealsFromApi(orgId);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[InvestorOrganizationService] Failed to update deal via API:', e);
+    }
+    return false;
+  }
+
+  async addDealViaApi(orgId: string, deal: any): Promise<boolean> {
+    if (typeof window === 'undefined' || !orgId) return false;
+    try {
+      const callerId = getUserProfile().id || '';
+      const res = await fetch(`/api/investors/organizations/${orgId}/deals`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': callerId,
+        },
+        body: JSON.stringify({ deal }),
+      });
+      if (res.ok) {
+        await this.fetchDealsFromApi(orgId);
+        return true;
+      }
+    } catch (e) {
+      console.warn('[InvestorOrganizationService] Failed to add deal via API:', e);
+    }
+    return false;
+  }
+
+  async fetchPortfolioFromApi(orgId: string): Promise<{ data: PortfolioCompany[]; metrics: any }> {
+    if (typeof window === 'undefined' || !orgId) {
+      return { data: [], metrics: { investedCapital: '$0.00', estimatedFairValue: '$0.00', unrealizedMOIC: '0.00x', grossFundIRR: '0.0%' } };
+    }
+    try {
+      const callerId = getUserProfile().id || '';
+      const res = await fetch(`/api/investors/organizations/${orgId}/portfolio?userId=${encodeURIComponent(callerId)}`);
+      if (res.ok) {
+        const body = await res.json();
+        if (body.success && Array.isArray(body.data)) {
+          const org = this.getOrganizationById(orgId);
+          if (org) {
+            this.updateInvestorOrganization(orgId, { portfolio: body.data });
+          }
+          return { data: body.data, metrics: body.metrics };
+        }
+      }
+    } catch (e) {
+      console.warn('[InvestorOrganizationService] Failed to fetch portfolio from API:', e);
+    }
+    return { data: this.getScopedPortfolio(), metrics: { investedCapital: '$0.00', estimatedFairValue: '$0.00', unrealizedMOIC: '0.00x', grossFundIRR: '0.0%' } };
   }
 
   // -----------------------------------------------------------------------
