@@ -526,13 +526,16 @@ export const connectionService = {
     const resolvedPartnerRole = (isSender ? conn.recipientRole : conn.senderRole) || 'Explorer';
     const resolvedPartnerAvatar = resolveAvatarUrl(isSender ? conn.recipientAvatar : conn.senderAvatar, resolvedPartnerName);
 
-    messagingService.startOrOpenConversation({
-      id: resolvedPartnerId,
-      name: resolvedPartnerName,
-      role: resolvedPartnerRole,
-      avatar: resolvedPartnerAvatar,
-      initialMessage: `🤝 Connection established! You and ${resolvedPartnerName} are now connected on Xentro. Start sharing insights, opportunities, and collaboration details.`,
-    });
+    messagingService.startOrOpenConversation(
+      {
+        id: resolvedPartnerId,
+        name: resolvedPartnerName,
+        role: resolvedPartnerRole,
+        avatar: resolvedPartnerAvatar,
+        initialMessage: `🤝 Connection established! You and ${resolvedPartnerName} are now connected on Xentro. Start sharing insights, opportunities, and collaboration details.`,
+      },
+      { navigate: false }
+    );
 
     // 3. Invalidate & refetch fresh MongoDB data
     await this.syncFromServer();

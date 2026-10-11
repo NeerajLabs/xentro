@@ -966,14 +966,18 @@ export const messagingService = {
     return convs.reduce((acc, c) => acc + c.unreadCount, 0);
   },
 
-  startOrOpenConversation(partner: {
-    id: string;
-    name: string;
-    role?: string;
-    avatar?: string;
-    company?: string;
-    initialMessage?: string;
-  }): string {
+  startOrOpenConversation(
+    partner: {
+      id: string;
+      name: string;
+      role?: string;
+      avatar?: string;
+      company?: string;
+      initialMessage?: string;
+    },
+    options?: { navigate?: boolean }
+  ): string {
+    const shouldNavigate = options?.navigate !== false;
     const persona = getActiveMessagingPersona();
     const currentUserId = persona.id;
     const partnerId = partner.id || `partner_${Date.now()}`;
@@ -1078,7 +1082,9 @@ export const messagingService = {
       this.saveCustomConversations(customList);
     }
 
-    this.setActiveConversationId(convId);
+    if (shouldNavigate) {
+      this.setActiveConversationId(convId);
+    }
 
     // Persist conversation to MongoDB backend
     if (typeof window !== 'undefined') {
@@ -1107,11 +1113,13 @@ export const messagingService = {
     }
 
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(
-        new CustomEvent('xentro-navigate-tab', {
-          detail: { tab: 'messages', conversationId: convId },
-        })
-      );
+      if (shouldNavigate) {
+        window.dispatchEvent(
+          new CustomEvent('xentro-navigate-tab', {
+            detail: { tab: 'messages', conversationId: convId },
+          })
+        );
+      }
       window.dispatchEvent(new CustomEvent(CONVERSATIONS_UPDATED_EVENT));
     }
 
