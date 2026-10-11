@@ -384,7 +384,7 @@ export const CreatePostModal: React.FC<CreatePostModalProps> = ({
     name: isEntityPosting ? effectiveEntity!.name : (currentUserProfile.name || 'You'),
     roleTitle: isEntityPosting ? (effectiveEntity!.role || 'Founder & CEO') : (currentUserProfile.roleTitle || (selectedRole === 'explorer' ? 'Ecosystem Explorer' : '')),
     organization: isEntityPosting ? effectiveEntity!.name : (currentUserProfile.organization || (selectedRole === 'explorer' ? 'Xentro Ecosystem' : '')),
-    avatar: isEntityPosting ? (effectiveEntity!.logo || currentUserProfile.avatar || GUEST_AVATAR) : (currentUserProfile.avatar || GUEST_AVATAR),
+    avatar: isEntityPosting ? (effectiveEntity!.logo || '/xentro-logo.png') : (currentUserProfile.avatar || GUEST_AVATAR),
     badgeLabel: isEntityPosting ? `${effectiveEntity!.name} (Verified)` : (rolePreset?.badgeLabel || 'Xentro User'),
     color: rolePreset?.color || 'bg-gray-100 text-[#101212] border-gray-300',
   };

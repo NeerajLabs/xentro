@@ -106,9 +106,26 @@ class FeedPostsView(APIView):
                     "deleted": {"$ne": True},
                     "is_deleted": {"$ne": True}
                 })
-                # If author was removed or deactivated, do not show their posts
+                # If author not found in users, check central entities collection for entity posts
                 if not u_doc:
-                    continue
+                    entities_col = get_collection("entities")
+                    e_doc = entities_col.find_one({
+                        "id": author_id,
+                        "isActive": {"$ne": False},
+                        "status": {"$nin": ["ORPHANED_DELETED", "DELETED", "INACTIVE", "ARCHIVED", "REJECTED"]},
+                        "deleted": {"$ne": True},
+                        "is_deleted": {"$ne": True}
+                    })
+                    if e_doc:
+                        u_doc = {
+                            "fullName": e_doc.get("name"),
+                            "username": e_doc.get("username", e_doc.get("name", "").lower()),
+                            "avatar": e_doc.get("logo") or "/xentro-logo.png",
+                            "accountType": e_doc.get("entityType", "Startup"),
+                            "organization": e_doc.get("name"),
+                        }
+                    else:
+                        continue
 
             author_name = (u_doc.get("fullName") or u_doc.get("username") if u_doc else p.get("authorName")) or "Ecosystem Member"
             author_username = (u_doc.get("username") if u_doc else None) or f"@{author_name.lower().replace(' ', '')}"
@@ -204,11 +221,23 @@ class FeedPostsView(APIView):
         u_doc = None
         if author_id:
             u_doc = users_col.find_one({"id": author_id})
+            if not u_doc:
+                entities_col = get_collection("entities")
+                e_doc = entities_col.find_one({"id": author_id})
+                if e_doc:
+                    u_doc = {
+                        "fullName": e_doc.get("name"),
+                        "username": e_doc.get("username", e_doc.get("name", "").lower()),
+                        "avatar": e_doc.get("logo") or "/xentro-logo.png",
+                        "accountType": e_doc.get("entityType", "Startup"),
+                        "organization": e_doc.get("name"),
+                    }
 
-        author_name = (u_doc.get("fullName") or u_doc.get("username") if u_doc else (request.data.get("author") or {}).get("name")) or "Ecosystem Member"
-        author_role = (u_doc.get("role") or u_doc.get("accountType") if u_doc else (request.data.get("author") or {}).get("role")) or "Ecosystem Member"
-        author_company = (u_doc.get("startupName") or u_doc.get("organization") if u_doc else (request.data.get("author") or {}).get("company")) or ""
-        author_avatar = (u_doc.get("avatar") if u_doc else (request.data.get("author") or {}).get("avatar")) or f"https://api.dicebear.com/7.x/initials/svg?seed={author_name}"
+        incoming_author = request.data.get("author") or {}
+        author_name = incoming_author.get("name") or (u_doc.get("fullName") or u_doc.get("username") if u_doc else None) or "Ecosystem Member"
+        author_role = incoming_author.get("role") or (u_doc.get("role") or u_doc.get("accountType") if u_doc else None) or "Ecosystem Member"
+        author_company = incoming_author.get("company") or (u_doc.get("startupName") or u_doc.get("organization") if u_doc else "") or ""
+        author_avatar = incoming_author.get("avatar") or (u_doc.get("avatar") if u_doc else None) or f"https://api.dicebear.com/7.x/initials/svg?seed={author_name}"
 
         post_id = request.data.get("id") or generate_xentro_id("opportunity")
         role_type = request.data.get("authorRoleType") or (request.data.get("author") or {}).get("roleType") or (u_doc.get("accountType", "").lower() if u_doc else "startup")

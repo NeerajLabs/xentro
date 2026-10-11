@@ -57,7 +57,9 @@ export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
   const isInvestorEntity = Boolean(currentEntity?.entityType?.toLowerCase().includes('investor'));
   const isEspEntity = currentEntity?.entityType?.toLowerCase() === 'esp';
 
-  const avatarUrl = currentEntity?.logo || userProfile.avatar || '/images/profile_avatar.webp';
+  const avatarUrl = currentEntity
+    ? (currentEntity.logo || '/xentro-logo.png')
+    : (userProfile.avatar || '/images/profile_avatar.webp');
   const displayName = currentEntity ? currentEntity.name : userProfile.name;
 
   // Format role badge styling and label
@@ -169,7 +171,7 @@ export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
   };
 
   return (
-    <div className="bg-white dark:bg-[#181B1A] rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] p-4 sm:p-5 shadow-subtle mb-5 transition-all duration-200 hover:border-gray-300 dark:hover:border-[#383D3B]">
+    <div className="w-full overflow-hidden bg-white dark:bg-[#181B1A] rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] p-4 sm:p-5 shadow-subtle mb-5 transition-all duration-200 hover:border-gray-300 dark:hover:border-[#383D3B]">
       {/* Hidden file input for native image upload */}
       <input
         type="file"
@@ -181,14 +183,14 @@ export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
       />
 
       {/* Top row: Avatar + Fake Input field */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 w-full min-w-0">
         <div className="relative flex-shrink-0">
           <img
             src={avatarUrl}
             alt={displayName}
             className="w-10 h-10 sm:w-11 sm:h-11 rounded-full object-cover border border-[#E5E7EB] dark:border-[#262A29]"
             onError={(e) => {
-              (e.target as HTMLImageElement).src = '/images/profile_avatar.webp';
+              (e.target as HTMLImageElement).src = currentEntity ? '/xentro-logo.png' : '/images/profile_avatar.webp';
             }}
           />
           <span
@@ -203,7 +205,7 @@ export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
         <button
           type="button"
           onClick={() => onOpenModal()}
-          className="flex-1 min-w-0 text-left pl-4 pr-2 sm:pr-3 py-2 sm:py-2.5 rounded-full bg-gray-50 hover:bg-gray-100 dark:bg-[#101212] dark:hover:bg-[#151817] border border-[#E5E7EB] dark:border-[#262A29] transition-all duration-150 cursor-pointer flex items-center justify-between gap-2 sm:gap-3 group"
+          className="flex-1 min-w-0 w-full overflow-hidden text-left pl-3.5 sm:pl-4 pr-2 sm:pr-2.5 py-2 sm:py-2.5 rounded-full bg-gray-50 hover:bg-gray-100 dark:bg-[#101212] dark:hover:bg-[#151817] border border-[#E5E7EB] dark:border-[#262A29] transition-all duration-150 cursor-pointer flex items-center justify-between gap-2 group"
         >
           <span className="flex-1 min-w-0 truncate text-xs sm:text-sm text-[#737876] dark:text-[#8E9290] group-hover:text-[#101212] dark:group-hover:text-white transition-colors">
             {badge.placeholder}
