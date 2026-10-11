@@ -245,7 +245,9 @@ export async function syncInvestorProfileFromBackend(
       if (json?.success && json?.data) {
         const profile = json.data as FullInvestorProfile;
         const serialized = JSON.stringify(profile);
-        localStorage.setItem(INVESTOR_PROFILE_STORAGE_KEY, serialized);
+        if (investorId === 'inv_own') {
+          localStorage.setItem(INVESTOR_PROFILE_STORAGE_KEY, serialized);
+        }
         localStorage.setItem(`${INVESTOR_PROFILE_STORAGE_KEY}_${profile.id}`, serialized);
         window.dispatchEvent(
           new CustomEvent(INVESTOR_PROFILE_UPDATED_EVENT, { detail: { profile } })

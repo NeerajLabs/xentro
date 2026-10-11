@@ -89,9 +89,15 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
   useEffect(() => {
     if (investorData) {
       setInvestor(investorData);
-    } else {
-      const targetId = isOwnProfile ? 'inv_own' : (investorId || 'inv_1');
+    }
+    const targetId = isOwnProfile ? 'inv_own' : (investorId || (investorData as any)?.id);
+    if (targetId && targetId !== 'inv_1') {
       syncInvestorProfileFromBackend(targetId).then((synced) => {
+        if (synced) setInvestor(synced);
+      }).catch(() => {});
+    } else if (!investorData) {
+      const fallbackId = isOwnProfile ? 'inv_own' : (investorId || 'inv_1');
+      syncInvestorProfileFromBackend(fallbackId).then((synced) => {
         if (synced) setInvestor(synced);
       }).catch(() => {});
     }

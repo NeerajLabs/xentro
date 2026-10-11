@@ -401,21 +401,23 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
   // If a full profile is opened, render it like a dedicated new page
   if (selectedProfileItem) {
     if (selectedProfileItem.type === 'mentor') {
-      const fullMentor = getMentorProfileById(selectedProfileItem.data.id);
+      const fullMentor = getMentorProfileById(selectedProfileItem.data.id, selectedProfileItem.data);
       return (
         <MentorProfileView
           mentorData={fullMentor}
           mentorId={selectedProfileItem.data.id}
+          isOwnProfile={false}
           onBackToDiscover={() => setSelectedProfileItem(null)}
         />
       );
     }
     if (selectedProfileItem.type === 'investor') {
-      const fullInvestor = getInvestorProfileById(selectedProfileItem.data.id);
+      const fullInvestor = getInvestorProfileById(selectedProfileItem.data.id, selectedProfileItem.data);
       return (
         <InvestorProfileView
           investorData={fullInvestor}
           investorId={selectedProfileItem.data.id}
+          isOwnProfile={false}
           onBackToDiscover={() => setSelectedProfileItem(null)}
           onOpenStartupProfile={(startupId) => {
             const found = dynamicStartups.find((st) => st.id === startupId);

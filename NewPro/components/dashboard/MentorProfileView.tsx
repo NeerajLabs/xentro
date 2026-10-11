@@ -75,7 +75,55 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
     } else {
       setMentor(getMentorProfileById(mentorId || 'user_mentor'));
     }
-  }, [mentorData, mentorId]);
+
+    // When viewing an external mentor's profile, fetch latest profile from MongoDB Atlas
+    if (mentorId && mentorId !== 'user_mentor' && !isOwnProfile) {
+      fetch(`/api/profile?userId=${encodeURIComponent(mentorId)}`)
+        .then((res) => res.json())
+        .then((data) => {
+          const u = data?.data?.user || data?.user || data?.data;
+          if (u && (u.name || u.fullName)) {
+            const name = u.fullName || u.name;
+            const pProfile = u.personalProfile || {};
+            const role = u.currentRole || pProfile.currentRole || pProfile.professional?.designation || 'Ecosystem Mentor';
+            const org = u.currentOrganization || u.organization || pProfile.currentOrganization || pProfile.professional?.currentOrganization || '';
+            const locationObj = pProfile.location || {
+              city: u.city || '',
+              state: u.state || '',
+              country: u.country || 'India',
+            };
+            const skills = Array.isArray(pProfile.skills) && pProfile.skills.length > 0
+              ? pProfile.skills
+              : Array.isArray(pProfile.areasOfExpertise) && pProfile.areasOfExpertise.length > 0
+              ? pProfile.areasOfExpertise
+              : [];
+
+            setMentor((prev) => ({
+              ...prev,
+              id: u.id || mentorId,
+              name,
+              avatar: u.avatar || u.photoUrl || pProfile.avatarUrl || prev.avatar,
+              about: u.bio || pProfile.bio || pProfile.about || prev.about,
+              headline: u.headline || pProfile.headline || pProfile.professionalHeadline || `${role}${org ? ' at ' + org : ''}`,
+              primaryExpertise: skills.length > 0 ? skills.join(' & ') : prev.primaryExpertise,
+              expertise: skills.length > 0 ? skills : prev.expertise,
+              currentRole: {
+                designation: role,
+                organization: org,
+                duration: prev.currentRole?.duration || 'Present',
+              },
+              location: {
+                city: locationObj.city || prev.location.city,
+                state: locationObj.state || prev.location.state,
+                country: locationObj.country || prev.location.country,
+              },
+              verified: Boolean(u.verified || u.emailVerified),
+            }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [mentorData, mentorId, isOwnProfile]);
 
   // Reactive listener: when profile is edited in Account > Mentor Profile
   React.useEffect(() => {
@@ -113,7 +161,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
         (userProfile.role === 'mentor' &&
           Boolean(userProfile.name) &&
           Boolean(mentor.name) &&
-          mentor.name?.toLowerCase().trim() === userProfile.name?.toLowerCase().trim());
+          Boolean(userProfile.id && mentor.id && userProfile.id === mentor.id));
 
   // Connection & Request state
   const isOwn = effectiveOwnProfile || (!mentorId && userProfile.role === 'mentor');

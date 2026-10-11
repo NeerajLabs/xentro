@@ -202,18 +202,30 @@ function emptyOwnMentorProfile(): FullMentorProfile {
  * Get stored mentor profile from localStorage, falling back to an empty own-profile shell.
  */
 export function getStoredMentorProfile(mentorId = 'user_mentor'): FullMentorProfile {
+  const isOwn = mentorId === 'user_mentor' || mentorId === 'men_own';
   if (typeof window === 'undefined') {
-    return emptyOwnMentorProfile();
+    return isOwn ? emptyOwnMentorProfile() : { ...defaultMentorProfile, id: mentorId };
   }
 
   try {
-    const raw = localStorage.getItem(`${MENTOR_PROFILE_STORAGE_KEY}_${mentorId}`) || localStorage.getItem(MENTOR_PROFILE_STORAGE_KEY);
+    const raw = isOwn
+      ? (localStorage.getItem(`${MENTOR_PROFILE_STORAGE_KEY}_${mentorId}`) || localStorage.getItem(MENTOR_PROFILE_STORAGE_KEY))
+      : localStorage.getItem(`${MENTOR_PROFILE_STORAGE_KEY}_${mentorId}`);
+
     if (!raw) {
-      return emptyOwnMentorProfile();
+      if (isOwn) return emptyOwnMentorProfile();
+      return {
+        ...defaultMentorProfile,
+        id: mentorId,
+        name: 'Ecosystem Mentor',
+        currentRole: { designation: 'Mentor', organization: 'Xentro Advisory', duration: 'Present' },
+        headline: 'Verified Ecosystem Mentor on Xentro',
+        about: 'Verified mentor advising emerging founders on growth, strategy, and execution.',
+      };
     }
 
     const parsed = JSON.parse(raw);
-    const shell = emptyOwnMentorProfile();
+    const shell = isOwn ? emptyOwnMentorProfile() : { ...defaultMentorProfile, id: mentorId };
     return {
       ...shell,
       ...parsed,

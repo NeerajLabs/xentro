@@ -1,5 +1,5 @@
 import { FullMentorProfile } from '@/types/mentor';
-import { getStoredMentorProfile } from '@/lib/mentorProfileState';
+import { getStoredMentorProfile, defaultMentorProfile } from '@/lib/mentorProfileState';
 
 export const mentorProfilesMap: Record<string, FullMentorProfile> = {
   // 1. Rahul Mehta
@@ -650,12 +650,61 @@ export const mentorProfilesMap: Record<string, FullMentorProfile> = {
   },
 };
 
-export const getMentorProfileById = (id: string): FullMentorProfile => {
+export const getMentorProfileById = (id: string, fallbackData?: any): FullMentorProfile => {
   if (id === 'user_mentor') {
     return getStoredMentorProfile('user_mentor');
   }
   if (mentorProfilesMap[id]) {
     return mentorProfilesMap[id];
   }
+
+  // If dynamic card or recommendation data is provided, construct the profile from it
+  if (fallbackData) {
+    const name = fallbackData.name || 'Mentor';
+    const roleTitle = fallbackData.title || fallbackData.headline || 'Growth & Advisory Mentor';
+    const locationStr = fallbackData.location || 'India';
+    const expertiseList = Array.isArray(fallbackData.expertise) && fallbackData.expertise.length > 0
+      ? fallbackData.expertise
+      : ['Strategy', 'Leadership', 'Growth'];
+    const areasList = Array.isArray(fallbackData.mentorshipAreas) && fallbackData.mentorshipAreas.length > 0
+      ? fallbackData.mentorshipAreas
+      : ['Strategy', 'Growth', 'Fundraising'];
+
+    return {
+      ...defaultMentorProfile,
+      id: id || fallbackData.id || 'mentor_custom',
+      name,
+      avatar: fallbackData.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
+      banner: fallbackData.banner || 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&auto=format&fit=crop&q=80',
+      currentRole: {
+        designation: roleTitle,
+        organization: fallbackData.organization || fallbackData.company || 'Ecosystem Advisory',
+        duration: 'Present',
+      },
+      location: {
+        city: fallbackData.city || '',
+        state: fallbackData.state || '',
+        country: locationStr,
+      },
+      primaryExpertise: expertiseList.join(' & '),
+      headline: fallbackData.headline || `${roleTitle} • XENTRO Verified Mentor`,
+      verified: Boolean(fallbackData.verified !== false),
+      verificationBadge: 'Verified Mentor • XENTRO Partner',
+      rating: fallbackData.rating || 4.9,
+      reviewsCount: fallbackData.reviewsCount || 12,
+      about: fallbackData.bio || fallbackData.about || `${name} is a verified ecosystem mentor on Xentro.`,
+      expertise: expertiseList,
+      industries: Array.isArray(fallbackData.industries) ? fallbackData.industries : ['Technology', 'Startups', 'Advisory'],
+      areasOfMentorship: areasList,
+      startupStagesMentored: ['Idea', 'Seed', 'Early Stage'],
+      languages: ['English'],
+      mentorshipBackground: {
+        ...defaultMentorProfile.mentorshipBackground,
+        mentoringExperience: fallbackData.experienceYears || '5+ years active mentorship',
+        relevantAchievements: [`Mentored emerging founders across the Xentro ecosystem`],
+      },
+    };
+  }
+
   return getStoredMentorProfile(id);
 };

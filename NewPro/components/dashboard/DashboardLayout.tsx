@@ -27,6 +27,7 @@ import { MaintenanceNotice } from '@/components/common/MaintenanceNotice';
 import { getUserProfile, UserProfile } from '@/lib/userProfile';
 import { getStartupProfileById } from '@/data/startupProfilesData';
 import { getInvestorProfileById } from '@/data/investorProfilesData';
+import { getMentorProfileById } from '@/data/mentorProfilesData';
 import { DashboardWorkspace } from './workspace/DashboardWorkspace';
 import { DynamicDashboardView } from './DynamicDashboardView';
 import { RoleRequestModal } from './RoleRequestModal';
@@ -300,7 +301,7 @@ export const DashboardLayout: React.FC = () => {
                 ) : selectedProfile.type === 'mentor' ? (
                   <MentorProfileView
                     mentorId={selectedProfile.id}
-                    mentorData={selectedProfile.data}
+                    mentorData={selectedProfile.data || getMentorProfileById(selectedProfile.id, selectedProfile.data)}
                     isOwnProfile={false}
                     onBackToFeed={() => setSelectedProfile(null)}
                     onBackToDiscover={() => setSelectedProfile(null)}
@@ -308,7 +309,7 @@ export const DashboardLayout: React.FC = () => {
                 ) : selectedProfile.type === 'investor' ? (
                   <InvestorProfileView
                     investorId={selectedProfile.id}
-                    investorData={selectedProfile.data || getInvestorProfileById(selectedProfile.id)}
+                    investorData={selectedProfile.data || getInvestorProfileById(selectedProfile.id, selectedProfile.data)}
                     isOwnProfile={false}
                     onBackToFeed={() => setSelectedProfile(null)}
                     onBackToDiscover={() => setSelectedProfile(null)}

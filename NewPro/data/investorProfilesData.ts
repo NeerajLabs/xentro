@@ -1329,9 +1329,107 @@ export const investorProfilesMap: Record<string, FullInvestorProfile> = {
  * Helper to fetch a FullInvestorProfile by ID.
  * Returns the investor profile or generates a fallback profile if ID is not in map.
  */
-export function getInvestorProfileById(id: string): FullInvestorProfile {
+export function getInvestorProfileById(id: string, fallbackData?: any): FullInvestorProfile {
   if (investorProfilesMap[id]) {
     return investorProfilesMap[id];
+  }
+
+  // If dynamic card or recommendation data is provided, construct the profile from it
+  if (fallbackData) {
+    const name = fallbackData.name || 'Investor';
+    const org = fallbackData.company || fallbackData.organization || 'Investment Partner';
+    const focusSectors = Array.isArray(fallbackData.focusIndustries) && fallbackData.focusIndustries.length > 0
+      ? fallbackData.focusIndustries
+      : Array.isArray(fallbackData.sectors) && fallbackData.sectors.length > 0
+      ? fallbackData.sectors
+      : ['Technology', 'SaaS', 'Deep Tech'];
+    const stagesList = Array.isArray(fallbackData.stages) && fallbackData.stages.length > 0
+      ? fallbackData.stages
+      : ['Pre-Seed', 'Seed', 'Early Stage'];
+    const ticketStr = fallbackData.ticketSize || '₹25L–₹2Cr';
+
+    return {
+      id: id || fallbackData.id || 'inv_fallback',
+      name,
+      logo: fallbackData.logo || fallbackData.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
+      banner: fallbackData.banner || 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1600&auto=format&fit=crop&q=80',
+      investorType: fallbackData.investorType || 'Angel Network',
+      currentRole: fallbackData.role || fallbackData.title || 'Investor',
+      organization: org,
+      location: {
+        city: fallbackData.city || '',
+        state: fallbackData.state || '',
+        country: fallbackData.location || 'India',
+      },
+      verified: Boolean(fallbackData.verified !== false),
+      primaryInvestmentFocus: focusSectors.join(' · '),
+      bio: fallbackData.description || fallbackData.bio || `${name} is an active investment partner on Xentro.`,
+      background: fallbackData.background || `${fallbackData.investorType || 'Angel Network'} based in ${fallbackData.location || 'India'}.`,
+      yearsOfInvestingExperience: fallbackData.experienceYears || '5+ Years',
+      overview: {
+        whoTheyInvestIn: 'High-conviction founders building scalable, high-impact technology companies.',
+        sectorsFocus: focusSectors.join(', '),
+        investmentPhilosophy: 'First-check partner with founder-first focus and active ecosystem support.',
+        aimToContribute: 'Strategic guidance, ecosystem introductions, and follow-on fundraising assistance.',
+      },
+      investmentFocus: {
+        sectors: focusSectors,
+        stages: stagesList,
+        geography: {
+          countries: [fallbackData.location || 'India'],
+          regions: [],
+        },
+        businessModels: ['B2B', 'SaaS'],
+        ticketSize: {
+          min: '25L',
+          max: '2Cr',
+          formatted: ticketStr,
+        },
+      },
+      valueBeyondCapital: {
+        supportAreas: ['Strategic Guidance', 'Industry Connections', 'Hiring & Talent'],
+        whatIBringToFounders: 'Committed operational guidance and enterprise customer introductions.',
+      },
+      investmentCriteria: {
+        evaluationCriteria: ['Clear Problem-Solution Fit', 'Defensible Moat', 'Scalable Unit Economics'],
+        preferredTraction: ['MVP', 'Early Revenue', 'PMF'],
+        diligenceHighlights: ['Founding Team Domain Experience', 'Market Sizing'],
+      },
+      investmentProcess: {
+        stages: [
+          { stepNumber: 1, title: 'Introductory Call', description: 'Initial alignment on thesis and problem domain', estimatedTime: '30 mins' },
+          { stepNumber: 2, title: 'Thesis & Model Review', description: 'Deep-dive into unit economics, product demo and defensibility', estimatedTime: '1 week' },
+          { stepNumber: 3, title: 'Partner Discussion', description: 'Syndicate alignment and strategic value creation', estimatedTime: '1 week' },
+          { stepNumber: 4, title: 'Term Sheet', description: 'Final terms negotiation and cheque deployment', estimatedTime: '3–5 days' },
+        ],
+        preferredConnectionMethod: 'Platform Connect or Direct Intro',
+        informationRequiredInitially: ['Pitch Deck', 'Traction Metrics'],
+        typicalDecisionTimeline: '2–3 Weeks',
+        pitchDeckRequirements: 'Executive Summary, Problem, Product, Traction, Financials',
+        warmIntroPreferred: false,
+        unsolicitedPitchesAccepted: true,
+      },
+      connectionPreferences: {
+        openToConnectionRequests: true,
+        openToStartupPitches: true,
+        introductionPreferred: false,
+        currentlyInvesting: true,
+        notAcceptingNewPitches: false,
+        guidelines: 'Open to high-conviction founders solving mission-critical problems.',
+      },
+      portfolio: [],
+      experienceStats: {
+        totalInvestments: 8,
+        activePortfolio: 6,
+        followOnInvestments: 3,
+        exits: 2,
+        yearsOfExperience: fallbackData.experienceYears || '5+ Years',
+        industriesInvested: 4,
+      },
+      testimonials: [],
+      content: [],
+      activities: [],
+    };
   }
 
   // Safe fallback profile

@@ -103,6 +103,85 @@ export async function GET(
       });
     }
 
+    // Check users collection if user exists as an individual investor
+    const usersCol = db.collection('users');
+    const userConditions: any[] = [
+      { id: rawEntityId },
+      { xentroId: rawEntityId },
+      { username: rawEntityId },
+      { email: rawEntityId.toLowerCase() },
+    ];
+    const userDoc = await usersCol.findOne({
+      $or: userConditions,
+      deleted: { $ne: true },
+      is_deleted: { $ne: true },
+    } as any);
+
+    if (userDoc) {
+      delete (userDoc as any).password;
+      delete (userDoc as any).passwordHash;
+      const pProfile = userDoc.personalProfile || {};
+      const name = userDoc.fullName || userDoc.name || pProfile.fullName || 'Investor';
+      const company = userDoc.organization || userDoc.company || userDoc.startupName || pProfile.currentOrganization || 'Angel Network';
+      const headline = userDoc.headline || pProfile.headline || pProfile.professionalHeadline || `${userDoc.role || 'Investor'} at ${company}`;
+      const bio = userDoc.bio || pProfile.bio || pProfile.about || `${name} is an active investor in the Xentro ecosystem.`;
+      const locationObj = pProfile.location || {
+        city: userDoc.city || '',
+        state: userDoc.state || '',
+        country: userDoc.country || 'India',
+      };
+      const sectors = Array.isArray(pProfile.industries) && pProfile.industries.length > 0
+        ? pProfile.industries
+        : Array.isArray(pProfile.areasOfExpertise) && pProfile.areasOfExpertise.length > 0
+        ? pProfile.areasOfExpertise
+        : ['Technology', 'SaaS', 'Deep Tech'];
+
+      return NextResponse.json({
+        success: true,
+        data: {
+          id: userDoc.id || rawEntityId,
+          name,
+          logo: userDoc.avatar || userDoc.photoUrl || pProfile.avatarUrl || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
+          banner: userDoc.banner || pProfile.banner || 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1600&auto=format&fit=crop&q=80',
+          investorType: userDoc.investorType || pProfile.professional?.category || 'Angel Network',
+          currentRole: userDoc.currentRole || userDoc.role || 'Investor',
+          organization: company,
+          location: {
+            city: locationObj.city || '',
+            state: locationObj.state || '',
+            country: locationObj.country || 'India',
+          },
+          verified: Boolean(userDoc.verified || userDoc.emailVerified),
+          primaryInvestmentFocus: sectors.join(' · '),
+          bio,
+          background: headline,
+          yearsOfInvestingExperience: '5+ Years',
+          overview: {
+            whoTheyInvestIn: 'Early-stage technology and high-growth ventures with defensible unit economics.',
+            sectorsFocus: sectors.join(', '),
+            investmentPhilosophy: 'Backing ambitious founders building sustainable, mission-critical businesses.',
+            aimToContribute: 'Strategic advisory, follow-on syndication, and network access.',
+          },
+          investmentFocus: {
+            sectors,
+            stages: ['Pre-Seed', 'Seed', 'Early Stage'],
+            geography: { countries: [locationObj.country || 'India'], regions: [] },
+            businessModels: ['B2B', 'SaaS', 'Marketplace'],
+            ticketSize: { min: '25L', max: '2Cr', formatted: '₹25L – ₹2Cr' },
+          },
+          connectionPreferences: {
+            openToConnectionRequests: true,
+            openToStartupPitches: true,
+            introductionPreferred: false,
+            currentlyInvesting: true,
+            notAcceptingNewPitches: false,
+          },
+          portfolio: [],
+          testimonials: [],
+        },
+      });
+    }
+
     return NextResponse.json(
       { success: false, message: 'Investor profile not found in database' },
       { status: 404 }
