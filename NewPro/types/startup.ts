@@ -29,6 +29,7 @@ export interface StartupIdentity {
   website: string;
   linkedin: string;
   isVerified: boolean;
+  banner?: string | null;
 }
 
 export interface StartupOverview {

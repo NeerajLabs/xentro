@@ -116,17 +116,32 @@ async function syncToBackend(patch: Record<string, any>, targetEntityId?: string
 
   try {
     const userId = getUserId();
-    await fetch(`/api/startups/${eid}`, {
+    let userEmail = '';
+    try {
+      const prof = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
+      if (prof) {
+        const p = JSON.parse(prof);
+        userEmail = p.email || '';
+      }
+    } catch {}
+
+    const res = await fetch(`/api/startups/${eid}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
         'x-user-id': userId,
+        'x-user-email': userEmail,
       },
       body: JSON.stringify({
         ...patch,
         userId,
+        userEmail,
       }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      console.warn('[StartupProfileState] Background sync status:', res.status, err);
+    }
   } catch (err) {
     console.warn('[StartupProfileState] Background sync to MongoDB failed (will retry):', err);
   }
@@ -950,9 +965,19 @@ export async function syncStartupProfileFromBackend(targetEntityId?: string | nu
       setStoredValue(BASIC_INFO_KEY, JSON.stringify(basicInfo), eid);
       if (data.identity.banner) {
         setStoredValue(STARTUP_BANNER_KEY, data.identity.banner, eid);
+        window.dispatchEvent(
+          new CustomEvent('xentro-startup-banner-changed', {
+            detail: { banner: data.identity.banner },
+          })
+        );
       }
       if (data.identity.logo) {
         setStoredValue(STARTUP_AVATAR_KEY, data.identity.logo, eid);
+        window.dispatchEvent(
+          new CustomEvent('xentro-startup-avatar-changed', {
+            detail: { avatar: data.identity.logo },
+          })
+        );
       }
     }
 

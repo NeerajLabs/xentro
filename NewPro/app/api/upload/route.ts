@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { MongoClient } from 'mongodb';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import fs from 'fs';
 import path from 'path';
 
@@ -9,6 +10,13 @@ export const runtime = 'nodejs';
 const MONGODB_URI =
   process.env.MONGODB_URI ||
   'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
+
+const R2_ACCOUNT_ID = process.env.CLOUDFLARE_R2_ACCOUNT_ID || '4ff64ea5dee31120b3a955f327ee4ce5';
+const R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || 'cbcf6c53791119c4c2a5c8eee7245912';
+const R2_SECRET_ACCESS_KEY = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '473f81dfb62b22325b8e5339129e69b228ec4a845607c4da4fdee006065e9897';
+const R2_BUCKET_NAME = process.env.CLOUDFLARE_R2_BUCKET_NAME || 'xentro-storage';
+const R2_ENDPOINT_URL = process.env.CLOUDFLARE_R2_ENDPOINT_URL || `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+const R2_PUBLIC_URL = (process.env.CLOUDFLARE_R2_PUBLIC_URL || 'https://media.xentro.in').replace(/\/+$/, '');
 
 let cachedClient: MongoClient | null = null;
 
@@ -22,6 +30,23 @@ async function getMongoClient(): Promise<MongoClient> {
     await cachedClient.connect();
   }
   return cachedClient;
+}
+
+let cachedS3Client: S3Client | null = null;
+
+function getR2Client(): S3Client | null {
+  if (!R2_ACCESS_KEY_ID || !R2_SECRET_ACCESS_KEY) return null;
+  if (!cachedS3Client) {
+    cachedS3Client = new S3Client({
+      region: 'auto',
+      endpoint: R2_ENDPOINT_URL,
+      credentials: {
+        accessKeyId: R2_ACCESS_KEY_ID,
+        secretAccessKey: R2_SECRET_ACCESS_KEY,
+      },
+    });
+  }
+  return cachedS3Client;
 }
 
 export async function POST(req: NextRequest) {
@@ -71,8 +96,31 @@ export async function POST(req: NextRequest) {
 
     const cleanOriginalName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
     const uploadId = `upl_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+    const storageKey = `uploads/${uploadId}_${cleanOriginalName}`;
 
-    // 1. Persist directly in MongoDB Atlas media_uploads for durable serverless storage
+    let r2Uploaded = false;
+    let r2Url: string | null = null;
+
+    // 1. Attempt Cloudflare R2 Upload
+    try {
+      const r2 = getR2Client();
+      if (r2) {
+        await r2.send(
+          new PutObjectCommand({
+            Bucket: R2_BUCKET_NAME,
+            Key: storageKey,
+            Body: buffer,
+            ContentType: mimeType,
+          })
+        );
+        r2Uploaded = true;
+        r2Url = `${R2_PUBLIC_URL}/${storageKey}`;
+      }
+    } catch (r2Err: any) {
+      console.warn('[Upload API] Cloudflare R2 upload warning (falling back to MongoDB Atlas):', r2Err?.message);
+    }
+
+    // 2. Persist directly in MongoDB Atlas media_uploads for durable serverless storage
     try {
       const client = await getMongoClient();
       const db = client.db('xentro_db');
@@ -84,13 +132,16 @@ export async function POST(req: NextRequest) {
         mimeType: mimeType || 'image/jpeg',
         size: buffer.length,
         base64Data: buffer.toString('base64'),
+        r2Uploaded,
+        r2Key: r2Uploaded ? storageKey : null,
+        r2Url,
         createdAt: new Date().toISOString(),
       });
     } catch (mongoErr: any) {
       console.error('[Upload API] MongoDB Atlas storage error:', mongoErr);
     }
 
-    // 2. Also write to public/uploads on disk for fast local development caching if writable
+    // 3. Also write to public/uploads on disk for fast local development caching if writable
     try {
       const uploadsDir = path.join(process.cwd(), 'public', 'uploads');
       if (!fs.existsSync(uploadsDir)) {
@@ -102,7 +153,8 @@ export async function POST(req: NextRequest) {
       // In serverless / read-only disk environments (Vercel), ignore disk write failure
     }
 
-    const durableUrl = `/api/uploads/${uploadId}`;
+    // Prefer Cloudflare R2 public CDN URL if available, else MongoDB serving endpoint
+    const durableUrl = r2Uploaded && r2Url ? r2Url : `/api/uploads/${uploadId}`;
 
     return NextResponse.json({
       success: true,
@@ -111,6 +163,7 @@ export async function POST(req: NextRequest) {
       filename: cleanOriginalName,
       size: buffer.length,
       mimeType,
+      storage: r2Uploaded ? 'cloudflare-r2' : 'mongodb-atlas',
     });
   } catch (err: any) {
     console.error('[Upload API] Error saving file:', err);

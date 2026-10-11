@@ -18,6 +18,7 @@ export interface LinkedEntity {
   membershipStatus?: string;
   role?: string;
   logo?: string | null;
+  banner?: string | null;
   permissions?: string[];
   dashboardUrl?: string;
   profileUrl?: string;

@@ -376,13 +376,44 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
           const optimizedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
           if (target === 'banner') {
             setBannerImage(optimizedDataUrl);
-            setStartupBanner(optimizedDataUrl);
-            showToast('Startup cover banner updated successfully!', 'success');
           } else {
             setAvatarImage(optimizedDataUrl);
-            setStartupAvatar(optimizedDataUrl);
-            showToast('Startup profile photo updated successfully!', 'success');
           }
+          showToast(`Uploading ${target === 'banner' ? 'cover banner' : 'profile photo'} to cloud storage...`, 'info');
+
+          // Asynchronously upload to Cloudflare R2 / MongoDB Atlas
+          fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              dataUrl: optimizedDataUrl,
+              filename: `${target}_${Date.now()}.jpg`,
+            }),
+          })
+            .then((res) => res.json())
+            .then((data) => {
+              if (data?.success && data?.url) {
+                if (target === 'banner') {
+                  setBannerImage(data.url);
+                  setStartupBanner(data.url);
+                } else {
+                  setAvatarImage(data.url);
+                  setStartupAvatar(data.url);
+                }
+                showToast(
+                  `${target === 'banner' ? 'Startup cover banner' : 'Startup profile photo'} saved to cloud (${data.storage === 'cloudflare-r2' ? 'Cloudflare R2' : 'MongoDB Atlas'})!`,
+                  'success'
+                );
+              } else {
+                if (target === 'banner') setStartupBanner(optimizedDataUrl);
+                else setStartupAvatar(optimizedDataUrl);
+              }
+            })
+            .catch((uploadErr) => {
+              console.warn('[StartupOverview] Cloud upload warning, saved locally:', uploadErr);
+              if (target === 'banner') setStartupBanner(optimizedDataUrl);
+              else setStartupAvatar(optimizedDataUrl);
+            });
         } else {
           if (target === 'banner') {
             setBannerImage(dataUrl);
@@ -479,9 +510,31 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
   const saveCapturedPhoto = () => {
     if (!capturedPhoto) return;
     setAvatarImage(capturedPhoto);
-    setStartupAvatar(capturedPhoto);
     stopCamera();
-    showToast('New profile photo captured and saved!', 'success');
+    showToast('Saving captured profile photo to cloud...', 'info');
+
+    fetch('/api/upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        dataUrl: capturedPhoto,
+        filename: `avatar_${Date.now()}.jpg`,
+      }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.success && data?.url) {
+          setAvatarImage(data.url);
+          setStartupAvatar(data.url);
+          showToast(`Profile photo saved to cloud (${data.storage === 'cloudflare-r2' ? 'Cloudflare R2' : 'MongoDB Atlas'})!`, 'success');
+        } else {
+          setStartupAvatar(capturedPhoto);
+        }
+      })
+      .catch((err) => {
+        console.warn('[StartupOverview] Camera photo upload failed, using local fallback:', err);
+        setStartupAvatar(capturedPhoto);
+      });
   };
 
   return (

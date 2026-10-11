@@ -127,9 +127,16 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
   const [activeTab, setActiveTab] = useState<StartupTabType>("basic");
 
   const userProfile = getUserProfile();
+  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
+    typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null
+  );
+
+  const linkedEntities = typeof window !== 'undefined' ? entityContextService.getLinkedEntities() : [];
   const isOwner = isOwnProfile !== undefined
     ? isOwnProfile
-    : (!startupId && userProfile.role === "startup");
+    : (!startupId && (userProfile.role === "startup" || activeEntity?.entityType === 'startup'))
+      || Boolean(activeEntity?.id && (!startupId || startupId === activeEntity.id))
+      || Boolean(startupId && linkedEntities.some((e) => e.id === startupId));
 
   const [overallVisibility, setOverallVisibility] = useState<StartupOverallVisibility>(getStartupOverallVisibility());
   const [isGhostMode, setIsGhostMode] = useState<boolean>(getStartupGhostMode());
@@ -139,9 +146,6 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
   const [isVisibilityDropdownOpen, setIsVisibilityDropdownOpen] = useState(false);
   const [customBanner, setCustomBanner] = useState<string | null>(null);
   const [customAvatar, setCustomAvatar] = useState<string | null>(null);
-  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
-    typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null
-  );
   const [pitchVideoOverride, setPitchVideoOverride] = useState<ElevatorPitchVideo | null | undefined>(undefined);
   const [pitchDeckOverride, setPitchDeckOverride] = useState<PitchDeckDoc | null | undefined>(undefined);
   const [teamMembersOverride, setTeamMembersOverride] = useState<StartupTeamMember[] | undefined>(undefined);
@@ -312,8 +316,11 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
     fetch(`/api/startups/${targetEntityId}`)
       .then((res) => res.json())
       .then((json) => {
-        if (!cancelled && json?.success && json?.data?.startup) {
-          setDbStartupProfile(json.data.startup);
+        if (!cancelled && json?.success && (json?.data?.startup || json?.data)) {
+          const profileDoc = json.data.startup || json.data;
+          setDbStartupProfile(profileDoc);
+          if (profileDoc.identity?.banner) setCustomBanner(profileDoc.identity.banner);
+          if (profileDoc.identity?.logo) setCustomAvatar(profileDoc.identity.logo);
         }
       })
       .catch((err) => {
@@ -325,14 +332,13 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
     };
   }, [startupId, activeEntity?.id]);
 
-  const linkedEntities = typeof window !== 'undefined' ? entityContextService.getLinkedEntities() : [];
   const currentActiveEntity = activeEntity || (typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null);
   const matchedEntity = (startupId ? linkedEntities.find((e) => e.id === startupId) : null) || currentActiveEntity;
 
   // Own profile = YOUR data; others = selected profile data
   const isOwnStartup = Boolean(isOwnProfile)
-    || (!startupId && userProfile.role === "startup")
-    || Boolean(currentActiveEntity?.id && startupId === currentActiveEntity.id)
+    || (!startupId && (userProfile.role === "startup" || currentActiveEntity?.entityType === 'startup'))
+    || Boolean(currentActiveEntity?.id && (!startupId || startupId === currentActiveEntity.id))
     || Boolean(startupId && linkedEntities.some((e) => e.id === startupId));
 
   // Load startup data dynamically with full schema safety
@@ -407,18 +413,52 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
           operatingGeography: (Array.isArray(parsedOperatingGeo) && parsedOperatingGeo.length > 0) ? parsedOperatingGeo : baseStartup.identity.operatingGeography || [],
           website: basicInfoOverride?.website || matchedEntity?.website || baseStartup.identity.website || '',
           linkedin: basicInfoOverride?.linkedin || baseStartup.identity.linkedin || '',
-          logo: (isOwner && customAvatar) ? customAvatar : (basicInfoOverride?.logo || matchedEntity?.logo || baseStartup.identity.logo || userProfile.avatar || '/xentro-logo.png'),
+          banner: customBanner || dbStartupProfile?.identity?.banner || matchedEntity?.banner || baseStartup.identity?.banner || null,
+          logo: customAvatar || dbStartupProfile?.identity?.logo || basicInfoOverride?.logo || matchedEntity?.logo || baseStartup.identity?.logo || userProfile.avatar || '/xentro-logo.png',
         }
-      : baseStartup.identity,
+      : {
+          ...baseStartup.identity,
+          banner: customBanner || dbStartupProfile?.identity?.banner || baseStartup.identity?.banner || null,
+          logo: customAvatar || dbStartupProfile?.identity?.logo || baseStartup.identity?.logo || '/xentro-logo.png',
+        },
+    companyInfo: {
+      ...baseStartup.companyInfo,
+      ...(dbStartupProfile?.companyInfo || {}),
+      ...(isOwnStartup && companyInfoOverride ? companyInfoOverride : {}),
+      legalName: (isOwnStartup && companyInfoOverride?.legalName)
+        ? companyInfoOverride.legalName
+        : (dbStartupProfile?.companyInfo?.legalName || baseStartup.companyInfo?.legalName || resolvedStartupName),
+      incorporationStatus: (isOwnStartup && companyInfoOverride?.incorporationStatus)
+        ? companyInfoOverride.incorporationStatus
+        : (dbStartupProfile?.companyInfo?.incorporationStatus || baseStartup.companyInfo?.incorporationStatus || 'Active'),
+      incorporationDate: (isOwnStartup && companyInfoOverride?.incorporationDate)
+        ? companyInfoOverride.incorporationDate
+        : (dbStartupProfile?.companyInfo?.incorporationDate || baseStartup.companyInfo?.incorporationDate || ''),
+      registeredLocation: (isOwnStartup && companyInfoOverride?.registeredLocation)
+        ? companyInfoOverride.registeredLocation
+        : (dbStartupProfile?.companyInfo?.registeredLocation || baseStartup.companyInfo?.registeredLocation || baseStartup.identity.location || 'India'),
+      incubatorAffiliation: (isOwnStartup && companyInfoOverride?.incubatorAffiliation)
+        ? companyInfoOverride.incubatorAffiliation
+        : (dbStartupProfile?.companyInfo?.incubatorAffiliation || baseStartup.companyInfo?.incubatorAffiliation || ''),
+      isDPIITRecognised: (isOwnStartup && companyInfoOverride?.isDPIITRecognised !== undefined)
+        ? companyInfoOverride.isDPIITRecognised
+        : (dbStartupProfile?.companyInfo?.isDPIITRecognised ?? baseStartup.companyInfo?.isDPIITRecognised ?? true),
+      isMSMERegistered: (isOwnStartup && companyInfoOverride?.isMSMERegistered !== undefined)
+        ? companyInfoOverride.isMSMERegistered
+        : (dbStartupProfile?.companyInfo?.isMSMERegistered ?? baseStartup.companyInfo?.isMSMERegistered ?? false),
+    },
     overview: isOwnStartup
       ? {
           ...baseStartup.overview,
-          whatItDoes: basicInfoOverride?.overview || '',
-          whoItServes: '',
-          coreValueProp: basicInfoOverride?.tagline || '',
-          currentStage: basicInfoOverride?.stage || userProfile.stageOrFocus || '',
+          whatItDoes: basicInfoOverride?.overview || dbStartupProfile?.overview?.whatItDoes || baseStartup.overview?.whatItDoes || '',
+          whoItServes: dbStartupProfile?.overview?.whoItServes || baseStartup.overview?.whoItServes || 'Ecosystem enterprises and partners',
+          coreValueProp: basicInfoOverride?.tagline || dbStartupProfile?.overview?.coreValueProp || baseStartup.overview?.coreValueProp || '',
+          currentStage: basicInfoOverride?.stage || userProfile.stageOrFocus || dbStartupProfile?.overview?.currentStage || baseStartup.overview?.currentStage || '',
         }
-      : baseStartup.overview,
+      : {
+          ...baseStartup.overview,
+          ...(dbStartupProfile?.overview || {}),
+        },
     unsdg: isOwnStartup && parsedUNSDGs && parsedUNSDGs.length > 0
       ? parsedUNSDGs
       : isOwnStartup
@@ -471,9 +511,6 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
     product: isOwner && productOverride !== undefined
       ? productOverride
       : baseStartup.product,
-    companyInfo: isOwner && companyInfoOverride !== undefined
-      ? companyInfoOverride
-      : baseStartup.companyInfo,
     market: isOwner && marketOverride !== undefined
       ? marketOverride
       : baseStartup.market,
@@ -902,9 +939,9 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
       <div className="bg-white dark:bg-[#181B1A] rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle relative">
         {/* Subtle Ambient Banner */}
         <div className="h-28 sm:h-36 bg-gradient-to-r from-emerald-950/30 via-[#181B1A] to-lime-950/20 relative overflow-hidden rounded-t-2xl">
-          {isOwner && customBanner ? (
+          {(customBanner || startup.identity.banner) ? (
             <img
-              src={customBanner}
+              src={customBanner || startup.identity.banner || ''}
               alt="Startup Cover Banner"
               className="w-full h-full object-cover transition-opacity duration-300"
             />
@@ -929,7 +966,7 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
             <div className="flex items-end gap-4">
               <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl bg-white dark:bg-[#202422] border-4 border-white dark:border-[#181B1A] shadow-md overflow-hidden flex items-center justify-center shrink-0">
                 <img
-                  src={(isOwner && customAvatar) ? customAvatar : startup.identity.logo}
+                  src={customAvatar || startup.identity.logo || '/xentro-logo.png'}
                   alt={startup.identity.name}
                   className="w-full h-full object-cover"
                   onError={(e) => {

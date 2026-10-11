@@ -283,21 +283,53 @@ export async function PUT(
     const entitiesCol = db.collection('entities');
     const startupsCol = db.collection('startups');
     const membershipsCol = db.collection('memberships');
+    const usersCol = db.collection('users');
     const auditCol = db.collection('audit_logs');
 
     // 1. Authorize User
-    const entity = await entitiesCol.findOne({ id: entityId });
+    let entity = await entitiesCol.findOne({ id: entityId });
+    if (!entity) {
+      const st = await startupsCol.findOne({ entityId });
+      if (st) {
+        const nowIso = new Date().toISOString();
+        await entitiesCol.insertOne({
+          id: entityId,
+          name: st.name || st.identity?.name || 'Startup',
+          type: 'startup',
+          entityType: 'startup',
+          createdByUserId: userId,
+          primaryOwnerId: userId,
+          status: 'ACTIVE',
+          createdAt: nowIso,
+          updatedAt: nowIso,
+        });
+        entity = await entitiesCol.findOne({ id: entityId });
+      } else {
+        return NextResponse.json({ success: false, message: 'Startup entity not found' }, { status: 404 });
+      }
+    }
+
     if (!entity) {
       return NextResponse.json({ success: false, message: 'Startup entity not found' }, { status: 404 });
     }
 
     const isDirectOwner =
-      (entity.createdByUserId && entity.createdByUserId === userId) ||
-      (entity.currentOwnerUserId && entity.currentOwnerUserId === userId) ||
-      (entity.primaryOwnerId && entity.primaryOwnerId === userId);
+      (entity.createdByUserId && (entity.createdByUserId === userId || entity.createdByUserId === userEmail)) ||
+      (entity.currentOwnerUserId && (entity.currentOwnerUserId === userId || entity.currentOwnerUserId === userEmail)) ||
+      (entity.primaryOwnerId && (entity.primaryOwnerId === userId || entity.primaryOwnerId === userEmail));
 
-    let isAuthorized = isDirectOwner;
+    let isAuthorized = Boolean(isDirectOwner);
     let memberRole = isDirectOwner ? 'Owner / Founder' : '';
+
+    // If entity has no owner set yet, claim ownership
+    if (!isAuthorized && !entity.createdByUserId && !entity.primaryOwnerId && userId) {
+      isAuthorized = true;
+      memberRole = 'Owner / Founder';
+      await entitiesCol.updateOne(
+        { id: entityId },
+        { $set: { createdByUserId: userId, primaryOwnerId: userId, currentOwnerUserId: userId } }
+      );
+    }
 
     if (!isAuthorized) {
       const memQuery: any[] = [];
@@ -314,6 +346,23 @@ export async function PUT(
         memberRole = membership.role || 'Team Member';
         const perms: string[] = membership.permissions || [];
         isAuthorized = perms.includes('OWNER') || perms.includes('ADMIN') || perms.includes('EDIT_PROFILE');
+      }
+    }
+
+    // Check if user has this entity linked or active in their profile
+    if (!isAuthorized && (userId || userEmail)) {
+      const u = await usersCol.findOne({
+        $or: [
+          ...(userId ? [{ id: userId }, { userId }] : []),
+          ...(userEmail ? [{ email: userEmail }] : []),
+        ],
+      });
+      if (u) {
+        const hasLinked = Array.isArray(u.linkedEntities) && u.linkedEntities.some((le: any) => le.id === entityId || le.entityId === entityId);
+        if (hasLinked || u.activeEntityId === entityId) {
+          isAuthorized = true;
+          memberRole = 'Owner / Founder';
+        }
       }
     }
 
@@ -347,10 +396,19 @@ export async function PUT(
       }
       // If banner or logo updated
       if (body.identity.banner !== undefined) {
-        await entitiesCol.updateOne({ id: entityId }, { $set: { banner: body.identity.banner } });
+        await entitiesCol.updateOne({ id: entityId }, { $set: { banner: body.identity.banner, updatedAt: nowIso } });
       }
       if (body.identity.logo !== undefined) {
-        await entitiesCol.updateOne({ id: entityId }, { $set: { logo: body.identity.logo } });
+        await entitiesCol.updateOne({ id: entityId }, { $set: { logo: body.identity.logo, updatedAt: nowIso } });
+      }
+      if (body.identity.tagline !== undefined) {
+        await entitiesCol.updateOne({ id: entityId }, { $set: { pitch: body.identity.tagline, tagline: body.identity.tagline, updatedAt: nowIso } });
+      }
+      if (body.identity.stage !== undefined) {
+        await entitiesCol.updateOne({ id: entityId }, { $set: { stage: body.identity.stage, updatedAt: nowIso } });
+      }
+      if (body.identity.industry !== undefined) {
+        await entitiesCol.updateOne({ id: entityId }, { $set: { sector: body.identity.industry, industry: body.identity.industry, updatedAt: nowIso } });
       }
     }
 

@@ -69,6 +69,7 @@ import {
   setStartupBusinessModel,
   getStartupBasicInfo,
   setStartupBasicInfo,
+  syncStartupProfileFromBackend,
   type StartupBasicInfo,
 } from '@/lib/startupProfileState';
 import {
@@ -317,6 +318,7 @@ export const StartupProfileManager: React.FC<StartupProfileManagerProps> = ({
   const [isClient, setIsClient] = useState(false);
   useEffect(() => {
     setIsClient(true);
+    syncStartupProfileFromBackend();
   }, []);
 
   useEffect(() => {
