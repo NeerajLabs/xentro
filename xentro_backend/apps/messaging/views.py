@@ -182,6 +182,7 @@ class ConversationsListView(APIView):
 
         target_ids = list(set([t for t in target_ids if t]))
         target_norm_set = set([t.lower() for t in target_ids])
+        user_norm = (user_id or entity_id or "").lower()
 
         convs = list(conv_col.find(
             {"participants": {"$in": target_ids}},
@@ -324,14 +325,14 @@ class ConversationsListView(APIView):
                     "timestamp": m.get("createdAt", ""),
                     "createdAt": m.get("createdAt", ""),
                     "readBy": m.get("readBy", [m.get("senderId")]),
-                    "isMe": False if is_system else (normalize_id(m.get("senderId")).lower() == user_norm)
+                    "isMe": False if is_system else (normalize_id(m.get("senderId")).lower() in target_norm_set or normalize_id(m.get("senderId")).lower() == user_norm)
                 })
 
             # Get unread count
             unread_count = msg_col.count_documents({
                 "conversationId": {"$in": [conv_id, (conv_id or "").lower(), (conv_id or "").upper()]},
-                "senderId": {"$nin": [user_id, user_id.lower(), user_id.upper()]},
-                "readBy": {"$nin": [user_id, user_id.lower(), user_id.upper()]}
+                "senderId": {"$nin": target_ids},
+                "readBy": {"$nin": target_ids}
             })
 
             last_msg_text = clean_msgs[-1]["text"] if clean_msgs else c.get("lastMessage", "Conversation active.")
@@ -435,16 +436,40 @@ class MessagesHistoryView(APIView):
 
     def get(self, request, conversation_id):
         user_id = get_request_user_id(request)
+        entity_id = normalize_id(request.query_params.get("entityId") or request.data.get("entityId"))
+        entities_col = get_collection("entities")
+
+        target_ids = []
+        if user_id:
+            target_ids.extend([user_id, user_id.lower(), user_id.upper()])
+            try:
+                owned = list(entities_col.find({
+                    "$or": [{"primaryOwnerId": user_id}, {"createdByUserId": user_id}, {"members.userId": user_id}],
+                    "status": {"$nin": ["DELETED", "ORPHANED_DELETED"]}
+                }, {"id": 1, "entityId": 1}))
+                for ent in owned:
+                    if ent.get("id"):
+                        target_ids.extend([ent["id"], ent["id"].lower(), ent["id"].upper()])
+                    if ent.get("entityId"):
+                        target_ids.extend([ent["entityId"], ent["entityId"].lower(), ent["entityId"].upper()])
+            except Exception:
+                pass
+        if entity_id:
+            target_ids.extend([entity_id, entity_id.lower(), entity_id.upper()])
+        target_ids = list(set([t for t in target_ids if t]))
+        target_norm_set = set([t.lower() for t in target_ids])
+        user_norm = (user_id or entity_id or "").lower()
+
         conv_col = get_collection("conversations")
         conv = conv_col.find_one({"id": {"$in": [conversation_id, conversation_id.lower(), conversation_id.upper()]}})
         if not conv:
             conv = conv_col.find_one({"id": {"$regex": f"^{conversation_id}$", "$options": "i"}})
         if not conv:
-            p1, p2 = resolve_conversation_participants(conversation_id, user_id, request.query_params)
+            p1, p2 = resolve_conversation_participants(conversation_id, entity_id or user_id, request.query_params)
             if p1 and p2:
                 is_accepted, _, _ = check_connection_accepted(p1, p2)
                 if is_accepted:
-                    now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                    now_iso = datetime.timezone.utc and datetime.datetime.now(datetime.timezone.utc).isoformat()
                     conv = {
                         "id": conversation_id,
                         "pair_key": make_pair_key(p1, p2),
@@ -460,7 +485,7 @@ class MessagesHistoryView(APIView):
 
         participants = conv.get("participants", [])
         norm_participants = [normalize_id(p).lower() for p in participants]
-        if user_id and normalize_id(user_id).lower() not in norm_participants:
+        if (user_id or entity_id) and not any(t in norm_participants for t in target_norm_set):
             return api_error("Access denied to this conversation.", status_code=403)
 
         msg_col = get_collection("messages")
@@ -470,7 +495,6 @@ class MessagesHistoryView(APIView):
             limit=100
         ))
         clean = []
-        user_norm = normalize_id(user_id).lower() if user_id else ""
         for m in messages:
             m.pop("_id", None)
             m_content = m.get("content") or m.get("text", "")
@@ -490,23 +514,47 @@ class MessagesHistoryView(APIView):
                 "timestamp": m.get("createdAt", ""),
                 "createdAt": m.get("createdAt", ""),
                 "readBy": m.get("readBy", [m.get("senderId")]),
-                "isMe": False if is_system else ((normalize_id(m.get("senderId")).lower() == user_norm) if user_norm else False)
+                "isMe": False if is_system else (normalize_id(m.get("senderId")).lower() in target_norm_set or normalize_id(m.get("senderId")).lower() == user_norm)
             })
 
-        # Mark as read for this user
-        if user_id:
+        # Mark as read for this user / entity
+        if target_ids:
             msg_col.update_many(
                 {
                     "conversationId": {"$in": [conversation_id, conversation_id.lower(), conversation_id.upper()]},
-                    "readBy": {"$nin": [user_id, user_id.lower(), user_id.upper()]}
+                    "readBy": {"$nin": target_ids}
                 },
-                {"$addToSet": {"readBy": user_id}}
+                {"$addToSet": {"readBy": user_id or entity_id}}
             )
 
         return api_success({"messages": clean, "conversationId": conversation_id})
 
     def post(self, request, conversation_id):
         user_id = get_request_user_id(request)
+        entity_id = normalize_id(request.data.get("entityId") or request.query_params.get("entityId"))
+        entities_col = get_collection("entities")
+
+        target_ids = []
+        if user_id:
+            target_ids.extend([user_id, user_id.lower(), user_id.upper()])
+            try:
+                owned = list(entities_col.find({
+                    "$or": [{"primaryOwnerId": user_id}, {"createdByUserId": user_id}, {"members.userId": user_id}],
+                    "status": {"$nin": ["DELETED", "ORPHANED_DELETED"]}
+                }, {"id": 1, "entityId": 1}))
+                for ent in owned:
+                    if ent.get("id"):
+                        target_ids.extend([ent["id"], ent["id"].lower(), ent["id"].upper()])
+                    if ent.get("entityId"):
+                        target_ids.extend([ent["entityId"], ent["entityId"].lower(), ent["entityId"].upper()])
+            except Exception:
+                pass
+        if entity_id:
+            target_ids.extend([entity_id, entity_id.lower(), entity_id.upper()])
+        target_ids = list(set([t for t in target_ids if t]))
+        target_norm_set = set([t.lower() for t in target_ids])
+        user_norm = (user_id or entity_id or "").lower()
+
         content = (request.data.get("content") or request.data.get("text") or "").strip()
         msg_type = request.data.get("type", "TEXT")
         attachments = request.data.get("attachments", [])
@@ -519,7 +567,7 @@ class MessagesHistoryView(APIView):
         if not conv:
             conv = conv_col.find_one({"id": {"$regex": f"^{conversation_id}$", "$options": "i"}})
         if not conv:
-            p1, p2 = resolve_conversation_participants(conversation_id, user_id, request.data)
+            p1, p2 = resolve_conversation_participants(conversation_id, entity_id or user_id, request.data)
             if p1 and p2:
                 is_accepted, status, _ = check_connection_accepted(p1, p2)
                 if not is_accepted:
@@ -543,19 +591,19 @@ class MessagesHistoryView(APIView):
 
         participants = conv.get("participants", [])
         norm_participants = [normalize_id(p).lower() for p in participants]
-        user_norm = normalize_id(user_id).lower() if user_id else ""
-        if user_id and user_norm not in norm_participants:
+        if (user_id or entity_id) and not any(t in norm_participants for t in target_norm_set):
             return api_error("Access denied to this conversation.", status_code=403)
 
         # STRICT GATING: Verify MongoDB connection is accepted before delivering message
         other_id = None
         for p in participants:
-            if normalize_id(p).lower() != user_norm:
+            if normalize_id(p).lower() not in target_norm_set:
                 other_id = normalize_id(p)
                 break
 
-        if other_id and user_id:
-            is_accepted, status, _ = check_connection_accepted(user_id, other_id)
+        active_sender = normalize_id(request.data.get("senderId") or entity_id or user_id)
+        if other_id and active_sender:
+            is_accepted, status, _ = check_connection_accepted(active_sender, other_id)
             if not is_accepted:
                 return api_error(
                     f"Message rejected: Cannot message user without an accepted MongoDB connection (status: '{status}').",
@@ -579,7 +627,7 @@ class MessagesHistoryView(APIView):
         three_sec_ago = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=3)).isoformat()
         recent_dup = msg_col.find_one({
             "conversationId": {"$in": [conversation_id, conversation_id.lower(), conversation_id.upper()]},
-            "senderId": user_id,
+            "senderId": {"$in": target_ids},
             "content": content,
             "createdAt": {"$gte": three_sec_ago}
         })
@@ -593,13 +641,13 @@ class MessagesHistoryView(APIView):
             "id": msg_id,
             "clientMessageId": client_id or msg_id,
             "conversationId": conversation_id,
-            "senderId": user_id,
+            "senderId": active_sender,
             "senderName": sender_name,
             "content": content,
             "text": content,
             "type": msg_type,
             "attachments": attachments,
-            "readBy": [user_id] if user_id else [],
+            "readBy": [active_sender] if active_sender else [],
             "createdAt": now_iso
         }
 
