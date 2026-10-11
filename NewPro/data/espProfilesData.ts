@@ -663,36 +663,49 @@ export const espProfilesData: Record<string, FullESPProfile> = {
   },
 };
 
-export function getESPProfileById(id: string): FullESPProfile {
+export function getESPProfileById(id: string, fallbackData?: any): FullESPProfile {
   if (espProfilesData[id]) {
     return espProfilesData[id];
   }
 
-  const base = mockRecommendedUniversities.find((u) => u.id === id);
+  const base = fallbackData || mockRecommendedUniversities.find((u) => u.id === id);
   if (!base) {
     return espProfilesData.uni_9;
   }
 
+  const programsList: string[] = Array.isArray(base.ecosystemPrograms) && base.ecosystemPrograms.length > 0
+    ? base.ecosystemPrograms
+    : ['Incubation Track', 'Accelerator Track', 'Seed Grant Assistance'];
+
+  const strengthsList: string[] = Array.isArray(base.strengths) && base.strengths.length > 0
+    ? base.strengths
+    : ['Innovation', 'Incubation', 'Entrepreneurship'];
+
+  const baseName = base.name || 'Ecosystem Partner';
+  const baseLogo = base.logo || base.avatar || "https://images.unsplash.com/photo-1498243691581-b145c3f54a5a?w=200&auto=format&fit=crop&q=80";
+  const baseLocation = base.location || base.context || 'India';
+  const baseDesc = base.description || base.title || `${baseName} is an ecosystem institution supporting startups on Xentro.`;
+
   // Synthesize complete profile from recommendation entity
   return {
-    id: base.id,
+    id: base.id || id,
     identity: {
-      name: base.name,
-      logo: base.logo,
+      name: baseName,
+      logo: baseLogo,
       bannerUrl: "https://images.unsplash.com/photo-1498243691581-b145c3f54a5a?w=1200&auto=format&fit=crop&q=80",
       type: "Incubator",
       foundedYear: 2018,
-      headquarters: base.location,
-      website: "https://" + base.name.toLowerCase().replace(/[^a-z0-9]/g, "") + ".example.edu",
-      linkedin: "https://linkedin.com/company/" + base.name.toLowerCase().replace(/[^a-z0-9]/g, "-"),
-      contactEmail: "incubator@" + base.name.toLowerCase().replace(/[^a-z0-9]/g, "") + ".edu",
+      headquarters: baseLocation,
+      website: base.website || ("https://" + baseName.toLowerCase().replace(/[^a-z0-9]/g, "") + ".example.edu"),
+      linkedin: "https://linkedin.com/company/" + baseName.toLowerCase().replace(/[^a-z0-9]/g, "-"),
+      contactEmail: "incubator@" + (baseName.toLowerCase().replace(/[^a-z0-9]/g, "") || "xentro") + ".edu",
       isVerified: true,
-      primarySectors: base.strengths,
+      primarySectors: strengthsList,
       stagesSupported: ["Idea", "Pre-Incubation", "MVP", "Seed"],
-      tagline: base.description,
-      shortDescription: base.description + " Providing infrastructure, seed grants, and academic industry translation.",
+      tagline: baseDesc,
+      shortDescription: baseDesc + " Providing infrastructure, seed grants, and academic industry translation.",
       coreMission: "To nurture high-impact collegiate and technology startups through world-class labs and mentorship.",
-      geographicFocus: [base.location, "India"],
+      geographicFocus: [baseLocation, "India"],
       supportAreas: [
         "Incubation & Coworking",
         "Seed Grant Assistance",
@@ -701,14 +714,14 @@ export function getESPProfileById(id: string): FullESPProfile {
         "Industry Alliances",
       ],
     },
-    programs: base.ecosystemPrograms.map((prog, idx) => ({
-      id: "prog_" + base.id + "_" + idx,
+    programs: programsList.map((prog, idx) => ({
+      id: "prog_" + (base.id || id) + "_" + idx,
       name: prog,
       type: (idx === 0 ? "Incubation" : idx === 1 ? "Accelerator" : "Grant") as any,
       category: idx === 0 ? "active" : idx === 1 ? "upcoming" : "past",
       status: idx === 0 ? "Open" : idx === 1 ? "Upcoming" : "Closed",
       startupStage: "Pre-Seed to Seed",
-      sectors: base.strengths,
+      sectors: strengthsList,
       locationMode: "Hybrid",
       duration: "16 Weeks",
       applicationDeadline: "Nov 30, 2026",
@@ -720,7 +733,7 @@ export function getESPProfileById(id: string): FullESPProfile {
     })),
     services: [
       {
-        id: "serv_" + base.id + "_1",
+        id: "serv_" + (base.id || id) + "_1",
         name: "Prototyping & Fabrication Lab Access",
         category: "Infrastructure",
         description: "Access to advanced rapid prototyping machinery, 3D printers, and test benches.",
@@ -730,7 +743,7 @@ export function getESPProfileById(id: string): FullESPProfile {
         deliveryMode: "In-Person",
       },
       {
-        id: "serv_" + base.id + "_2",
+        id: "serv_" + (base.id || id) + "_2",
         name: "Faculty & Domain Expert Mentorship",
         category: "Mentorship",
         description: "Regular technical advisory from leading professors and departmental researchers.",
@@ -742,12 +755,12 @@ export function getESPProfileById(id: string): FullESPProfile {
     ],
     portfolio: [
       {
-        id: "port_" + base.id + "_1",
+        id: "port_" + (base.id || id) + "_1",
         name: "Kinetix AI",
         logo: "/images/profile_avatar.webp",
         industry: "Enterprise AI",
         stage: "Seed",
-        cohortProgram: base.ecosystemPrograms[0] || "Incubation Track",
+        cohortProgram: programsList[0] || "Incubation Track",
         year: 2024,
         founders: "Vikram Malhotra",
         currentStatus: "Active",
@@ -773,8 +786,8 @@ export function getESPProfileById(id: string): FullESPProfile {
       },
       programOutcomes: [
         {
-          id: "out_" + base.id + "_1",
-          programName: base.ecosystemPrograms[0] || "Flagship Program",
+          id: "out_" + (base.id || id) + "_1",
+          programName: programsList[0] || "Flagship Program",
           cohortYear: "2025",
           startupsSelected: 16,
           completed: 14,
@@ -794,7 +807,7 @@ export function getESPProfileById(id: string): FullESPProfile {
     teamAndEcosystem: {
       team: [
         {
-          id: "team_" + base.id + "_1",
+          id: "team_" + (base.id || id) + "_1",
           name: "Dr. Arvind Narayanan",
           role: "Director of Incubation",
           avatar: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=300&auto=format&fit=crop&q=80",
@@ -805,7 +818,7 @@ export function getESPProfileById(id: string): FullESPProfile {
       associatedMentors: [],
       associatedInvestors: [
         {
-          id: "inv_" + base.id + "_1",
+          id: "inv_" + (base.id || id) + "_1",
           name: "Blossom Angel Syndicate",
           logo: "https://images.unsplash.com/photo-1576091160399-112ba8d25d1d?w=150&auto=format&fit=crop&q=80",
           type: "Angel Network",
@@ -814,20 +827,20 @@ export function getESPProfileById(id: string): FullESPProfile {
         },
       ],
       partners: [
-        { id: "part_" + base.id + "_1", name: "Startup India", category: "Government Agencies" },
-        { id: "part_" + base.id + "_2", name: "AWS Cloud Credits", category: "Technology Partners" },
+        { id: "part_" + (base.id || id) + "_1", name: "Startup India", category: "Government Agencies" },
+        { id: "part_" + (base.id || id) + "_2", name: "AWS Cloud Credits", category: "Technology Partners" },
       ],
     },
     content: [
       {
-        id: "cnt_" + base.id + "_1",
+        id: "cnt_" + (base.id || id) + "_1",
         type: "Announcement",
-        title: base.name + " Announces New Incubation Cohort Applications",
+        title: baseName + " Announces New Incubation Cohort Applications",
         date: "Sep 2026",
         content: "Inviting high-potential student, faculty, and regional ventures to apply for our upcoming accelerator track.",
         author: {
           name: "Incubation Directorate",
-          avatar: base.logo,
+          avatar: baseLogo,
           role: "Program Lead",
         },
         likesCount: 110,

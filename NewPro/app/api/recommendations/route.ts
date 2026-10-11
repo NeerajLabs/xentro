@@ -168,8 +168,52 @@ export async function GET(req: NextRequest) {
             });
           }
         });
+
+        // Query registered ESP entities from entities collection
+        const espQuery = {
+          $or: [
+            { canonicalType: 'ESP' },
+            { entityType: { $regex: 'ESP', $options: 'i' } },
+            { entityType: { $regex: 'INCUBATOR', $options: 'i' } },
+            { entityType: { $regex: 'INSTITUTION', $options: 'i' } },
+          ],
+          status: { $nin: ['DELETED', 'REJECTED'] },
+        };
+        const dbESPs = await entitiesCol.find(espQuery).limit(25).toArray();
+        dbESPs.forEach((espEnt: any) => {
+          esps.push({
+            id: espEnt.id || String(espEnt._id),
+            userId: espEnt.primaryOwnerId || espEnt.createdByUserId,
+            name: espEnt.name,
+            title: espEnt.details?.espType || 'Incubator & Accelerator',
+            company: espEnt.name,
+            context: espEnt.location?.city || espEnt.details?.city || 'India',
+            avatar: espEnt.logo || 'https://images.unsplash.com/photo-1498243691581-b145c3f54a5a?w=200&auto=format&fit=crop&q=80',
+            status: 'idle',
+            verified: Boolean(espEnt.verificationStatus === 'VERIFIED'),
+            category: 'opportunities',
+            type: 'esp',
+          });
+        });
       } catch (firmErr) {
-        console.warn('[Recommendations API] Firm query warning:', firmErr);
+        console.warn('[Recommendations API] Firm/ESP query warning:', firmErr);
+      }
+
+      // If no ESPs found yet, provide verified platform ecosystem institution (T-Hub Foundation)
+      if (esps.length === 0) {
+        esps.push({
+          id: 'uni_9',
+          userId: 'usr_thub',
+          name: 'T-Hub Foundation',
+          title: 'Innovation Hub & Accelerator',
+          company: 'T-Hub Foundation',
+          context: 'Hyderabad, India',
+          avatar: 'https://images.unsplash.com/photo-1498243691581-b145c3f54a5a?w=200&auto=format&fit=crop&q=80',
+          status: 'idle',
+          verified: true,
+          category: 'opportunities',
+          type: 'esp',
+        });
       }
 
       // If no firms registered yet in database, include verified platform ecosystem firm (Sequoia Capital)

@@ -227,7 +227,7 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
         if (Array.isArray(recData.esps) && recData.esps.length > 0) {
           setDynamicESPs(
             recData.esps.map((esp: any): UniversityRecommendation => ({
-              id: esp.userId || esp.id,
+              id: esp.id || esp.userId,
               name: esp.name,
               logo: esp.avatar || '/xentro-logo.png',
               location: esp.context || 'India',
@@ -479,11 +479,15 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
       );
     }
     if (selectedProfileItem.type === 'university') {
-      const fullESP = getESPProfileById(selectedProfileItem.data.id);
+      const fullESP = getESPProfileById(
+        selectedProfileItem.data.id,
+        selectedProfileItem.data
+      );
       return (
         <ESPProfileView
           espData={fullESP}
           espId={selectedProfileItem.data.id}
+          isOwnProfile={false}
           onBackToDiscover={() => setSelectedProfileItem(null)}
           onOpenStartupProfile={(startupId) => {
             const found = dynamicStartups.find((st) => st.id === startupId);
