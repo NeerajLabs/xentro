@@ -118,6 +118,13 @@ export function saveMentorOfferings(offerings: MENTORSHIP_OFFERING[], mentorId =
   if (typeof window === 'undefined') return;
   localStorage.setItem(`${STORAGE_KEYS.OFFERINGS}_${mentorId}`, JSON.stringify(offerings));
   window.dispatchEvent(new CustomEvent('xentro-mentorship-offerings-changed', { detail: { offerings } }));
+
+  // Asynchronously persist to MongoDB Atlas
+  fetch('/api/mentorship', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'save_offerings', mentorId, offerings }),
+  }).catch((err) => console.warn('Failed to sync offerings to MongoDB:', err));
 }
 
 export function getMentorshipRequests(): MENTORSHIP_REQUEST[] {
@@ -150,6 +157,13 @@ export function submitMentorshipRequest(
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('xentro-mentorship-requests-changed', { detail: { requests: updated } }));
+
+    // Asynchronously persist to MongoDB Atlas
+    fetch('/api/mentorship', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'create_request', request: created }),
+    }).catch((err) => console.warn('Failed to sync request to MongoDB:', err));
   }
   return created;
 }
@@ -168,6 +182,13 @@ export function acceptMentorshipRequest(requestId: string): MENTORSHIP_REQUEST |
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('xentro-mentorship-requests-changed', { detail: { requests: updated } }));
+
+    // Asynchronously persist to MongoDB Atlas
+    fetch('/api/mentorship', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_request', requestId, status: 'AWAITING_PAYMENT' }),
+    }).catch((err) => console.warn('Failed to sync accept to MongoDB:', err));
   }
   return updatedReq;
 }
@@ -183,6 +204,13 @@ export function declineMentorshipRequest(requestId: string, reason?: string): vo
   if (typeof window !== 'undefined') {
     localStorage.setItem(STORAGE_KEYS.REQUESTS, JSON.stringify(updated));
     window.dispatchEvent(new CustomEvent('xentro-mentorship-requests-changed', { detail: { requests: updated } }));
+
+    // Asynchronously persist to MongoDB Atlas
+    fetch('/api/mentorship', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update_request', requestId, status: 'DECLINED', reason }),
+    }).catch((err) => console.warn('Failed to sync decline to MongoDB:', err));
   }
 }
 

@@ -183,7 +183,8 @@ export function getStoredInvestorProfile(
 }
 
 /**
- * Persists changes to the investor profile, synchronizes with domain settings, and broadcasts an update event.
+ * Persists changes to the investor profile, synchronizes with domain settings,
+ * broadcasts an update event, and pushes durably to MongoDB Atlas.
  */
 export function saveStoredInvestorProfile(profile: FullInvestorProfile): void {
   if (typeof window === 'undefined') return;
@@ -213,9 +214,49 @@ export function saveStoredInvestorProfile(profile: FullInvestorProfile): void {
     window.dispatchEvent(
       new CustomEvent(INVESTOR_PROFILE_UPDATED_EVENT, { detail: { profile } })
     );
+
+    // Persist asynchronously to MongoDB Atlas
+    const targetEntityId = profile.id || 'inv_own';
+    fetch(`/api/investors/${encodeURIComponent(targetEntityId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ profile }),
+    }).catch((err) => {
+      console.warn('Failed to persist investor profile to MongoDB Atlas:', err);
+    });
   } catch (err) {
     console.error('Failed to save stored investor profile:', err);
   }
+}
+
+/**
+ * Loads the latest authoritative investor profile from MongoDB Atlas
+ * and synchronizes it into local state.
+ */
+export async function syncInvestorProfileFromBackend(
+  investorId: string = 'inv_own'
+): Promise<FullInvestorProfile | null> {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const res = await fetch(`/api/investors/${encodeURIComponent(investorId)}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json?.success && json?.data) {
+        const profile = json.data as FullInvestorProfile;
+        const serialized = JSON.stringify(profile);
+        localStorage.setItem(INVESTOR_PROFILE_STORAGE_KEY, serialized);
+        localStorage.setItem(`${INVESTOR_PROFILE_STORAGE_KEY}_${profile.id}`, serialized);
+        window.dispatchEvent(
+          new CustomEvent(INVESTOR_PROFILE_UPDATED_EVENT, { detail: { profile } })
+        );
+        return profile;
+      }
+    }
+  } catch (err) {
+    console.debug('Failed to sync investor profile from backend:', err);
+  }
+  return null;
 }
 
 /**

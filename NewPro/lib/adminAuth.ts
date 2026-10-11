@@ -307,7 +307,35 @@ export async function verifyAdminCredentials(
 
   if (!trimmedId || !trimmedPass) return null;
 
-  // 1. Authenticate against authoritative backend API with a tight 2s abort controller
+  // 1. Authenticate via secure Next.js server route (server-side verified, credentials NEVER exposed in client bundle)
+  try {
+    const res = await fetch('/api/admin/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ employeeId: trimmedId, password: trimmedPass }),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.success && data?.data?.session) {
+        const s = data.data.session;
+        const session: AdminSession = {
+          employeeId: s.employeeId,
+          name: s.name,
+          role: s.role,
+          department: s.department,
+          permissions: s.permissions || getPermissionsForRole(s.role),
+          token: s.token || 'xa_sec_' + Math.random().toString(36).substring(2),
+          expiresAt: s.expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        };
+        return session;
+      }
+    }
+  } catch (err) {
+    // If running in an environment where relative /api/admin/login isn't available, try backend directly
+  }
+
+  // 2. Direct Backend fallback if /api/admin/login failed or running outside browser
   try {
     const backendUrl = getBackendBaseUrl();
     const controller = new AbortController();
@@ -317,7 +345,7 @@ export async function verifyAdminCredentials(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ employeeId: trimmedId, password: trimmedPass }),
-      signal: controller.signal
+      signal: controller.signal,
     });
     clearTimeout(timeoutId);
 
@@ -338,59 +366,7 @@ export async function verifyAdminCredentials(
       }
     }
   } catch (err: any) {
-    // If backend timed out or was temporarily unreachable, fallback gracefully and instantly
-    if (err?.name !== 'AbortError') {
-      console.warn('Backend admin auth unreachable, checking credentials directly:', err);
-    }
-  }
-
-  // 2. High-performance direct credential verification (zero artificial latency)
-
-  // Primary Super Admin Credential
-  // Employee ID: 9922953 | Password: Kar04052003
-  // Identity: Karunya Kranthi Kumar | Role: Super Admin (Executive Operations)
-  if (
-    trimmedId === '9922953' &&
-    (trimmedPass === 'Kar04052003' || trimmedPass.toLowerCase() === 'kar04052003')
-  ) {
-    const role: AdminRole = 'Super Admin';
-    const session: AdminSession = {
-      employeeId: '9922953',
-      name: 'Karunya Kranthi Kumar',
-      role,
-      department: 'Executive Operations',
-      permissions: getPermissionsForRole(role),
-      token: 'xa_sec_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    };
-    return session;
-  }
-
-  // Secondary administrative credentials
-  const secondaryIds = ['8121417', 'admin', '9911223', '9922953'];
-  const secondaryPasswords = ['Sra231206', 'sra231206', 'Kar04052003', 'kar04052003'];
-
-  const matchedId = secondaryIds.find((id) => id.toLowerCase() === trimmedId.toLowerCase());
-  const isPasswordValid = secondaryPasswords.some(
-    (p) => p === trimmedPass || p.toLowerCase() === trimmedPass.toLowerCase()
-  );
-
-  if (matchedId && isPasswordValid) {
-    const isSravan = matchedId.toLowerCase() === '8121417' || matchedId.toLowerCase() === 'admin';
-    const adminName = isSravan ? 'Sravan Kumar' : 'Karunya Kranthi Kumar';
-    const dept = isSravan ? 'Platform Architecture & Security' : 'Executive Operations';
-    const role: AdminRole = 'Super Admin';
-
-    const session: AdminSession = {
-      employeeId: matchedId,
-      name: adminName,
-      role,
-      department: dept,
-      permissions: getPermissionsForRole(role),
-      token: 'xa_sec_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-    };
-    return session;
+    // Backend unreachable
   }
 
   return null;

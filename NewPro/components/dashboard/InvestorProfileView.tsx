@@ -42,6 +42,7 @@ import {
 import { getInvestorProfileById } from '@/data/investorProfilesData';
 import {
   getStoredInvestorProfile,
+  syncInvestorProfileFromBackend,
   INVESTOR_PROFILE_UPDATED_EVENT,
 } from '@/lib/investorProfileState';
 import { investorDomainService } from '@/lib/investorDomainService';
@@ -88,8 +89,13 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
   useEffect(() => {
     if (investorData) {
       setInvestor(investorData);
+    } else {
+      const targetId = isOwnProfile ? 'inv_own' : (investorId || 'inv_1');
+      syncInvestorProfileFromBackend(targetId).then((synced) => {
+        if (synced) setInvestor(synced);
+      }).catch(() => {});
     }
-  }, [investorData]);
+  }, [investorData, investorId, isOwnProfile]);
 
   // Interactive connection states
   const isOwn = Boolean(isOwnProfile) || investorId === 'inv_own';

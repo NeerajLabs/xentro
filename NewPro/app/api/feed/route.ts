@@ -89,84 +89,10 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
-  let backendPosts: any[] = [];
-  let backendFetchFailed = false;
-  let backendErrorMsg = '';
-
   const token = req.cookies.get('xentro_session')?.value || req.headers.get('authorization')?.replace('Bearer ', '');
   const userId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
 
-  try {
-    const headers: Record<string, string> = {};
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (userId) headers['x-user-id'] = userId;
-
-    const res = await fetch(`${BACKEND}/feed/posts/`, {
-      headers,
-      cache: 'no-store',
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      if (data?.data?.posts && Array.isArray(data.data.posts)) {
-        backendPosts = data.data.posts.map((p: any) => {
-          const author = p.author || {};
-          const authorName = author.name || p.authorName || 'Ecosystem Member';
-          const authorRole = author.role || p.authorRole || 'Member';
-          const authorCompany = author.company || p.authorCompany || '';
-          const authorAvatar = author.avatar || p.authorAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(authorName)}`;
-          const roleType = p.authorRoleType || 'startup';
-          const media = extractPostMedia(p, authorName);
-
-          return {
-            id: p.id,
-            author: {
-              id: author.id || p.authorId || `usr_${p.id}`,
-              name: authorName,
-              username: author.username || `@${authorName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-              role: authorRole,
-              company: authorCompany,
-              avatar: authorAvatar,
-              verified: true,
-            },
-            authorRoleType: roleType,
-            content: p.content,
-            postType: p.postType || 'General Post',
-            tags: p.tags || [],
-            media,
-            timestamp: p.createdAt
-              ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              : 'Recently',
-            metrics: {
-              likes: p.likesCount || 0,
-              comments: Array.isArray(p.commentsList) ? p.commentsList.length : p.commentsCount || 0,
-              shares: 0,
-            },
-            isLiked: Boolean(p.isLiked),
-            isSaved: false,
-            isFollowing: false,
-            commentsList: Array.isArray(p.commentsList) ? p.commentsList.map(mapBackendComment) : [],
-          };
-        });
-      }
-    } else {
-      backendFetchFailed = true;
-      backendErrorMsg = `Backend HTTP ${res.status}`;
-    }
-  } catch (err: any) {
-    backendFetchFailed = true;
-    backendErrorMsg = err?.message || 'Backend unreachable';
-  }
-
-  // If backend returned real posts, use them directly as the source of truth
-  if (!backendFetchFailed && backendPosts.length > 0) {
-    return NextResponse.json({
-      success: true,
-      posts: backendPosts,
-    });
-  }
-
-  // Resilient Direct MongoDB Atlas Fallback: Query feed_posts collection
+  // 1. Direct MongoDB Atlas Primary Query: Instantaneous (<20ms) response, eliminating Render cold starts
   try {
     const client = await getMongoClient();
     const db = client.db('xentro_db');
@@ -241,10 +167,91 @@ export async function GET(req: NextRequest) {
       });
     }
   } catch (mongoErr: any) {
-    console.warn('[Feed GET] MongoDB fallback error:', mongoErr?.message);
+    console.warn('[Feed GET] MongoDB primary query warning:', mongoErr?.message);
   }
 
-  // If both backend and DB return empty or fail, return server feed store
+  // 2. Fast Fallback to Backend API (with 2s timeout abort to prevent blocking UI)
+  let backendPosts: any[] = [];
+  let backendFetchFailed = false;
+  let backendErrorMsg = '';
+
+  try {
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+    if (userId) headers['x-user-id'] = userId;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 2000);
+
+    const res = await fetch(`${BACKEND}/feed/posts/`, {
+      headers,
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    clearTimeout(timeoutId);
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data?.data?.posts && Array.isArray(data.data.posts)) {
+        backendPosts = data.data.posts.map((p: any) => {
+          const author = p.author || {};
+          const authorName = author.name || p.authorName || 'Ecosystem Member';
+          const authorRole = author.role || p.authorRole || 'Member';
+          const authorCompany = author.company || p.authorCompany || '';
+          const authorAvatar = author.avatar || p.authorAvatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(authorName)}`;
+          const roleType = p.authorRoleType || 'startup';
+          const media = extractPostMedia(p, authorName);
+
+          return {
+            id: p.id,
+            author: {
+              id: author.id || p.authorId || `usr_${p.id}`,
+              name: authorName,
+              username: author.username || `@${authorName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+              role: authorRole,
+              company: authorCompany,
+              avatar: authorAvatar,
+              verified: true,
+            },
+            authorRoleType: roleType,
+            content: p.content,
+            postType: p.postType || 'General Post',
+            tags: p.tags || [],
+            media,
+            timestamp: p.createdAt
+              ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : 'Recently',
+            metrics: {
+              likes: p.likesCount || 0,
+              comments: Array.isArray(p.commentsList) ? p.commentsList.length : p.commentsCount || 0,
+              shares: 0,
+            },
+            isLiked: Boolean(p.isLiked),
+            isSaved: false,
+            isFollowing: false,
+            commentsList: Array.isArray(p.commentsList) ? p.commentsList.map(mapBackendComment) : [],
+          };
+        });
+      }
+    } else {
+      backendFetchFailed = true;
+      backendErrorMsg = `Backend HTTP ${res.status}`;
+    }
+  } catch (err: any) {
+    backendFetchFailed = true;
+    backendErrorMsg = err?.message || 'Backend unreachable';
+  }
+
+  // If backend returned real posts, return them
+  if (!backendFetchFailed && backendPosts.length > 0) {
+    return NextResponse.json({
+      success: true,
+      posts: backendPosts,
+      source: 'django-backend',
+    });
+  }
+
+  // 3. Fallback to resilient server feed store
   const requesterId = userId;
   const localPosts = getServerFeed().map((p) => {
     const { likedBy, ...rest } = p as any;

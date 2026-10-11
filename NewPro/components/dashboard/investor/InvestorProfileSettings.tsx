@@ -44,6 +44,7 @@ import {
   getStoredInvestorProfile,
   saveStoredInvestorProfile,
   resetStoredInvestorProfile,
+  syncInvestorProfileFromBackend,
   INVESTOR_PROFILE_UPDATED_EVENT,
 } from '@/lib/investorProfileState';
 import { investorDomainService } from '@/lib/investorDomainService';
@@ -72,8 +73,12 @@ export const InvestorProfileSettings: React.FC<InvestorProfileSettingsProps> = (
   );
   const [isSaved, setIsSaved] = useState(false);
 
-  // Sync if profile is updated elsewhere
+  // Sync if profile is updated elsewhere or load from database on mount
   useEffect(() => {
+    syncInvestorProfileFromBackend(investorId).then((synced) => {
+      if (synced) setProfile(synced);
+    }).catch(() => {});
+
     const handleProfileUpdate = (e: Event) => {
       const ce = e as CustomEvent;
       if (ce.detail?.profile) {

@@ -153,17 +153,19 @@ export async function POST(req: NextRequest) {
       // In serverless / read-only disk environments (Vercel), ignore disk write failure
     }
 
-    // Prefer Cloudflare R2 public CDN URL if available, else MongoDB serving endpoint
-    const durableUrl = r2Uploaded && r2Url ? r2Url : `/api/uploads/${uploadId}`;
+    // Durable serving URL: /api/uploads/${uploadId} serves directly from MongoDB Atlas
+    // with zero dependency on unmapped external DNS domains (e.g. media.xentro.in)
+    const durableUrl = `/api/uploads/${uploadId}`;
 
     return NextResponse.json({
       success: true,
       url: durableUrl,
+      r2Url: r2Url || undefined,
       id: uploadId,
       filename: cleanOriginalName,
       size: buffer.length,
       mimeType,
-      storage: r2Uploaded ? 'cloudflare-r2' : 'mongodb-atlas',
+      storage: r2Uploaded ? 'cloudflare-r2-and-mongodb' : 'mongodb-atlas',
     });
   } catch (err: any) {
     console.error('[Upload API] Error saving file:', err);
