@@ -419,7 +419,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               ? 'bg-gray-100/90 dark:bg-[#202422] text-[#101212] dark:text-white ring-1 ring-[#D9FF3F]'
               : 'bg-transparent text-[#565B59] hover:bg-gray-100/60 dark:hover:bg-[#202422]/60'
           }`}
-          title={!isExpanded ? (isExplorer ? 'Personal Profile' : 'Preview Profile') : undefined}
+          title={!isExpanded ? (activeEntity ? `${activeEntity.name} (${activeEntity.entityType})` : (isExplorer ? 'Personal Profile' : 'Preview Profile')) : undefined}
           aria-label="Profile"
         >
           <div
@@ -429,8 +429,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
           >
             <div className={`w-8 h-8 rounded-full overflow-hidden border border-gray-200 dark:border-gray-700 transition-all duration-200 group-hover:scale-110 group-hover:ring-2 group-hover:ring-[#D9FF3F] ${activeTab === 'profile' ? 'ring-2 ring-[#D9FF3F]' : ''}`}>
               <img
-                src={profile.avatar || GUEST_AVATAR}
-                alt={profile.name || 'User Profile'}
+                src={activeEntity ? (activeEntity.logo || '/xentro-logo.png') : (profile.avatar || GUEST_AVATAR)}
+                alt={activeEntity ? activeEntity.name : (profile.name || 'User Profile')}
+                onError={(e) => {
+                  (e.target as HTMLImageElement).src = activeEntity ? '/xentro-logo.png' : GUEST_AVATAR;
+                }}
                 className="w-full h-full object-cover object-top transition-transform"
               />
             </div>

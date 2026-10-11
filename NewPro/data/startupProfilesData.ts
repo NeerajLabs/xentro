@@ -914,7 +914,7 @@ startupProfilesData["st_xentro"] = startupProfilesData.st_1;
 // Fallback generator based on mockRecommendedStartups
 import { mockRecommendedStartups } from "@/data/discoverData";
 
-export function getStartupProfileById(id: string): FullStartupProfile {
+export function getStartupProfileById(id: string, fallbackCard?: any): FullStartupProfile {
   const normId = (id || '').trim();
   if (startupProfilesData[normId]) {
     return startupProfilesData[normId];
@@ -929,12 +929,73 @@ export function getStartupProfileById(id: string): FullStartupProfile {
     return startupProfilesData.st_1;
   }
 
-  const base = mockRecommendedStartups.find(
+  // 1. Check if a dynamic card object was passed directly
+  let rawBase: any = fallbackCard || mockRecommendedStartups.find(
     (st) => st.id === normId || st.name.toLowerCase() === normId.toLowerCase()
   );
-  if (!base) {
+
+  // 2. If not found, inspect localStorage user linked entities
+  if (!rawBase && typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('xentro_user_linked_entities');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          const matched = parsed.find(
+            (e: any) => e.id === normId || e.name?.toLowerCase() === normId.toLowerCase()
+          );
+          if (matched) {
+            rawBase = {
+              id: matched.id,
+              name: matched.name,
+              logo: matched.logo || '/xentro-logo.png',
+              description: matched.pitch || matched.details?.pitch || 'Building next-generation solutions',
+              stage: matched.stage || matched.details?.stage || 'Seed',
+              industry: matched.sector || matched.details?.sector || 'Enterprise SaaS / Platform',
+              location: matched.details?.location || 'India',
+              tags: ['Enterprise SaaS', 'Platform', 'AI Ecosystem'],
+              founder: {
+                name: matched.primaryOwnerName || 'Founder',
+                role: 'Founder & CEO',
+                avatar: matched.logo || '/xentro-logo.png',
+              },
+            };
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!rawBase) {
     return startupProfilesData.st_1;
   }
+
+  // Ensure safe fallback sub-properties to prevent runtime errors
+  const base = {
+    ...rawBase,
+    id: rawBase.id || normId,
+    name: rawBase.name || 'Startup Venture',
+    logo: rawBase.logo || '/xentro-logo.png',
+    description: rawBase.description || rawBase.oneLiner || 'Autonomous Venture connected via Xentro ecosystem.',
+    stage: rawBase.stage || 'Early Stage',
+    industry: rawBase.industry || rawBase.sector || 'Enterprise SaaS / Platform',
+    tags: Array.isArray(rawBase.tags) && rawBase.tags.length > 0 ? rawBase.tags : ['Enterprise SaaS', 'Platform'],
+    needsHelpWith: (Array.isArray(rawBase.needsHelpWith) && rawBase.needsHelpWith.length > 0
+      ? rawBase.needsHelpWith
+      : ['System Architecture', 'Scale Infrastructure', 'Institutional Advisory']) as string[],
+    fundingRaised: rawBase.fundingRaised || '$1.2M',
+    founder: rawBase.founder && typeof rawBase.founder === 'object' ? {
+      name: rawBase.founder.name || 'Founder',
+      role: rawBase.founder.role || 'Founder & CEO',
+      avatar: rawBase.founder.avatar || rawBase.logo || '/xentro-logo.png',
+    } : {
+      name: 'Founder',
+      role: 'Founder & CEO',
+      avatar: rawBase.logo || '/xentro-logo.png',
+    },
+  };
 
   // Synthesize a complete high-fidelity profile
   return {
@@ -947,7 +1008,7 @@ export function getStartupProfileById(id: string): FullStartupProfile {
       industry: base.industry,
       subSector: base.tags.join(" & "),
       businessModelType: "B2B",
-      foundedYear: 2023,
+      foundedYear: 2024,
       location: base.location,
       operatingGeography: ["India", "APAC"],
       website: "https://" + base.name.toLowerCase().replace(/[^a-z0-9]/g, "") + ".example.com",
@@ -1139,7 +1200,7 @@ export function getStartupProfileById(id: string): FullStartupProfile {
         customerType: "Enterprise & Mid-market",
       },
     },
-    currentAsks: base.needsHelpWith.map((need, index) => ({
+    currentAsks: base.needsHelpWith.map((need: string, index: number) => ({
       id: "ask_" + base.id + "_" + index,
       type: (index === 0 ? "Corporate Pilot" : index === 1 ? "Mentorship" : "Talent") as any,
       title: need,
@@ -1173,7 +1234,7 @@ export function getStartupProfileById(id: string): FullStartupProfile {
         },
       ],
     },
-    nonFinancialAsks: base.needsHelpWith.slice(0, 2).map((need, idx) => ({
+    nonFinancialAsks: base.needsHelpWith.slice(0, 2).map((need: string, idx: number) => ({
       id: "nfa_" + base.id + "_" + idx,
       type: "Mentorship",
       title: need,

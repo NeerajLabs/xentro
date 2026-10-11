@@ -203,12 +203,14 @@ export const CreatePostTrigger: React.FC<CreatePostTriggerProps> = ({
         <button
           type="button"
           onClick={() => onOpenModal()}
-          className="flex-1 text-left px-4 py-2.5 sm:py-3 rounded-full bg-gray-50 hover:bg-gray-100 dark:bg-[#101212] dark:hover:bg-[#151817] border border-[#E5E7EB] dark:border-[#262A29] text-xs sm:text-sm text-[#737876] dark:text-[#8E9290] hover:text-[#101212] dark:hover:text-white transition-all duration-150 cursor-pointer flex items-center justify-between group"
+          className="flex-1 min-w-0 text-left pl-4 pr-2 sm:pr-3 py-2 sm:py-2.5 rounded-full bg-gray-50 hover:bg-gray-100 dark:bg-[#101212] dark:hover:bg-[#151817] border border-[#E5E7EB] dark:border-[#262A29] transition-all duration-150 cursor-pointer flex items-center justify-between gap-2 sm:gap-3 group"
         >
-          <span className="truncate pr-2">{badge.placeholder}</span>
-          <span className="hidden sm:inline-flex items-center gap-1 text-[11px] font-bold text-[#101212] dark:text-[#D9FF3F] px-2.5 py-1 rounded-full bg-white dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#2A2E2C] group-hover:scale-105 transition-transform flex-shrink-0">
+          <span className="flex-1 min-w-0 truncate text-xs sm:text-sm text-[#737876] dark:text-[#8E9290] group-hover:text-[#101212] dark:group-hover:text-white transition-colors">
+            {badge.placeholder}
+          </span>
+          <span className="flex-shrink-0 inline-flex items-center gap-1.5 text-xs font-bold text-[#101212] bg-[#D9FF3F] hover:bg-[#cbf42e] px-3 py-1 rounded-full shadow-2xs group-hover:scale-105 transition-transform">
             <Send className="w-3 h-3" />
-            Post
+            <span>Post</span>
           </span>
         </button>
       </div>

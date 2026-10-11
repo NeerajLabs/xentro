@@ -37,6 +37,7 @@ import { getStartupProfileById } from '@/data/startupProfilesData';
 import { ESPProfileView } from '@/components/dashboard/ESPProfileView';
 import { getESPProfileById } from '@/data/espProfilesData';
 import { getStartupGhostMode, getStartupOverallVisibility, StartupOverallVisibility } from '@/lib/startupProfileState';
+import { entityContextService } from '@/lib/entityContextService';
 
 interface MentorDiscoverProps {
   startups?: any[];
@@ -407,11 +408,22 @@ export const MentorDiscover: React.FC<MentorDiscoverProps> = ({
       );
     }
     if (selectedProfileItem.type === 'startup') {
-      const fullStartup = getStartupProfileById(selectedProfileItem.data.id);
+      const fullStartup = getStartupProfileById(
+        selectedProfileItem.data.id,
+        selectedProfileItem.data
+      );
+      const activeEnt = typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null;
+      const linkedEnts = typeof window !== 'undefined' ? entityContextService.getLinkedEntities() : [];
+      const isUserOwner = Boolean(
+        (activeEnt && activeEnt.id === selectedProfileItem.data.id) ||
+        linkedEnts.some((e) => e.id === selectedProfileItem.data.id)
+      );
+
       return (
         <StartupProfileView
           startupData={fullStartup}
           startupId={selectedProfileItem.data.id}
+          isOwnProfile={isUserOwner}
           onBackToDiscover={() => setSelectedProfileItem(null)}
         />
       );

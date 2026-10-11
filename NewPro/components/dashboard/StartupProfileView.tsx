@@ -301,27 +301,62 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
     };
   }, []);
 
+  const [dbStartupProfile, setDbStartupProfile] = useState<any>(null);
+
+  // Fetch authoritative startup profile from MongoDB if viewing a registered startup
+  React.useEffect(() => {
+    const targetEntityId = startupId || (activeEntity?.id || (typeof window !== 'undefined' ? entityContextService.getActiveEntity()?.id : null));
+    if (!targetEntityId || targetEntityId === 'st_1') return;
+
+    let cancelled = false;
+    fetch(`/api/startups/${targetEntityId}`)
+      .then((res) => res.json())
+      .then((json) => {
+        if (!cancelled && json?.success && json?.data?.startup) {
+          setDbStartupProfile(json.data.startup);
+        }
+      })
+      .catch((err) => {
+        console.debug('[StartupProfileView] MongoDB load error:', err);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [startupId, activeEntity?.id]);
+
+  const linkedEntities = typeof window !== 'undefined' ? entityContextService.getLinkedEntities() : [];
+  const currentActiveEntity = activeEntity || (typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null);
+  const matchedEntity = (startupId ? linkedEntities.find((e) => e.id === startupId) : null) || currentActiveEntity;
+
+  // Own profile = YOUR data; others = selected profile data
+  const isOwnStartup = Boolean(isOwnProfile)
+    || (!startupId && userProfile.role === "startup")
+    || Boolean(currentActiveEntity?.id && startupId === currentActiveEntity.id)
+    || Boolean(startupId && linkedEntities.some((e) => e.id === startupId));
+
   // Load startup data dynamically with full schema safety
-  const defaultTemplate = getStartupProfileById(startupId || "st_1") || getStartupProfileById("st_1") || {} as any;
+  const defaultTemplate = getStartupProfileById(startupId || "st_1", startupData || dbStartupProfile) || getStartupProfileById("st_1") || {} as any;
   const baseStartup: FullStartupProfile = {
     ...defaultTemplate,
     ...(startupData || {}),
+    ...(dbStartupProfile || {}),
     identity: {
       ...(defaultTemplate?.identity || {}),
       ...(startupData?.identity || {}),
+      ...(dbStartupProfile?.identity || {}),
     },
     overview: {
       ...(defaultTemplate?.overview || {}),
       ...(startupData?.overview || {}),
+      ...(dbStartupProfile?.overview || {}),
     },
     team: {
       ...(defaultTemplate?.team || { founders: [], leadership: [], core: [], advisors: [], openRoles: [] }),
       ...(startupData?.team || {}),
+      ...(dbStartupProfile?.team || {}),
     },
   };
-
-  // Own profile = YOUR data; others = selected profile data
-  const isOwnStartup = Boolean(isOwnProfile) || (isOwnProfile === undefined && !startupId);
 
   const parsedFoundedYear = basicInfoOverride?.foundedYear
     ? parseInt(basicInfoOverride.foundedYear, 10) || (isOwnStartup ? 0 : baseStartup.identity.foundedYear)
@@ -348,9 +383,6 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
       }).filter((s) => s.title)
     : (Array.isArray(baseStartup?.unsdg) ? baseStartup.unsdg : []);
 
-  const linkedEntities = typeof window !== 'undefined' ? entityContextService.getLinkedEntities() : [];
-  const currentActiveEntity = activeEntity || (typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null);
-  const matchedEntity = (startupId ? linkedEntities.find((e) => e.id === startupId) : null) || currentActiveEntity;
   const effectiveOrg = (userProfile.organization && userProfile.organization.trim().toUpperCase() !== 'N/A' && userProfile.organization.trim().toLowerCase() !== 'none') ? userProfile.organization.trim() : '';
   const baseName = baseStartup.identity?.name && baseStartup.identity.name.trim().toUpperCase() !== 'N/A' && baseStartup.identity.name !== 'Your Startup' ? baseStartup.identity.name : null;
   const resolvedStartupName = basicInfoOverride?.startupName
