@@ -54,11 +54,76 @@ export function formatMessageTime(rawTimestamp?: string): string {
   return trimmed;
 }
 
+export function formatIdToName(id: string): string {
+  if (!id) return 'User';
+  let clean = id
+    .replace(/^(usr_|ent_|conn_|msg_|user_|acc_)/i, '')
+    .replace(/_[a-f0-9]{6,}$/i, '')
+    .replace(/_[0-9]{10,}$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  if (!clean || clean.toLowerCase() === 'member' || clean.toLowerCase() === 'partner') {
+    return 'User';
+  }
+  return clean
+    .split(' ')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
+export function resolvePartnerFromLocalStorage(partnerId: string, convId?: string): { name?: string; role?: string; avatar?: string; company?: string } | null {
+  if (typeof window === 'undefined') return null;
+  const pNorm = (partnerId || '').toLowerCase().trim();
+
+  try {
+    const partnersRaw = localStorage.getItem('xentro_connections_partners_v2');
+    if (partnersRaw) {
+      const partners: any[] = JSON.parse(partnersRaw);
+      const match = partners.find((p) => (p.id || '').toLowerCase() === pNorm || (convId && p.connectionId && convId.includes(p.connectionId)));
+      if (match && match.name && match.name !== 'Member' && match.name !== 'Partner') {
+        return { name: match.name, role: match.role || 'Explorer', avatar: match.avatar, company: match.company };
+      }
+    }
+
+    const connsRaw = localStorage.getItem('xentro_connections_v2');
+    if (connsRaw) {
+      const conns: any[] = JSON.parse(connsRaw);
+      const match = conns.find((c) =>
+        (c.senderId || '').toLowerCase() === pNorm ||
+        (c.recipientId || '').toLowerCase() === pNorm ||
+        (convId && (c.id === convId || convId.includes(c.id) || c.id.includes(convId)))
+      );
+      if (match) {
+        const isSender = (match.senderId || '').toLowerCase() === pNorm;
+        const cName = isSender ? match.senderName : match.recipientName;
+        const cRole = isSender ? match.senderRole : match.recipientRole;
+        const cAvatar = isSender ? match.senderAvatar : match.recipientAvatar;
+        if (cName && cName !== 'Member' && cName !== 'Partner' && cName !== 'Sender') {
+          return { name: cName, role: cRole || 'Explorer', avatar: cAvatar };
+        }
+      }
+    }
+
+    const entRaw = localStorage.getItem('xentro_all_entities_v1');
+    if (entRaw) {
+      const ents: any[] = JSON.parse(entRaw);
+      const match = ents.find((e) => (e.id || '').toLowerCase() === pNorm || (e.entityId || '').toLowerCase() === pNorm);
+      if (match && match.name) {
+        return { name: match.name, role: match.entityType || 'Startup', avatar: match.logo, company: match.name };
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return null;
+}
+
 export function resolveAvatarUrl(avatar?: string | null, name?: string | null): string {
   if (avatar && avatar !== '/xentro-logo.png' && !avatar.includes('xentro-logo.png') && avatar.trim().length > 0) {
     return avatar;
   }
-  const cleanName = (name || 'Member').trim();
+  const cleanName = (name || 'User').trim();
   return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(cleanName)}`;
 }
 
@@ -401,6 +466,8 @@ export const messagingService = {
       const persona = getActiveMessagingPersona();
       const personalId = normalizeId(persona.personalUserId);
       const entityId = persona.isEntity ? normalizeId(persona.entityId) : '';
+      const currentNorm = normalizeId(persona.id).toLowerCase();
+      const personalNorm = personalId.toLowerCase();
 
       const params = new URLSearchParams();
       if (userId) {
@@ -431,40 +498,84 @@ export const messagingService = {
 
       remoteConvs.forEach((rc: any) => {
         const convId = rc.id;
-        const partner = rc.partner || rc.user || {};
-        const partnerName = partner.name || 'Member';
-        const partnerAvatar = resolveAvatarUrl(partner.avatar, partnerName);
+        const participants = rc.participants || [persona.id, rc.partner?.id || rc.user?.id];
+        const otherId = (participants || []).find((p: string) => {
+          const pNorm = normalizeId(p).toLowerCase();
+          return pNorm !== currentNorm && pNorm !== personalNorm;
+        }) || rc.partner?.id || rc.user?.id || '';
+
+        const existingMeta = customMap.get(convId.toLowerCase());
+        const rawPartner = rc.partner || rc.user || {};
+        let partnerName = (rawPartner.name && rawPartner.name !== 'Member' && rawPartner.name !== 'Partner') ? rawPartner.name : '';
+
+        // Check local storage connections and partners
+        if (!partnerName && otherId) {
+          const loc = resolvePartnerFromLocalStorage(otherId, convId);
+          if (loc?.name) {
+            partnerName = loc.name;
+            if (!rawPartner.role || rawPartner.role === 'Member') rawPartner.role = loc.role;
+            if (!rawPartner.avatar) rawPartner.avatar = loc.avatar;
+          }
+        }
+
+        // Check existing local meta
+        if (!partnerName && existingMeta?.user?.name && existingMeta.user.name !== 'Member' && existingMeta.user.name !== 'Partner') {
+          partnerName = existingMeta.user.name;
+          if (!rawPartner.role || rawPartner.role === 'Member') rawPartner.role = existingMeta.user.role;
+          if (!rawPartner.avatar) rawPartner.avatar = existingMeta.user.avatar;
+        }
+
+        // Check system welcome message in thread messages
+        if (!partnerName && Array.isArray(rc.messages)) {
+          for (const m of rc.messages) {
+            const t = m.text || m.content || '';
+            const match = t.match(/You and (.+?) are now connected/i);
+            if (match && match[1] && match[1].trim() && match[1].trim() !== 'your connection') {
+              partnerName = match[1].trim();
+              break;
+            }
+          }
+        }
+
+        // Clean fallback from otherId
+        if (!partnerName) {
+          partnerName = formatIdToName(otherId);
+        }
+
+        const partnerAvatar = resolveAvatarUrl(rawPartner.avatar, partnerName);
         const partnerUser: User = {
-          id: partner.id || 'usr_partner',
+          id: otherId || rawPartner.id || 'usr_partner',
           name: partnerName,
           username: `@${partnerName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-          role: partner.role || 'Member',
-          company: partner.company || partnerName || 'Xentro Network',
+          role: (rawPartner.role && rawPartner.role !== 'Member') ? rawPartner.role : 'Explorer',
+          company: rawPartner.company || partnerName || 'Xentro Network',
           avatar: partnerAvatar,
           verified: true,
           status: 'Active now',
         };
 
-        const participants = rc.participants || [persona.id, partner.id];
         const currentAvatar = resolveAvatarUrl(persona.avatar, persona.name);
+
+        const mergedUsers: Record<string, User> = {
+          ...(rc.users || {}),
+          [persona.id]: {
+            id: persona.id,
+            name: persona.name,
+            username: `@${(persona.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+            role: persona.role,
+            company: persona.company,
+            avatar: currentAvatar,
+            verified: true,
+            status: 'Active now',
+          },
+          [partnerUser.id]: partnerUser,
+        };
 
         const meta: StoredConversationMeta = {
           id: convId,
           user: partnerUser,
           participants,
-          users: {
-            [persona.id]: {
-              id: persona.id,
-              name: persona.name,
-              username: `@${(persona.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-              role: persona.role,
-              company: persona.company,
-              avatar: currentAvatar,
-              verified: true,
-              status: 'Active now',
-            },
-            [partner.id]: partnerUser,
-          },
+          users: mergedUsers,
           createdAt: rc.createdAt || new Date().toISOString(),
           updatedAt: rc.updatedAt || new Date().toISOString(),
           lastMessage: rc.lastMessage,
@@ -649,27 +760,109 @@ export const messagingService = {
         }
       }
 
-      // Safeguard: Never show current user or active entity as the partner in their own conversation list
-      if (
+      // Find other participant ID
+      const otherParticipantId = (c.participants || []).find((p) => {
+        const pNorm = normalizeId(p).toLowerCase();
+        return pNorm !== currentNorm && pNorm !== personalNorm;
+      }) || (partnerUser?.id && normalizeId(partnerUser.id).toLowerCase() !== currentNorm ? partnerUser.id : '');
+
+      // Ensure partnerUser is never undefined, never generic 'Member' or 'Partner', and never the viewer itself
+      const isPartnerInvalid =
+        !partnerUser ||
+        !partnerUser.name ||
+        partnerUser.name === 'Member' ||
+        partnerUser.name === 'Partner' ||
         (partnerUser.id && (partnerUser.id.toLowerCase() === currentNorm || partnerUser.id.toLowerCase() === personalNorm)) ||
-        (partnerUser.name && partnerUser.name.toLowerCase().trim() === persona.name.toLowerCase().trim())
-      ) {
-        let realPartner: User | null = null;
+        (partnerUser.name && partnerUser.name.toLowerCase().trim() === persona.name.toLowerCase().trim());
+
+      if (isPartnerInvalid) {
+        let resolvedName = '';
+        let resolvedRole = 'Explorer';
+        let resolvedAvatar = '';
+        let resolvedCompany = '';
+
+        // 1. Try finding a non-self, non-Member user in c.users
         if (c.users) {
           for (const key of Object.keys(c.users)) {
             const u = c.users[key];
             const uNorm = u?.id?.toLowerCase();
-            if (u && uNorm !== currentNorm && uNorm !== personalNorm && u.name.toLowerCase().trim() !== persona.name.toLowerCase().trim()) {
-              realPartner = u;
+            if (
+              u &&
+              uNorm !== currentNorm &&
+              uNorm !== personalNorm &&
+              u.name &&
+              u.name !== 'Member' &&
+              u.name !== 'Partner' &&
+              u.name.toLowerCase().trim() !== persona.name.toLowerCase().trim()
+            ) {
+              resolvedName = u.name;
+              resolvedRole = u.role || resolvedRole;
+              resolvedAvatar = u.avatar || resolvedAvatar;
+              resolvedCompany = u.company || resolvedCompany;
               break;
             }
           }
         }
-        if (realPartner) {
-          partnerUser = realPartner;
-        } else {
-          continue;
+
+        // 2. Try Local Storage Connections / Partners
+        if (!resolvedName && otherParticipantId) {
+          const loc = resolvePartnerFromLocalStorage(otherParticipantId, c.id);
+          if (loc?.name) {
+            resolvedName = loc.name;
+            resolvedRole = loc.role || resolvedRole;
+            resolvedAvatar = loc.avatar || resolvedAvatar;
+            resolvedCompany = loc.company || resolvedCompany;
+          }
         }
+
+        // 3. Try System connection welcome message in rawList
+        if (!resolvedName) {
+          const sysMsg = rawList.find(
+            (m) =>
+              (m.conversationId || '').toLowerCase() === c.id.toLowerCase() &&
+              (m.text || '').includes('You and ') &&
+              (m.text || '').includes('are now connected')
+          );
+          if (sysMsg) {
+            const match = (sysMsg.text || '').match(/You and (.+?) are now connected/i);
+            if (match && match[1] && match[1].trim() && match[1].trim() !== 'your connection') {
+              resolvedName = match[1].trim();
+            }
+          }
+        }
+
+        // 4. Try Messages in thread for any message sent by the other user
+        if (!resolvedName) {
+          const partnerMsg = rawList.find(
+            (m) =>
+              (m.conversationId || '').toLowerCase() === c.id.toLowerCase() &&
+              normalizeId(m.senderId).toLowerCase() !== currentNorm &&
+              normalizeId(m.senderId).toLowerCase() !== personalNorm &&
+              m.senderName &&
+              m.senderName !== 'Member' &&
+              m.senderName !== 'Partner' &&
+              m.senderName.toLowerCase().trim() !== persona.name.toLowerCase().trim()
+          );
+          if (partnerMsg?.senderName) {
+            resolvedName = partnerMsg.senderName;
+          }
+        }
+
+        // 5. Clean fallback from otherParticipantId
+        if (!resolvedName) {
+          resolvedName = formatIdToName(otherParticipantId);
+        }
+
+        partnerUser = {
+          id: otherParticipantId || partnerUser?.id || 'usr_partner',
+          name: resolvedName,
+          username: `@${resolvedName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+          role: (resolvedRole && resolvedRole !== 'Member') ? resolvedRole : 'Explorer',
+          company: resolvedCompany || resolvedName,
+          avatar: resolveAvatarUrl(resolvedAvatar, resolvedName),
+          verified: true,
+          status: 'Active now',
+        };
       }
 
       // Messages in this thread (case-insensitive conversationId matching)
@@ -797,15 +990,32 @@ export const messagingService = {
     const sortedPair = [currentNorm.toLowerCase(), partnerNorm.toLowerCase()].sort();
     const convId = `conv_${sortedPair[0]}_${sortedPair[1]}`;
 
-    const partnerAvatar = resolveAvatarUrl(partner.avatar, partner.name);
+    let partnerName = (partner.name && partner.name !== 'Member' && partner.name !== 'Partner') ? partner.name : '';
+    let partnerRole = (partner.role && partner.role !== 'Member') ? partner.role : 'Explorer';
+    let partnerAvatarRaw = partner.avatar;
+
+    if (!partnerName) {
+      const loc = resolvePartnerFromLocalStorage(partner.id, convId);
+      if (loc?.name) {
+        partnerName = loc.name;
+        if (loc.role) partnerRole = loc.role;
+        if (loc.avatar) partnerAvatarRaw = loc.avatar;
+      }
+    }
+
+    if (!partnerName) {
+      partnerName = formatIdToName(partner.id);
+    }
+
+    const partnerAvatar = resolveAvatarUrl(partnerAvatarRaw, partnerName);
     const currentAvatar = resolveAvatarUrl(persona.avatar, persona.name);
 
     const partnerUser: User = {
       id: partner.id,
-      name: partner.name,
-      username: `@${partner.name.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
-      role: partner.role || 'Member',
-      company: partner.company || partner.name,
+      name: partnerName,
+      username: `@${partnerName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+      role: partnerRole,
+      company: partner.company || partnerName,
       avatar: partnerAvatar,
       verified: true,
       status: 'Active now',
@@ -823,9 +1033,9 @@ export const messagingService = {
     };
 
     const customList = this.getCustomConversations();
-    const existing = customList.find((c) => c.id.toLowerCase() === convId.toLowerCase());
+    const existingIndex = customList.findIndex((c) => c.id.toLowerCase() === convId.toLowerCase());
 
-    if (!existing) {
+    if (existingIndex < 0) {
       const newMeta: StoredConversationMeta = {
         id: convId,
         user: partnerUser,
@@ -846,7 +1056,7 @@ export const messagingService = {
           id: `msg_kickoff_${Date.now()}`,
           conversationId: convId,
           senderId: partner.id,
-          senderName: partner.name,
+          senderName: partnerName,
           text: partner.initialMessage,
           timestamp: timeStr,
           readBy: [currentUserId],
@@ -855,6 +1065,17 @@ export const messagingService = {
         const currentRaw = this.getRawMessages();
         this.saveRawMessages([...currentRaw, welcomeMsg]);
       }
+    } else {
+      const existing = customList[existingIndex];
+      existing.user = partnerUser;
+      if (!existing.users) existing.users = {};
+      existing.users[partner.id] = partnerUser;
+      existing.users[currentUserId] = currentUserObj;
+      if (!existing.participants || existing.participants.length === 0) {
+        existing.participants = [currentUserId, partner.id];
+      }
+      customList[existingIndex] = existing;
+      this.saveCustomConversations(customList);
     }
 
     this.setActiveConversationId(convId);

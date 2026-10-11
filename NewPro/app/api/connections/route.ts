@@ -8,6 +8,23 @@ export const runtime = 'nodejs';
 
 const BACKEND_BASE = getBackendBaseUrl();
 
+function formatIdToName(id: string): string {
+  if (!id) return 'User';
+  let clean = id
+    .replace(/^(usr_|ent_|conn_|msg_|user_|acc_)/i, '')
+    .replace(/_[a-f0-9]{6,}$/i, '')
+    .replace(/_[0-9]{10,}$/i, '')
+    .replace(/[_-]+/g, ' ')
+    .trim();
+  if (!clean || clean.toLowerCase() === 'member' || clean.toLowerCase() === 'partner') {
+    return 'User';
+  }
+  return clean
+    .split(' ')
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -72,22 +89,37 @@ export async function GET(req: NextRequest) {
       .sort({ updatedAt: -1, createdAt: -1 })
       .toArray();
 
-    const connections = rawConnections.map((c: any) => ({
-      id: c.id || String(c._id),
-      senderId: c.senderId,
-      senderName: c.senderName || 'Member',
-      senderRole: c.senderRole || 'Member',
-      senderAvatar: c.senderAvatar || '/xentro-logo.png',
-      recipientId: c.recipientId,
-      recipientName: c.recipientName || 'Member',
-      recipientRole: c.recipientRole || 'Member',
-      recipientAvatar: c.recipientAvatar || '/xentro-logo.png',
-      status: c.status || 'pending',
-      note: c.note || '',
-      createdAt: c.createdAt || new Date().toISOString(),
-      updatedAt: c.updatedAt || new Date().toISOString(),
-      pair_key: c.pair_key || undefined,
-    }));
+    const connections = rawConnections.map((c: any) => {
+      const sName = (c.senderName && c.senderName !== 'Member' && c.senderName !== 'Partner')
+        ? c.senderName
+        : formatIdToName(c.senderId);
+      const rName = (c.recipientName && c.recipientName !== 'Member' && c.recipientName !== 'Partner')
+        ? c.recipientName
+        : formatIdToName(c.recipientId);
+      const sAvatar = (c.senderAvatar && !c.senderAvatar.includes('xentro-logo.png') && c.senderAvatar !== '/xentro-logo.png')
+        ? c.senderAvatar
+        : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(sName)}`;
+      const rAvatar = (c.recipientAvatar && !c.recipientAvatar.includes('xentro-logo.png') && c.recipientAvatar !== '/xentro-logo.png')
+        ? c.recipientAvatar
+        : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(rName)}`;
+
+      return {
+        id: c.id || String(c._id),
+        senderId: c.senderId,
+        senderName: sName,
+        senderRole: (c.senderRole && c.senderRole !== 'Member') ? c.senderRole : 'Explorer',
+        senderAvatar: sAvatar,
+        recipientId: c.recipientId,
+        recipientName: rName,
+        recipientRole: (c.recipientRole && c.recipientRole !== 'Member') ? c.recipientRole : 'Explorer',
+        recipientAvatar: rAvatar,
+        status: c.status || 'pending',
+        note: c.note || '',
+        createdAt: c.createdAt || new Date().toISOString(),
+        updatedAt: c.updatedAt || new Date().toISOString(),
+        pair_key: c.pair_key || undefined,
+      };
+    });
 
     // Calculate metrics and connected partners
     const acceptedList = connections.filter((c) => c.status === 'accepted');

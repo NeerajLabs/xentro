@@ -2,7 +2,7 @@
 
 import { getUserProfile } from './userProfile';
 import { notificationService } from './notificationService';
-import { messagingService, resolveAvatarUrl } from './messagingService';
+import { messagingService, resolveAvatarUrl, formatIdToName } from './messagingService';
 import { entityContextService } from './entityContextService';
 
 export const CONNECTIONS_STORAGE_KEY = 'xentro_connections_v2';
@@ -174,7 +174,7 @@ export const connectionService = {
   /** Alias for requestConnection */
   async sendRequest(partner: string | { id: string; name: string; role: string; avatar?: string }): Promise<ConnectionRecord> {
     if (typeof partner === 'string') {
-      return this.requestConnection({ id: partner, name: 'Member', role: 'Member' });
+      return this.requestConnection({ id: partner, name: formatIdToName(partner), role: 'Explorer' });
     }
     return this.requestConnection(partner);
   },
@@ -399,6 +399,11 @@ export const connectionService = {
     const recipientId = normalizeUserId(partner.id);
     const connId = `conn_${[senderId.toLowerCase(), recipientId.toLowerCase()].sort().join('_')}`;
 
+    const recipientName = (partner.name && partner.name !== 'Member' && partner.name !== 'Partner')
+      ? partner.name
+      : formatIdToName(recipientId);
+    const recipientRole = (partner.role && partner.role !== 'Member') ? partner.role : 'Explorer';
+
     const newConn: ConnectionRecord = {
       id: connId,
       senderId,
@@ -406,9 +411,9 @@ export const connectionService = {
       senderRole: persona.role,
       senderAvatar: resolveAvatarUrl(persona.avatar, persona.name),
       recipientId,
-      recipientName: partner.name,
-      recipientRole: partner.role,
-      recipientAvatar: resolveAvatarUrl(partner.avatar, partner.name),
+      recipientName,
+      recipientRole,
+      recipientAvatar: resolveAvatarUrl(partner.avatar, recipientName),
       status: 'pending',
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -466,11 +471,12 @@ export const connectionService = {
 
     if (!conn) {
       // Synthesize shell if not found locally
+      const partnerCleanName = formatIdToName(partnerNorm);
       conn = {
         id: connectionId || `conn_${[currentNorm, partnerNorm].sort().join('_')}`,
         senderId: partnerNorm,
-        senderName: 'Partner',
-        senderRole: 'Member',
+        senderName: partnerCleanName,
+        senderRole: 'Explorer',
         recipientId: currentNorm,
         recipientName: persona.name,
         recipientRole: persona.role,
@@ -514,8 +520,10 @@ export const connectionService = {
     const isSender = normalizeUserId(conn.senderId) === currentNorm || normalizeUserId(conn.senderId) === personalNorm;
     const resolvedPartnerId = isSender ? conn.recipientId : conn.senderId;
     const rawPartnerName = isSender ? conn.recipientName : conn.senderName;
-    const resolvedPartnerName = (rawPartnerName && rawPartnerName !== 'Partner' && rawPartnerName !== 'Sender') ? rawPartnerName : 'your connection';
-    const resolvedPartnerRole = (isSender ? conn.recipientRole : conn.senderRole) || 'Startup';
+    const resolvedPartnerName = (rawPartnerName && rawPartnerName !== 'Partner' && rawPartnerName !== 'Sender' && rawPartnerName !== 'Member')
+      ? rawPartnerName
+      : formatIdToName(resolvedPartnerId);
+    const resolvedPartnerRole = (isSender ? conn.recipientRole : conn.senderRole) || 'Explorer';
     const resolvedPartnerAvatar = resolveAvatarUrl(isSender ? conn.recipientAvatar : conn.senderAvatar, resolvedPartnerName);
 
     messagingService.startOrOpenConversation({

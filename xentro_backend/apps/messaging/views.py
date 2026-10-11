@@ -8,6 +8,7 @@ Enforces Connection-Gated Messaging:
 import uuid
 import datetime
 import urllib.parse
+import re
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from integrations.mongodb import get_collection
@@ -295,6 +296,27 @@ class ConversationsListView(APIView):
                     elif roles:
                         partner_role = roles[0]
                     partner_company = u_doc.get("organization") or u_doc.get("entityName") or partner_name
+
+            # Additional fallbacks to ensure partner_name never stays generic
+            if partner_name in ["Connected Member", "Member", "Partner", "Sender", ""]:
+                sys_m = msg_col.find_one({"conversationId": c.get("id"), "text": {"$regex": r"Connection established! You and (.+?) are now connected"}})
+                if sys_m:
+                    m_match = re.search(r"You and (.+?) are now connected", sys_m.get("text", "") or sys_m.get("content", ""))
+                    if m_match and m_match.group(1).strip() and m_match.group(1).strip() != "your connection":
+                        partner_name = m_match.group(1).strip()
+
+            if partner_name in ["Connected Member", "Member", "Partner", "Sender", ""]:
+                if other_id:
+                    clean_id = re.sub(r"^(usr_|ent_|conn_|msg_|user_|acc_)", "", other_id, flags=re.I)
+                    clean_id = re.sub(r"_[a-f0-9]{6,}$", "", clean_id, flags=re.I)
+                    clean_id = re.sub(r"_[0-9]{10,}$", "", clean_id, flags=re.I)
+                    clean_id = re.sub(r"[_-]+", " ", clean_id).strip()
+                    if clean_id and clean_id.lower() not in ["member", "partner", "user"]:
+                        partner_name = " ".join([w.capitalize() for w in clean_id.split()])
+                    else:
+                        partner_name = "User"
+                else:
+                    partner_name = "User"
 
             # Ensure neutral initials avatar instead of brand logo
             if not partner_avatar or partner_avatar == "/xentro-logo.png":
