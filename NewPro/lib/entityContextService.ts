@@ -94,7 +94,7 @@ class EntityContextService {
 
       const body = await res.json();
       if (body?.success && body?.data) {
-        const entities: LinkedEntity[] = (body.data.eligibleEntities || []).map((e: any) => ({
+        const serverEntities: LinkedEntity[] = (body.data.eligibleEntities || []).map((e: any) => ({
           id: e.entityId,
           name: e.name,
           entityType: e.entityType,
@@ -109,17 +109,34 @@ class EntityContextService {
           profileUrl: e.profileUrl,
         }));
 
-        this.saveLinkedEntities(entities);
+        const localEntities = this.getLinkedEntities();
+        const entityMap = new Map<string, LinkedEntity>();
 
-        // If the currently active entity is no longer eligible (e.g. revoked), revert to personal account
+        // 1. Seed with existing local entities to preserve cached/newly registered workspaces
+        localEntities.forEach((le) => {
+          if (le && le.id) entityMap.set(le.id, le);
+        });
+
+        // 2. Merge server-authoritative entities
+        serverEntities.forEach((se) => {
+          if (se && se.id) {
+            const existing = entityMap.get(se.id);
+            entityMap.set(se.id, { ...existing, ...se });
+          }
+        });
+
+        const mergedEntities = Array.from(entityMap.values());
+        this.saveLinkedEntities(mergedEntities);
+
+        // Only clear activeId if it truly does not exist in any eligible/linked entity
         const activeId = this.getActiveEntityId();
-        if (activeId && !entities.some((e) => e.id === activeId)) {
+        if (activeId && !mergedEntities.some((e) => e.id === activeId)) {
           this.setActiveEntityId(null);
         }
 
         return {
           personalAccount: body.data.personalAccount || null,
-          eligibleEntities: entities,
+          eligibleEntities: mergedEntities,
         };
       }
 

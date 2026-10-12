@@ -563,29 +563,37 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
           accountType: 'Investor Organization',
           officialEmail: targetEmail,
           primaryOwnerId: profile.id || currentUserProfile?.id,
-          verificationStatus: 'PENDING',
-          activationStatus: 'PENDING_COMMERCIAL_ACTIVATION',
+          verificationStatus: 'ACTIVE',
+          activationStatus: 'ACTIVE',
         };
 
-        entityContextService.linkEntity({
+        const linkedOrgData = {
           id: createdOrg.id,
           name: createdOrg.name,
           entityType: 'INVESTOR_ORG',
           accountType: 'Investor Organization',
           officialEmail: targetEmail,
           primaryOwnerId: profile.id || currentUserProfile?.id,
-          verificationStatus: createdOrg.verificationStatus || 'PENDING',
-          activationStatus: createdOrg.activationStatus || 'PENDING_COMMERCIAL_ACTIVATION',
+          verificationStatus: 'ACTIVE',
+          activationStatus: 'ACTIVE',
+          role: orgRole || 'Managing Partner',
+          permissions: ['OWNER', 'ADMIN', 'MANAGE_TEAM'],
           details: {
             organizationType: orgType,
             fundSize: targetAum,
             website: orgWebsite,
           },
+        };
+
+        entityContextService.linkEntity(linkedOrgData);
+        investorOrganizationService.setActiveContext({
+          type: 'organization',
+          organizationId: createdOrg.id,
         });
 
         showToast(
-          'Your Investor Organization has been registered. Your requested administrative permissions require verification by Xentro.',
-          'info'
+          `Investor Organization "${createdOrg.name}" registered and activated! Switched to organization workspace.`,
+          'success'
         );
 
         if (onEntityCreated) onEntityCreated(createdOrg);

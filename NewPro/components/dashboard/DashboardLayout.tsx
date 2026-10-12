@@ -59,13 +59,17 @@ export const DashboardLayout: React.FC = () => {
 
   // Sync active entity context
   React.useEffect(() => {
-    const handleEntitySwitch = (e: Event) => {
+    const handleEntitySwitch = (e?: Event) => {
       const ce = e as CustomEvent;
-      setActiveEntity(ce.detail?.entity || entityContextService.getActiveEntity());
+      setActiveEntity(ce?.detail?.entity || entityContextService.getActiveEntity());
     };
     window.addEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
+    window.addEventListener('xentro-linked-entities-updated', handleEntitySwitch);
+    window.addEventListener('xentro-active-entity-changed', handleEntitySwitch);
     return () => {
       window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntitySwitch);
+      window.removeEventListener('xentro-linked-entities-updated', handleEntitySwitch);
+      window.removeEventListener('xentro-active-entity-changed', handleEntitySwitch);
     };
   }, []);
 

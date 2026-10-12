@@ -78,15 +78,25 @@ export async function GET(req: NextRequest) {
     // Query authoritative memberships from MongoDB
     const userMemberships = await membershipsCol
       .find({
-        userId: user.id,
-        status: { $in: ['ACTIVE', 'APPROVED', 'Active'] },
+        $or: [
+          { userId: user.id },
+          { userId: String(user._id) },
+          { userEmail: user.email },
+        ],
+        status: { $in: ['ACTIVE', 'APPROVED', 'Active', 'PENDING_ADMIN_VERIFICATION', 'PENDING'] },
       })
       .toArray();
 
     const entityIds = userMemberships.map((m) => m.entityId);
     const entitiesDocs = await entitiesCol
       .find({
-        id: { $in: entityIds },
+        $or: [
+          { id: { $in: entityIds } },
+          { createdByUserId: user.id },
+          { currentOwnerUserId: user.id },
+          { primaryOwnerId: user.id },
+          { officialEmail: user.email },
+        ],
         status: { $nin: ['ORPHANED_DELETED', 'DELETED', 'ARCHIVED'] },
         isActive: { $ne: false },
         is_deleted: { $ne: true },
@@ -98,6 +108,7 @@ export async function GET(req: NextRequest) {
     entitiesDocs.forEach((e) => entityMap.set(e.id, e));
 
     const eligibleEntities: any[] = [];
+    const addedEntityIds = new Set<string>();
 
     for (const mem of userMemberships) {
       const ent = entityMap.get(mem.entityId);
@@ -120,17 +131,54 @@ export async function GET(req: NextRequest) {
         canonicalType = 'Institution';
       }
 
+      addedEntityIds.add(ent.id);
       eligibleEntities.push({
         entityId: ent.id,
         name: ent.name || mem.entityName,
         entityType: canonicalType,
         rawEntityType: entType,
-        role: mem.role || 'Member',
+        role: mem.role || (canonicalType === 'Startup' ? 'Founder' : 'Managing Partner'),
         membershipStatus: mem.status || 'ACTIVE',
         logo: ent.logo || ent.avatar || ent.icon || null,
         sector: ent.details?.sector || ent.industry || '',
         stage: ent.details?.stage || ent.stage || '',
-        permissions: mem.permissions || ['VIEW_ONLY'],
+        permissions: mem.permissions || ['OWNER', 'ADMIN', 'MANAGE_TEAM'],
+        dashboardUrl: canonicalType === 'Startup' ? '/?tab=dashboard' : `/${canonicalType.toLowerCase().replace(/\s+/g, '-')}/dashboard`,
+        profileUrl: '/?tab=profile',
+      });
+    }
+
+    // Also include any entities directly created/owned by this user that didn't have an explicit membership record yet
+    for (const ent of entitiesDocs) {
+      if (addedEntityIds.has(ent.id)) continue;
+      const isOwner = ent.createdByUserId === user.id || ent.primaryOwnerId === user.id || ent.currentOwnerUserId === user.id;
+      if (!isOwner) continue;
+
+      const entType = (ent.entityType || 'STARTUP').toUpperCase();
+      if (normalizedPersonalRole === 'Mentor' && (entType === 'INVESTOR_ORG' || entType === 'INVESTOR')) {
+        continue;
+      }
+      let canonicalType: 'Startup' | 'Investor Organization' | 'ESP' | 'Institution' = 'Startup';
+      if (entType.includes('INVESTOR') || entType.includes('VC')) {
+        canonicalType = 'Investor Organization';
+      } else if (entType.includes('ESP') || entType.includes('INCUBATOR')) {
+        canonicalType = 'ESP';
+      } else if (entType.includes('INSTITUT')) {
+        canonicalType = 'Institution';
+      }
+
+      addedEntityIds.add(ent.id);
+      eligibleEntities.push({
+        entityId: ent.id,
+        name: ent.name,
+        entityType: canonicalType,
+        rawEntityType: entType,
+        role: canonicalType === 'Startup' ? 'Founder' : 'Managing Partner',
+        membershipStatus: 'ACTIVE',
+        logo: ent.logo || ent.avatar || ent.icon || null,
+        sector: ent.details?.sector || ent.industry || '',
+        stage: ent.details?.stage || ent.stage || '',
+        permissions: ['OWNER', 'ADMIN', 'MANAGE_TEAM'],
         dashboardUrl: canonicalType === 'Startup' ? '/?tab=dashboard' : `/${canonicalType.toLowerCase().replace(/\s+/g, '-')}/dashboard`,
         profileUrl: '/?tab=profile',
       });
@@ -250,12 +298,32 @@ export async function POST(req: NextRequest) {
     // CASE B: Switch to Authorized Entity Workspace
     // =========================================================================
     // Check 1 & 2: Authoritative membership record in MongoDB
-    const membership = await membershipsCol.findOne({
-      userId: user.id,
+    let membership = await membershipsCol.findOne({
+      $or: [
+        { userId: user.id },
+        { userId: String(user._id) },
+        { userEmail: user.email },
+      ],
       entityId: targetEntityId,
     });
 
-    if (!membership) {
+    const entity = await entitiesCol.findOne({
+      id: targetEntityId,
+    });
+
+    if (!entity) {
+      return NextResponse.json(
+        { success: false, message: 'Entity account not found' },
+        { status: 404 }
+      );
+    }
+
+    const isEntityOwner =
+      entity.createdByUserId === user.id ||
+      entity.primaryOwnerId === user.id ||
+      entity.currentOwnerUserId === user.id;
+
+    if (!membership && !isEntityOwner) {
       return NextResponse.json(
         {
           success: false,
@@ -265,8 +333,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Check 3: Membership status must be ACTIVE or APPROVED
-    const memStatus = String(membership.status || '').toUpperCase();
+    // Check 3: Membership status must not be suspended/revoked
+    const memStatus = String(membership?.status || (isEntityOwner ? 'ACTIVE' : '')).toUpperCase();
     if (memStatus === 'SUSPENDED' || memStatus === 'REVOKED' || memStatus === 'EXPIRED') {
       return NextResponse.json(
         {
@@ -276,25 +344,13 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-    if (!['ACTIVE', 'APPROVED'].includes(memStatus)) {
+    if (!['ACTIVE', 'APPROVED', 'PENDING_ADMIN_VERIFICATION', 'PENDING'].includes(memStatus) && !isEntityOwner) {
       return NextResponse.json(
         {
           success: false,
           message: `Membership in organization "${targetEntityId}" is pending verification or inactive.`,
         },
         { status: 403 }
-      );
-    }
-
-    // Check 4 & 5: Valid entity record in MongoDB
-    const entity = await entitiesCol.findOne({
-      id: targetEntityId,
-    });
-
-    if (!entity) {
-      return NextResponse.json(
-        { success: false, message: 'Entity account not found' },
-        { status: 404 }
       );
     }
 
@@ -311,7 +367,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const entType = (entity.entityType || membership.entityType || 'STARTUP').toUpperCase();
+    const entType = (entity.entityType || membership?.entityType || 'STARTUP').toUpperCase();
 
     // Check 6: Personal Account Eligibility — Mentor accounts must not access Investor Organizations
     if (normalizedPersonalRole === 'Mentor' && (entType === 'INVESTOR_ORG' || entType === 'INVESTOR')) {
@@ -325,8 +381,12 @@ export async function POST(req: NextRequest) {
     }
 
     // Check 7 & 8: Assigned organizational RBAC permissions and dashboard
-    const permissions: string[] = Array.isArray(membership.permissions) ? membership.permissions : ['VIEW_ONLY'];
-    const assignedRole = membership.role || 'Member';
+    const permissions: string[] = isEntityOwner
+      ? ['OWNER', 'ADMIN', 'MANAGE_TEAM']
+      : Array.isArray(membership?.permissions)
+      ? membership.permissions
+      : ['VIEW_ONLY'];
+    const assignedRole = membership?.role || (isEntityOwner ? (entType.includes('INVESTOR') ? 'Managing Partner' : 'Founder') : 'Member');
 
     let canonicalType: 'Startup' | 'Investor Organization' | 'ESP' | 'Institution' = 'Startup';
     if (entType.includes('INVESTOR') || entType.includes('VC')) {
@@ -373,7 +433,7 @@ export async function POST(req: NextRequest) {
           rawEntityType: entType,
           role: assignedRole,
           permissions,
-          status: membership.status,
+          status: membership?.status || 'ACTIVE',
           logo: entity.logo || entity.avatar || entity.icon || null,
           sector: entity.details?.sector || entity.industry || '',
           stage: entity.details?.stage || entity.stage || '',
