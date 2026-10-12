@@ -165,7 +165,7 @@ export function formatLocation(loc: any): string {
 
 export function getUserProfile(): UserProfile {
   if (typeof window === 'undefined') {
-    return emptyProfileForRole('startup');
+    return emptyProfileForRole('explorer');
   }
   try {
     const role = getActiveRole();
@@ -205,15 +205,18 @@ export function getUserProfile(): UserProfile {
         };
       }
     }
-    // Attempt recovery from handoff stores before returning an empty shell
-    const recovered = recoverRoleProfile(role);
-    if (recovered && recovered.name && recovered.name.trim()) {
-      saveUserProfile(recovered);
-      return recovered;
+    // Only attempt recovery if there is an authentic user session
+    const currentUser = safeParseJson(localStorage.getItem('xentro_current_user')) || safeParseJson(localStorage.getItem('xentro_auth_user'));
+    if (currentUser || personal) {
+      const recovered = recoverRoleProfile(role);
+      if (recovered && recovered.name && recovered.name.trim() && recovered.name !== 'Founder') {
+        saveUserProfile(recovered);
+        return recovered;
+      }
     }
     return emptyProfileForRole(role);
   } catch {
-    return emptyProfileForRole('startup');
+    return emptyProfileForRole('explorer');
   }
 }
 
@@ -265,7 +268,7 @@ export function saveUserProfile(profile: UserProfile): void {
 }
 
 export function getActiveRole(): UserRole {
-  if (typeof window === 'undefined') return 'startup';
+  if (typeof window === 'undefined') return 'explorer';
   try {
     const rawRole = (localStorage.getItem(USER_ROLE_KEY) || '').toLowerCase().trim();
     if (rawRole && (rawRole === 'startup' || rawRole === 'mentor' || rawRole === 'investor' || rawRole === 'esp' || rawRole === 'explorer')) {
@@ -291,9 +294,9 @@ export function getActiveRole(): UserRole {
         return uRole as UserRole;
       }
     }
-    return 'startup';
+    return 'explorer';
   } catch {
-    return 'startup';
+    return 'explorer';
   }
 }
 
@@ -360,6 +363,9 @@ function recoverRoleProfile(role: UserRole): UserProfile {
   try {
     const currentUser = safeParseJson(localStorage.getItem('xentro_current_user')) || safeParseJson(localStorage.getItem('xentro_auth_user'));
     const personal = safeParseJson(localStorage.getItem('xentro_personal_profile'));
+    if (!currentUser && !personal) {
+      return emptyProfileForRole(role);
+    }
     const resolvedName = (personal && personal.fullName) || (currentUser && currentUser.fullName) || '';
     const resolvedEmail = (personal && personal.email) || (currentUser && currentUser.email) || '';
     const resolvedAvatar = (personal && personal.photoUrl) || (resolvedName ? `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(resolvedName)}` : GUEST_AVATAR);
@@ -400,14 +406,14 @@ function recoverRoleProfile(role: UserRole): UserProfile {
     }
     if (role === 'mentor') {
       const setup = safeParseJson(localStorage.getItem('xentro_mentor_setup'));
-      const mentorName = resolvedName || 'Mentor';
+      const mentorName = resolvedName || '';
       return {
         ...emptyProfileForRole('mentor', currentUser?.id),
         name: mentorName,
         email: resolvedEmail,
         roleTitle: (setup && setup.professionalRole) || (personal && personal.currentRole) || 'Advisory Mentor',
-        organization: (setup && setup.organization) || (personal && personal.currentOrganization) || 'Mentorship Network',
-        sector: Array.isArray(setup && setup.mentorshipAreas) && setup.mentorshipAreas.length > 0 ? setup.mentorshipAreas[0] : (personal && personal.industries?.[0]) || 'Technology & Innovation',
+        organization: (setup && setup.organization) || (personal && personal.currentOrganization) || '',
+        sector: Array.isArray(setup && setup.mentorshipAreas) && setup.mentorshipAreas.length > 0 ? setup.mentorshipAreas[0] : (personal && personal.industries?.[0]) || '',
         avatar: resolvedAvatar,
         location: resolvedLocation,
         bio: resolvedBio,
@@ -417,15 +423,15 @@ function recoverRoleProfile(role: UserRole): UserProfile {
     if (role === 'startup') {
       const entities = safeParseJson(localStorage.getItem('xentro_startup_entities'));
       const entity = Array.isArray(entities) && entities.length > 0 ? entities[entities.length - 1] : null;
-      const founderName = resolvedName || (entity && entity.founderName) || 'Founder';
-      const startupName = (entity && entity.startupName) || (founderName ? `${founderName}'s Venture` : 'My Startup Venture');
+      const founderName = resolvedName || (entity && entity.founderName) || '';
+      const startupName = (entity && entity.startupName) || (founderName ? `${founderName}'s Venture` : '');
       return {
         ...emptyProfileForRole('startup', currentUser?.id),
         name: founderName,
         email: resolvedEmail,
         roleTitle: (personal && personal.currentRole) || 'Founder & CEO',
         organization: startupName,
-        sector: (entity && entity.industry) || (personal && personal.industries?.[0]) || 'Enterprise Software & Technology',
+        sector: (entity && entity.industry) || (personal && personal.industries?.[0]) || '',
         stageOrFocus: (entity && entity.stage) || 'Early Stage',
         location: (entity && entity.location) || resolvedLocation || 'India',
         avatar: resolvedAvatar,
@@ -436,13 +442,13 @@ function recoverRoleProfile(role: UserRole): UserProfile {
     if (role === 'investor') {
       const entities = safeParseJson(localStorage.getItem('xentro_investor_entities'));
       const entity = Array.isArray(entities) && entities.length > 0 ? entities[entities.length - 1] : null;
-      const investorName = resolvedName || 'Investor';
+      const investorName = resolvedName || '';
       return {
         ...emptyProfileForRole('investor', currentUser?.id),
         name: investorName,
         email: resolvedEmail,
         roleTitle: (entity && entity.applicantRole) || (personal && personal.currentRole) || 'Angel Investor',
-        organization: (entity && entity.orgName) || (personal && personal.currentOrganization) || 'Individual Investor',
+        organization: (entity && entity.orgName) || (personal && personal.currentOrganization) || '',
         stageOrFocus: 'Individual',
         location: resolvedLocation || 'India',
         avatar: resolvedAvatar,
