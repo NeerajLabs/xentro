@@ -683,7 +683,10 @@ export function getESPProfileById(id: string, fallbackData?: any): FullESPProfil
 
   const baseName = base.name || 'Ecosystem Partner';
   const baseLogo = base.logo || base.avatar || "https://images.unsplash.com/photo-1498243691581-b145c3f54a5a?w=200&auto=format&fit=crop&q=80";
-  const baseLocation = base.location || base.context || 'India';
+  const baseLocObj = typeof base.location === 'object' && base.location !== null ? base.location : null;
+  const baseLocation = baseLocObj
+    ? [baseLocObj.city, baseLocObj.state, baseLocObj.country].filter(Boolean).join(', ') || 'India'
+    : String(base.location || base.context || 'India');
   const baseDesc = base.description || base.title || `${baseName} is an ecosystem institution supporting startups on Xentro.`;
 
   // Synthesize complete profile from recommendation entity

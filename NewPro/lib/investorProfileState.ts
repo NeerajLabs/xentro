@@ -131,13 +131,20 @@ export function getStoredInvestorProfile(
     const resolvedRole = (parsed && parsed.currentRole && parsed.currentRole.trim()) || fallback.currentRole;
     const resolvedOrg = (parsed && parsed.organization && parsed.organization.trim()) || fallback.organization;
 
+    const locObj = typeof parsed.location === 'object' && parsed.location !== null ? parsed.location : {};
+    const sanitizedStoredLocation = {
+      city: typeof locObj.city === 'string' ? locObj.city : (fallback.location?.city || ''),
+      state: typeof locObj.state === 'string' ? locObj.state : (fallback.location?.state || ''),
+      country: typeof locObj.country === 'string' ? locObj.country : (typeof parsed.location === 'string' ? parsed.location : (fallback.location?.country || 'India')),
+    };
+
     return {
       ...fallback,
       ...parsed,
       name: resolvedName,
       currentRole: resolvedRole,
       organization: resolvedOrg,
-      location: { ...fallback.location, ...(parsed.location || {}) },
+      location: sanitizedStoredLocation,
       overview: { ...fallback.overview, ...(parsed.overview || {}) },
       investmentFocus: {
         ...fallback.investmentFocus,
@@ -245,16 +252,41 @@ export async function syncInvestorProfileFromBackend(
       if (json?.success && json?.data) {
         const raw = json.data;
         const baseline = getInvestorProfileById(investorId, raw);
+        const rawLoc = raw.location;
+        const locCity = typeof rawLoc === 'object' && rawLoc !== null && typeof rawLoc.city === 'string'
+          ? rawLoc.city
+          : (typeof raw.city === 'string' ? raw.city : baseline.location?.city || '');
+        const locState = typeof rawLoc === 'object' && rawLoc !== null && typeof rawLoc.state === 'string'
+          ? rawLoc.state
+          : (typeof raw.state === 'string' ? raw.state : baseline.location?.state || '');
+        const locCountry = typeof rawLoc === 'object' && rawLoc !== null && typeof rawLoc.country === 'string'
+          ? rawLoc.country
+          : (typeof rawLoc === 'string' ? rawLoc : (typeof raw.country === 'string' ? raw.country : baseline.location?.country || 'India'));
+
+        const sanitizedLocation = {
+          city: locCity || '',
+          state: locState || '',
+          country: locCountry || 'India',
+        };
+
+        const rawCountries = Array.isArray(raw.investmentFocus?.geography?.countries)
+          ? raw.investmentFocus.geography.countries.map((c: any) => typeof c === 'object' && c !== null ? (c.country || c.city || 'India') : String(c))
+          : baseline.investmentFocus?.geography?.countries || [sanitizedLocation.country];
+
         const profile: FullInvestorProfile = {
           ...baseline,
           ...raw,
-          location: { ...baseline.location, ...(raw.location || {}) },
+          location: sanitizedLocation,
           overview: { ...baseline.overview, ...(raw.overview || {}) },
           investmentFocus: {
             ...baseline.investmentFocus,
             ...(raw.investmentFocus || {}),
             ticketSize: { ...baseline.investmentFocus?.ticketSize, ...(raw.investmentFocus?.ticketSize || {}) },
-            geography: { ...baseline.investmentFocus?.geography, ...(raw.investmentFocus?.geography || {}) },
+            geography: {
+              ...baseline.investmentFocus?.geography,
+              ...(raw.investmentFocus?.geography || {}),
+              countries: rawCountries,
+            },
           },
           valueBeyondCapital: {
             ...baseline.valueBeyondCapital,

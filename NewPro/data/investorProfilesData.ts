@@ -1352,6 +1352,14 @@ export function getInvestorProfileById(id: string, fallbackData?: any): FullInve
       : ['Pre-Seed', 'Seed', 'Early Stage'];
     const ticketStr = fallbackData.ticketSize || '₹25L–₹2Cr';
 
+    const locObj = typeof fallbackData.location === 'object' && fallbackData.location !== null
+      ? fallbackData.location
+      : null;
+    const cityStr = String(locObj?.city || fallbackData.city || '').trim();
+    const stateStr = String(locObj?.state || fallbackData.state || '').trim();
+    const countryStr = String(locObj?.country || (typeof fallbackData.location === 'string' ? fallbackData.location : '') || 'India').trim() || 'India';
+    const locDisplayStr = [cityStr, stateStr, countryStr].filter(Boolean).join(', ') || 'India';
+
     return {
       id: id || fallbackData.id || 'inv_fallback',
       name,
@@ -1361,14 +1369,14 @@ export function getInvestorProfileById(id: string, fallbackData?: any): FullInve
       currentRole: fallbackData.role || fallbackData.title || 'Investor',
       organization: org,
       location: {
-        city: fallbackData.city || '',
-        state: fallbackData.state || '',
-        country: fallbackData.location || 'India',
+        city: cityStr,
+        state: stateStr,
+        country: countryStr,
       },
       verified: Boolean(fallbackData.verified !== false),
       primaryInvestmentFocus: focusSectors.join(' · '),
       bio: fallbackData.description || fallbackData.bio || `${name} is an active investment partner on Xentro.`,
-      background: fallbackData.background || `${fallbackData.investorType || 'Angel Network'} based in ${fallbackData.location || 'India'}.`,
+      background: fallbackData.background || `${fallbackData.investorType || 'Angel Network'} based in ${locDisplayStr}.`,
       yearsOfInvestingExperience: fallbackData.experienceYears || '5+ Years',
       overview: {
         whoTheyInvestIn: 'High-conviction founders building scalable, high-impact technology companies.',
@@ -1380,7 +1388,7 @@ export function getInvestorProfileById(id: string, fallbackData?: any): FullInve
         sectors: focusSectors,
         stages: stagesList,
         geography: {
-          countries: [fallbackData.location || 'India'],
+          countries: [countryStr],
           regions: [],
         },
         businessModels: ['B2B', 'SaaS'],

@@ -219,6 +219,20 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
   const [messageText, setMessageText] = useState('');
   const [introMutualContext, setIntroMutualContext] = useState('');
 
+  const formatLocation = (loc: any) => {
+    if (!loc) return 'India';
+    if (typeof loc === 'string') return loc;
+    if (typeof loc === 'object') {
+      const city = typeof loc.city === 'string' ? loc.city : '';
+      const state = typeof loc.state === 'string' ? loc.state : '';
+      const country = typeof loc.country === 'string'
+        ? loc.country
+        : (typeof loc.country === 'object' && loc.country !== null ? (loc.country?.country || loc.country?.city || 'India') : 'India');
+      return [city, state, country].filter(Boolean).join(', ') || 'India';
+    }
+    return 'India';
+  };
+
   const handleShare = () => {
     if (typeof window !== 'undefined' && navigator.clipboard) {
       navigator.clipboard.writeText(window.location.href);
@@ -606,8 +620,7 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
             <div className="flex flex-wrap items-center gap-4 text-xs text-[#565B59] dark:text-[#B6B8B7] pt-1">
               <span className="inline-flex items-center gap-1.5">
                 <MapPin className="w-3.5 h-3.5 text-[#9EBE12] dark:text-[#D9FF3F]" />
-                {investor.location.city}
-                {investor.location.state ? `, ${investor.location.state}` : ''}, {investor.location.country}
+                {formatLocation(investor.location)}
               </span>
 
               {investor.website && (
@@ -781,7 +794,7 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
                 </div>
                 <div>
                   <span className="text-[#565B59] dark:text-[#B6B8B7] block mb-0.5">Headquarters</span>
-                  <span className="font-bold text-[#101212] dark:text-white">{investor.location?.city ? `${investor.location.city}, ` : ''}{investor.location?.country || 'India'}</span>
+                  <span className="font-bold text-[#101212] dark:text-white">{formatLocation(investor.location)}</span>
                 </div>
               </div>
             </div>
@@ -811,7 +824,7 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
                   </div>
                   <div>
                     <span className="text-[#565B59] dark:text-[#B6B8B7] block mb-0.5">Headquarters</span>
-                    <strong className="text-[#101212] dark:text-white">{investor.location?.city ? `${investor.location.city}, ` : ''}{investor.location?.country || 'India'}</strong>
+                    <strong className="text-[#101212] dark:text-white">{formatLocation(investor.location)}</strong>
                   </div>
                   <div>
                     <span className="text-[#565B59] dark:text-[#B6B8B7] block mb-0.5">Experience Track</span>
@@ -899,14 +912,17 @@ export const InvestorProfileView: React.FC<InvestorProfileViewProps> = ({
                     Target Geography
                   </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {investor.investmentFocus.geography.countries.map((c, idx) => (
-                      <span
-                        key={idx}
-                        className="px-2.5 py-1 rounded-lg text-xs font-medium bg-[#F7F8F6] dark:bg-[#202422] text-[#101212] dark:text-white border border-[#E5E7EB] dark:border-[#262A29]"
-                      >
-                        {c}
-                      </span>
-                    ))}
+                    {(investor.investmentFocus?.geography?.countries || ['India']).map((c: any, idx) => {
+                      const cStr = typeof c === 'object' && c !== null ? (c.country || c.city || 'India') : String(c || 'India');
+                      return (
+                        <span
+                          key={idx}
+                          className="px-2.5 py-1 rounded-lg text-xs font-medium bg-[#F7F8F6] dark:bg-[#202422] text-[#101212] dark:text-white border border-[#E5E7EB] dark:border-[#262A29]"
+                        >
+                          {cStr}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
 
