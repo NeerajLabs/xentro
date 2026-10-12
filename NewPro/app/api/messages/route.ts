@@ -113,7 +113,7 @@ async function resolveParticipantProfile(pId: string, db: any, convId?: string) 
     if (mSample && mSample.senderName) {
       const name = mSample.senderName;
       const role = mSample.senderRole || 'Explorer';
-      const avatar = (mSample.senderAvatar && !mSample.senderAvatar.includes('xentro-logo.png') && mSample.senderAvatar !== '/xentro-logo.png')
+      const avatar = (mSample.senderAvatar && !mSample.senderAvatar.includes('xentro-logo.png') && mSample.senderAvatar !== '/xentro-logo.png' && !mSample.senderAvatar.startsWith('blob:'))
         ? mSample.senderAvatar
         : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
       return { id: pId, name, role, avatar, company: '' };
@@ -184,7 +184,7 @@ export async function GET(req: NextRequest) {
           const sName = (m.senderName && m.senderName !== 'Member' && m.senderName !== 'Partner')
             ? m.senderName
             : formatIdToName(m.senderId);
-          const sAvatar = (m.senderAvatar && !m.senderAvatar.includes('xentro-logo.png') && m.senderAvatar !== '/xentro-logo.png')
+          const sAvatar = (m.senderAvatar && !m.senderAvatar.includes('xentro-logo.png') && m.senderAvatar !== '/xentro-logo.png' && !m.senderAvatar.startsWith('blob:'))
             ? m.senderAvatar
             : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(sName)}`;
           return {

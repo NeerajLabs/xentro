@@ -22,6 +22,7 @@ import {
 } from '@/lib/mentorshipService';
 import { connectionService, normalizeUserId, ConnectionRecord } from '@/lib/connectionService';
 import { getUserProfile } from '@/lib/userProfile';
+import { resolveAvatarUrl } from '@/lib/messagingService';
 import { MENTORSHIP, MENTORSHIP_REQUEST } from '@/types/mentor';
 
 interface MentorOverviewContentProps {
@@ -210,7 +211,7 @@ export const MentorOverviewContent: React.FC<MentorOverviewContentProps> = ({
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex items-start gap-3">
                         <img
-                          src={conn.senderAvatar || '/xentro-logo.png'}
+                          src={resolveAvatarUrl(conn.senderAvatar, conn.senderName)}
                           alt={conn.senderName}
                           className="w-10 h-10 rounded-full object-cover"
                         />

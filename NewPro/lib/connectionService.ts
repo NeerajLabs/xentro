@@ -186,7 +186,13 @@ export const connectionService = {
       const raw = localStorage.getItem(CONNECTIONS_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) return parsed as ConnectionRecord[];
+        if (Array.isArray(parsed)) {
+          return parsed.map((c: ConnectionRecord) => ({
+            ...c,
+            senderAvatar: resolveAvatarUrl(c.senderAvatar, c.senderName),
+            recipientAvatar: resolveAvatarUrl(c.recipientAvatar, c.recipientName),
+          })) as ConnectionRecord[];
+        }
       }
     } catch (e) {
       console.error('Failed to load connections:', e);
@@ -198,9 +204,14 @@ export const connectionService = {
   saveRawConnections(list: ConnectionRecord[]): void {
     if (typeof window === 'undefined') return;
     try {
-      localStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(list));
+      const sanitized = list.map((c) => ({
+        ...c,
+        senderAvatar: resolveAvatarUrl(c.senderAvatar, c.senderName),
+        recipientAvatar: resolveAvatarUrl(c.recipientAvatar, c.recipientName),
+      }));
+      localStorage.setItem(CONNECTIONS_STORAGE_KEY, JSON.stringify(sanitized));
       window.dispatchEvent(
-        new CustomEvent(CONNECTIONS_UPDATED_EVENT, { detail: { connections: list } })
+        new CustomEvent(CONNECTIONS_UPDATED_EVENT, { detail: { connections: sanitized } })
       );
       if (connectionChannel) {
         connectionChannel.postMessage({ type: 'CONNECTIONS_UPDATED' });
@@ -305,7 +316,7 @@ export const connectionService = {
         title: `${conn.senderName} sent you a connection request`,
         description: `Looking to connect and collaborate on Xentro.`,
         time: 'Just now',
-        avatar: conn.senderAvatar,
+        avatar: resolveAvatarUrl(conn.senderAvatar, conn.senderName),
         actorName: conn.senderName,
         actorRole: conn.senderRole,
         actorId: conn.senderId,
@@ -322,7 +333,7 @@ export const connectionService = {
         title: `${conn.recipientName} accepted your connection request!`,
         description: `You are now connected on Xentro! Start collaborating.`,
         time: 'Just now',
-        avatar: conn.recipientAvatar,
+        avatar: resolveAvatarUrl(conn.recipientAvatar, conn.recipientName),
         actorName: conn.recipientName,
         actorRole: conn.recipientRole,
         actorId: conn.recipientId,

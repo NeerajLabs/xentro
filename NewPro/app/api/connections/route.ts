@@ -96,10 +96,10 @@ export async function GET(req: NextRequest) {
       const rName = (c.recipientName && c.recipientName !== 'Member' && c.recipientName !== 'Partner')
         ? c.recipientName
         : formatIdToName(c.recipientId);
-      const sAvatar = (c.senderAvatar && !c.senderAvatar.includes('xentro-logo.png') && c.senderAvatar !== '/xentro-logo.png')
+      const sAvatar = (c.senderAvatar && !c.senderAvatar.includes('xentro-logo.png') && c.senderAvatar !== '/xentro-logo.png' && !c.senderAvatar.startsWith('blob:'))
         ? c.senderAvatar
         : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(sName)}`;
-      const rAvatar = (c.recipientAvatar && !c.recipientAvatar.includes('xentro-logo.png') && c.recipientAvatar !== '/xentro-logo.png')
+      const rAvatar = (c.recipientAvatar && !c.recipientAvatar.includes('xentro-logo.png') && c.recipientAvatar !== '/xentro-logo.png' && !c.recipientAvatar.startsWith('blob:'))
         ? c.recipientAvatar
         : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(rName)}`;
 

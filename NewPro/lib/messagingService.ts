@@ -120,7 +120,13 @@ export function resolvePartnerFromLocalStorage(partnerId: string, convId?: strin
 }
 
 export function resolveAvatarUrl(avatar?: string | null, name?: string | null): string {
-  if (avatar && avatar !== '/xentro-logo.png' && !avatar.includes('xentro-logo.png') && avatar.trim().length > 0) {
+  if (
+    avatar &&
+    avatar !== '/xentro-logo.png' &&
+    !avatar.includes('xentro-logo.png') &&
+    !avatar.startsWith('blob:') &&
+    avatar.trim().length > 0
+  ) {
     return avatar;
   }
   const cleanName = (name || 'User').trim();
