@@ -661,14 +661,36 @@ export const getMentorProfileById = (id: string, fallbackData?: any): FullMentor
   // If dynamic card or recommendation data is provided, construct the profile from it
   if (fallbackData) {
     const name = fallbackData.name || 'Mentor';
-    const roleTitle = fallbackData.title || fallbackData.headline || 'Growth & Advisory Mentor';
-    const locationStr = fallbackData.location || 'India';
+    const roleTitle = fallbackData.title || fallbackData.role || fallbackData.headline || 'Growth & Advisory Mentor';
+    const locationStr = typeof fallbackData.location === 'string'
+      ? fallbackData.location
+      : fallbackData.location?.city
+      ? `${fallbackData.location.city}, ${fallbackData.location.country || 'India'}`
+      : 'India';
+
     const expertiseList = Array.isArray(fallbackData.expertise) && fallbackData.expertise.length > 0
       ? fallbackData.expertise
+      : Array.isArray(fallbackData.skills) && fallbackData.skills.length > 0
+      ? fallbackData.skills
       : ['Strategy', 'Leadership', 'Growth'];
+
     const areasList = Array.isArray(fallbackData.mentorshipAreas) && fallbackData.mentorshipAreas.length > 0
       ? fallbackData.mentorshipAreas
-      : ['Strategy', 'Growth', 'Fundraising'];
+      : Array.isArray(fallbackData.areasOfMentorship) && fallbackData.areasOfMentorship.length > 0
+      ? fallbackData.areasOfMentorship
+      : ['Product-Market Fit', 'Strategy', 'Growth', 'Fundraising'];
+
+    const locObj = typeof fallbackData.location === 'object' && fallbackData.location !== null
+      ? {
+          city: fallbackData.location.city || 'Bengaluru',
+          state: fallbackData.location.state || 'Karnataka',
+          country: fallbackData.location.country || 'India',
+        }
+      : {
+          city: 'Bengaluru',
+          state: 'Karnataka',
+          country: locationStr,
+        };
 
     return {
       ...defaultMentorProfile,
@@ -677,15 +699,11 @@ export const getMentorProfileById = (id: string, fallbackData?: any): FullMentor
       avatar: fallbackData.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
       banner: fallbackData.banner || 'https://images.unsplash.com/photo-1518770660439-4636190af475?w=1600&auto=format&fit=crop&q=80',
       currentRole: {
-        designation: roleTitle,
-        organization: fallbackData.organization || fallbackData.company || 'Ecosystem Advisory',
-        duration: 'Present',
+        designation: fallbackData.currentRole?.designation || roleTitle,
+        organization: fallbackData.currentRole?.organization || fallbackData.organization || fallbackData.company || 'Ecosystem Advisory',
+        duration: fallbackData.currentRole?.duration || 'Present',
       },
-      location: {
-        city: fallbackData.city || '',
-        state: fallbackData.state || '',
-        country: locationStr,
-      },
+      location: locObj,
       primaryExpertise: expertiseList.join(' & '),
       headline: fallbackData.headline || `${roleTitle} • XENTRO Verified Mentor`,
       verified: Boolean(fallbackData.verified !== false),
@@ -696,13 +714,19 @@ export const getMentorProfileById = (id: string, fallbackData?: any): FullMentor
       expertise: expertiseList,
       industries: Array.isArray(fallbackData.industries) ? fallbackData.industries : ['Technology', 'Startups', 'Advisory'],
       areasOfMentorship: areasList,
-      startupStagesMentored: ['Idea', 'Seed', 'Early Stage'],
-      languages: ['English'],
+      startupStagesMentored: fallbackData.startupStagesMentored || ['Idea', 'Seed', 'Early Stage'],
+      languages: fallbackData.languages || ['English'],
       mentorshipBackground: {
         ...defaultMentorProfile.mentorshipBackground,
-        mentoringExperience: fallbackData.experienceYears || '5+ years active mentorship',
-        relevantAchievements: [`Mentored emerging founders across the Xentro ecosystem`],
+        ...(fallbackData.mentorshipBackground || {}),
+        mentoringExperience: fallbackData.experienceYears || fallbackData.mentorshipBackground?.mentoringExperience || '5+ years active mentorship',
+        relevantAchievements: fallbackData.mentorshipBackground?.relevantAchievements || [`Mentored emerging founders across the Xentro ecosystem`],
       },
+      meetingSlots: fallbackData.meetingSlots || defaultMentorProfile.meetingSlots,
+      founderTestimonials: fallbackData.founderTestimonials || defaultMentorProfile.founderTestimonials || [],
+      previousStartupExperience: fallbackData.previousStartupExperience || defaultMentorProfile.previousStartupExperience || [],
+      education: fallbackData.education || defaultMentorProfile.education || [],
+      professionalExperience: fallbackData.professionalExperience || defaultMentorProfile.professionalExperience || [],
     };
   }
 

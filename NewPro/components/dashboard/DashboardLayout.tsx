@@ -298,7 +298,7 @@ export const DashboardLayout: React.FC = () => {
                 selectedProfile.type === 'startup' ? (
                   <StartupProfileView
                     startupId={selectedProfile.id}
-                    startupData={selectedProfile.data || getStartupProfileById(selectedProfile.id)}
+                    startupData={getStartupProfileById(selectedProfile.id, selectedProfile.data)}
                     isOwnProfile={false}
                     onBackToFeed={() => setSelectedProfile(null)}
                     onBackToDiscover={() => setSelectedProfile(null)}
@@ -306,7 +306,7 @@ export const DashboardLayout: React.FC = () => {
                 ) : selectedProfile.type === 'mentor' ? (
                   <MentorProfileView
                     mentorId={selectedProfile.id}
-                    mentorData={selectedProfile.data || getMentorProfileById(selectedProfile.id, selectedProfile.data)}
+                    mentorData={getMentorProfileById(selectedProfile.id, selectedProfile.data)}
                     isOwnProfile={false}
                     onBackToFeed={() => setSelectedProfile(null)}
                     onBackToDiscover={() => setSelectedProfile(null)}
@@ -314,7 +314,7 @@ export const DashboardLayout: React.FC = () => {
                 ) : selectedProfile.type === 'investor' ? (
                   <InvestorProfileView
                     investorId={selectedProfile.id}
-                    investorData={selectedProfile.data || getInvestorProfileById(selectedProfile.id, selectedProfile.data)}
+                    investorData={getInvestorProfileById(selectedProfile.id, selectedProfile.data)}
                     isOwnProfile={false}
                     onBackToFeed={() => setSelectedProfile(null)}
                     onBackToDiscover={() => setSelectedProfile(null)}
@@ -330,7 +330,7 @@ export const DashboardLayout: React.FC = () => {
                 ) : (selectedProfile.type === 'esp' || selectedProfile.type === 'university') ? (
                   <ESPProfileView
                     espId={selectedProfile.id}
-                    espData={selectedProfile.data || getESPProfileById(selectedProfile.id, selectedProfile.data)}
+                    espData={getESPProfileById(selectedProfile.id, selectedProfile.data)}
                     isOwnProfile={false}
                     onBackToFeed={() => setSelectedProfile(null)}
                     onBackToDiscover={() => setSelectedProfile(null)}

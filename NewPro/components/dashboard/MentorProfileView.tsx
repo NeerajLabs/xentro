@@ -63,18 +63,14 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<MentorTabType>('basic');
 
-  // Determine mentor data dynamically from props and stored state
+  // Determine mentor data dynamically from props and stored state with guaranteed hydration
   const [mentor, setMentor] = useState<FullMentorProfile>(() => {
-    return mentorData || getMentorProfileById(mentorId || 'user_mentor');
+    return getMentorProfileById(mentorId || (mentorData as any)?.id || 'user_mentor', mentorData);
   });
 
   // Sync if mentorData or mentorId changes
   React.useEffect(() => {
-    if (mentorData) {
-      setMentor(mentorData);
-    } else {
-      setMentor(getMentorProfileById(mentorId || 'user_mentor'));
-    }
+    setMentor(getMentorProfileById(mentorId || (mentorData as any)?.id || 'user_mentor', mentorData));
 
     // When viewing an external mentor's profile, fetch latest profile from MongoDB Atlas
     if (mentorId && mentorId !== 'user_mentor' && !isOwnProfile) {
@@ -113,9 +109,9 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                 duration: prev.currentRole?.duration || 'Present',
               },
               location: {
-                city: locationObj.city || prev.location.city,
-                state: locationObj.state || prev.location.state,
-                country: locationObj.country || prev.location.country,
+                city: locationObj.city || prev.location?.city || 'Bengaluru',
+                state: locationObj.state || prev.location?.state || 'Karnataka',
+                country: locationObj.country || prev.location?.country || 'India',
               },
               verified: Boolean(u.verified || u.emailVerified),
             }));
@@ -219,24 +215,43 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
   const [isRequestModalOpen, setIsRequestModalOpen] = useState(false);
   const [requestReason, setRequestReason] = useState('');
   const [requestFocusArea, setRequestFocusArea] = useState(
-    mentor.areasOfMentorship[0] || 'Product-Market Fit'
+    () => mentor?.areasOfMentorship?.[0] || 'Product-Market Fit'
   );
 
   // Meeting Slot Booking State
   const [isMeetingModalOpen, setIsMeetingModalOpen] = useState(false);
   const [selectedSessionType, setSelectedSessionType] = useState(
-    mentor.meetingSlots.sessionTypes[0] || 'Discovery Call'
+    () => mentor?.meetingSlots?.sessionTypes?.[0] || 'Discovery Call'
   );
   const [selectedDuration, setSelectedDuration] = useState(
-    mentor.meetingSlots.durations[0] || '30 Minutes'
+    () => mentor?.meetingSlots?.durations?.[0] || '30 Minutes'
   );
   const [selectedTimeSlot, setSelectedTimeSlot] = useState(
-    mentor.meetingSlots.availableTimeSlots[0] || '10:00 AM — 10:45 AM'
+    () => mentor?.meetingSlots?.availableTimeSlots?.[0] || '10:00 AM — 10:45 AM'
   );
   const [selectedMeetingMode, setSelectedMeetingMode] = useState(
-    mentor.meetingSlots.meetingModes[0] || 'Video'
+    () => mentor?.meetingSlots?.meetingModes?.[0] || 'Video'
   );
   const [meetingReason, setMeetingReason] = useState('');
+
+  // Keep booking selections aligned if mentor changes
+  React.useEffect(() => {
+    if (mentor?.areasOfMentorship?.[0]) {
+      setRequestFocusArea(mentor.areasOfMentorship[0]);
+    }
+    if (mentor?.meetingSlots?.sessionTypes?.[0]) {
+      setSelectedSessionType(mentor.meetingSlots.sessionTypes[0]);
+    }
+    if (mentor?.meetingSlots?.durations?.[0]) {
+      setSelectedDuration(mentor.meetingSlots.durations[0]);
+    }
+    if (mentor?.meetingSlots?.availableTimeSlots?.[0]) {
+      setSelectedTimeSlot(mentor.meetingSlots.availableTimeSlots[0]);
+    }
+    if (mentor?.meetingSlots?.meetingModes?.[0]) {
+      setSelectedMeetingMode(mentor.meetingSlots.meetingModes[0]);
+    }
+  }, [mentor]);
 
   const handleShare = () => {
     if (typeof window !== 'undefined' && navigator.clipboard) {
@@ -609,7 +624,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
             </p>
 
             <p className="text-sm sm:text-base font-semibold text-[#101212] dark:text-[#D9FF3F]">
-              {mentor.currentRole.designation} · {mentor.currentRole.organization}
+              {mentor.currentRole?.designation || 'Ecosystem Mentor'}{mentor.currentRole?.organization ? ` · ${mentor.currentRole.organization}` : ''}
             </p>
 
             {mentor.headline && (
@@ -622,17 +637,19 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
             <div className="flex flex-wrap items-center gap-y-2 gap-x-5 text-xs text-[#565B59] dark:text-[#B6B8B7] pt-2 border-t border-gray-100 dark:border-gray-800">
               <div className="flex items-center gap-1.5">
                 <Building2 className="w-4 h-4 text-[#9EBE12] dark:text-[#D9FF3F]" />
-                <span>{mentor.currentRole.organization}</span>
+                <span>{mentor.currentRole?.organization || 'Ecosystem Advisory'}</span>
               </div>
               <div className="flex items-center gap-1.5">
                 <MapPin className="w-4 h-4 text-[#565B59] dark:text-[#B6B8B7]" />
                 <span>
-                  {mentor.location.city}, {mentor.location.state ? `${mentor.location.state}, ` : ''}{mentor.location.country}
+                  {typeof mentor.location === 'object' && mentor.location !== null
+                    ? `${mentor.location.city || ''}${mentor.location.state ? `, ${mentor.location.state}` : ''}${mentor.location.country ? `, ${mentor.location.country}` : ''}`
+                    : String(mentor.location || 'India')}
                 </span>
               </div>
               <div className="flex items-center gap-1.5 font-medium text-[#101212] dark:text-white">
                 <Award className="w-4 h-4 text-[#9EBE12] dark:text-[#D9FF3F]" />
-                <span>{mentor.primaryExpertise}</span>
+                <span>{mentor.primaryExpertise || 'Strategy & Advisory'}</span>
               </div>
               <div className="flex items-center gap-1.5 font-semibold text-[#565B59] dark:text-[#B6B8B7]">
                 <Users className="w-4 h-4 text-purple-500" />
@@ -695,14 +712,14 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
               <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
                   <h4 className="text-sm font-bold text-[#101212] dark:text-white">
-                    {mentor.currentRole.designation}
+                    {mentor.currentRole?.designation || 'Ecosystem Mentor'}
                   </h4>
                   <p className="text-xs text-[#101212] dark:text-[#D9FF3F] font-semibold">
-                    {mentor.currentRole.organization}
+                    {mentor.currentRole?.organization || 'Ecosystem Advisory'}
                   </p>
                 </div>
                 <span className="text-xs font-mono text-[#565B59] dark:text-[#B6B8B7]">
-                  {mentor.currentRole.duration}
+                  {mentor.currentRole?.duration || 'Present'}
                 </span>
               </div>
             </div>
@@ -714,7 +731,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                 <span>Professional Experience</span>
               </h3>
               <div className="space-y-4 divide-y divide-gray-100 dark:divide-gray-800">
-                {mentor.professionalExperience.map((exp, idx) => (
+                {(mentor.professionalExperience || []).map((exp, idx) => (
                   <div key={idx} className={`${idx > 0 ? 'pt-4' : ''} space-y-1`}>
                     <div className="flex items-center justify-between">
                       <h4 className="font-bold text-sm text-[#101212] dark:text-white">
@@ -742,7 +759,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                 <span>Education</span>
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {mentor.education.map((edu, idx) => (
+                {(mentor.education || []).map((edu, idx) => (
                   <div
                     key={idx}
                     className="p-4 rounded-xl border border-gray-100 dark:border-[#262A29] bg-gray-50/70 dark:bg-[#202422] space-y-1"
@@ -772,7 +789,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Expertise
                 </h4>
                 <div className="flex flex-wrap gap-2">
-                  {mentor.expertise.map((item, idx) => (
+                  {(mentor.expertise || []).map((item, idx) => (
                     <span
                       key={idx}
                       className="px-3 py-1 rounded-xl text-xs font-bold bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F] border border-[#D9FF3F]/30"
@@ -789,7 +806,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Industries
                 </h4>
                 <div className="flex flex-wrap gap-2">
-                  {mentor.industries.map((item, idx) => (
+                  {(mentor.industries || []).map((item, idx) => (
                     <span
                       key={idx}
                       className="px-3 py-1 rounded-xl text-xs font-semibold bg-gray-100 dark:bg-[#202422] text-[#101212] dark:text-white border border-gray-200 dark:border-[#262A29]"
@@ -806,7 +823,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Areas of Mentorship
                 </h4>
                 <div className="flex flex-wrap gap-2">
-                  {mentor.areasOfMentorship.map((item, idx) => (
+                  {(mentor.areasOfMentorship || []).map((item, idx) => (
                     <span
                       key={idx}
                       className="px-3 py-1 rounded-xl text-xs font-semibold bg-gray-100 dark:bg-[#202422] text-[#101212] dark:text-white border border-gray-200 dark:border-[#262A29]"
@@ -823,7 +840,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Startup Stages Mentored
                 </h4>
                 <div className="flex flex-wrap gap-2">
-                  {mentor.startupStagesMentored.map((item, idx) => (
+                  {(mentor.startupStagesMentored || []).map((item, idx) => (
                     <span
                       key={idx}
                       className="px-3 py-1 rounded-xl text-xs font-bold bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F] border border-[#D9FF3F]/30"
@@ -842,7 +859,9 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Location
                 </span>
                 <p className="text-sm font-semibold text-[#101212] dark:text-white">
-                  {mentor.location.city}, {mentor.location.state ? `${mentor.location.state}, ` : ''}{mentor.location.country}
+                  {typeof mentor.location === 'object' && mentor.location !== null
+                    ? `${mentor.location.city || ''}${mentor.location.state ? `, ${mentor.location.state}` : ''}${mentor.location.country ? `, ${mentor.location.country}` : ''}`
+                    : String(mentor.location || 'India')}
                 </p>
               </div>
               <div>
@@ -850,7 +869,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Languages
                 </span>
                 <p className="text-sm font-semibold text-[#101212] dark:text-white">
-                  {mentor.languages.join(' · ')}
+                  {(mentor.languages || ['English']).join(' · ')}
                 </p>
               </div>
             </div>
@@ -874,15 +893,15 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                     <span>Mentorship Background</span>
                   </h3>
                   <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                    {mentor.mentorshipBackground.mentoringExperience}
+                    {mentor.mentorshipBackground?.mentoringExperience}
                   </p>
                 </div>
 
                 {/* Number of Founders Mentored: Only displayed as verified if verification data exists */}
-                {mentor.mentorshipBackground.isFoundersMentoredVerified && (
+                {mentor.mentorshipBackground?.isFoundersMentoredVerified && (
                   <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-300 text-xs font-bold">
                     <CheckCircle2 className="w-3.5 h-3.5" />
-                    <span>{mentor.mentorshipBackground.foundersMentoredCount}+ Founders Mentored • Verified</span>
+                    <span>{mentor.mentorshipBackground?.foundersMentoredCount}+ Founders Mentored • Verified</span>
                   </div>
                 )}
               </div>
@@ -894,7 +913,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                     Founder Profiles Mentored:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {mentor.mentorshipBackground.founderTypesMentored.map((ft, i) => (
+                    {(mentor.mentorshipBackground?.founderTypesMentored || []).map((ft, i) => (
                       <span
                         key={i}
                         className="px-2.5 py-1 rounded-lg text-xs font-medium bg-gray-100 dark:bg-[#202422] text-[#101212] dark:text-white"
@@ -910,7 +929,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                     Areas Mentored:
                   </span>
                   <div className="flex flex-wrap gap-1.5">
-                    {mentor.mentorshipBackground.areasMentored.map((area, i) => (
+                    {(mentor.mentorshipBackground?.areasMentored || []).map((area, i) => (
                       <span
                         key={i}
                         className="px-2.5 py-1 rounded-lg text-xs font-bold bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F]"
@@ -928,7 +947,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Programs & Institutions:
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {mentor.mentorshipBackground.programsAndInstitutions.map((prog, i) => (
+                  {(mentor.mentorshipBackground?.programsAndInstitutions || []).map((prog, i) => (
                     <div
                       key={i}
                       className="p-4 rounded-xl border border-gray-100 dark:border-[#262A29] bg-gray-50/70 dark:bg-[#202422] space-y-1"
@@ -958,7 +977,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Relevant Achievements:
                 </span>
                 <ul className="space-y-1.5 text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                  {mentor.mentorshipBackground.relevantAchievements.map((ach, i) => (
+                  {(mentor.mentorshipBackground?.relevantAchievements || []).map((ach, i) => (
                     <li key={i} className="flex items-start gap-2">
                       <CheckCircle2 className="w-3.5 h-3.5 text-[#9EBE12] dark:text-[#D9FF3F] flex-shrink-0 mt-0.5" />
                       <span>{ach}</span>
@@ -975,13 +994,13 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                 <span>Previous Startup Experience</span>
               </h3>
 
-              {mentor.previousStartupExperience.length === 0 ? (
+              {(mentor.previousStartupExperience || []).length === 0 ? (
                 <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] italic py-2">
                   No startup experience has been added yet.
                 </p>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {mentor.previousStartupExperience.map((st, i) => (
+                  {(mentor.previousStartupExperience || []).map((st, i) => (
                     <div
                       key={i}
                       className="p-5 rounded-2xl bg-gray-50/70 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-3"
@@ -1028,13 +1047,13 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                 <span>What Founders Say</span>
               </h3>
 
-              {mentor.founderTestimonials.length === 0 ? (
+              {(mentor.founderTestimonials || []).length === 0 ? (
                 <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] italic py-2">
                   No founder testimonials available yet.
                 </p>
               ) : (
                 <div className="space-y-4">
-                  {mentor.founderTestimonials.map((t) => (
+                  {(mentor.founderTestimonials || []).map((t) => (
                     <div
                       key={t.id}
                       className="p-5 rounded-2xl bg-gray-50/70 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-3"
@@ -1087,7 +1106,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                     <span>Meeting Slots & Availability</span>
                   </h3>
                   <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                    Time Zone: {mentor.meetingSlots.timeZone}
+                    Time Zone: {mentor.meetingSlots?.timeZone || 'IST (UTC+5:30)'}
                   </p>
                 </div>
 
@@ -1102,7 +1121,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                 )}
               </div>
 
-              {mentor.meetingSlots.availableTimeSlots.length === 0 ? (
+              {(mentor.meetingSlots?.availableTimeSlots || []).length === 0 ? (
                 <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] italic py-2">
                   No meeting slots are currently available.
                 </p>
@@ -1114,7 +1133,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                       Session Types:
                     </span>
                     <div className="space-y-1">
-                      {mentor.meetingSlots.sessionTypes.map((st, i) => (
+                      {(mentor.meetingSlots?.sessionTypes || []).map((st, i) => (
                         <div key={i} className="flex items-center gap-2 text-xs font-semibold text-[#101212] dark:text-white">
                           <div className="w-1.5 h-1.5 rounded-full bg-[#D9FF3F]" />
                           <span>{st}</span>
@@ -1129,7 +1148,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                       Durations:
                     </span>
                     <div className="flex flex-wrap gap-1.5">
-                      {mentor.meetingSlots.durations.map((dur, i) => (
+                      {(mentor.meetingSlots?.durations || []).map((dur, i) => (
                         <span key={i} className="px-2 py-0.5 rounded-lg text-xs font-medium bg-white dark:bg-[#181B1A] text-[#101212] dark:text-white border border-gray-200 dark:border-[#262A29]">
                           {dur}
                         </span>
@@ -1143,7 +1162,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                       Meeting Mode:
                     </span>
                     <div className="flex flex-wrap gap-1.5">
-                      {mentor.meetingSlots.meetingModes.map((mode, i) => (
+                      {(mentor.meetingSlots?.meetingModes || []).map((mode, i) => (
                         <span key={i} className="px-2 py-0.5 rounded-lg text-xs font-medium bg-white dark:bg-[#181B1A] text-[#101212] dark:text-white border border-gray-200 dark:border-[#262A29]">
                           {mode}
                         </span>
@@ -1159,7 +1178,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Weekly Open Office Hours:
                 </span>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {mentor.meetingSlots.availableDays.map((day, i) => (
+                  {(mentor.meetingSlots?.availableDays || []).map((day, i) => (
                     <div
                       key={i}
                       className="p-4 rounded-xl border border-gray-100 dark:border-[#262A29] bg-gray-50/70 dark:bg-[#202422] space-y-2"
@@ -1168,7 +1187,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                         {day}
                       </h4>
                       <div className="space-y-1">
-                        {mentor.meetingSlots.availableTimeSlots.map((slot, j) => (
+                        {(mentor.meetingSlots?.availableTimeSlots || []).map((slot, j) => (
                           <div
                             key={j}
                             className="p-1.5 rounded-lg bg-white dark:bg-[#181B1A] text-[11px] font-mono text-[#565B59] dark:text-[#B6B8B7] border border-gray-200 dark:border-[#262A29]"
@@ -1475,7 +1494,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   onChange={(e) => setRequestFocusArea(e.target.value)}
                   className="w-full h-10 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#262A29] bg-gray-50 dark:bg-[#202422] text-xs text-[#101212] dark:text-white outline-none focus:border-[#D9FF3F]"
                 >
-                  {mentor.areasOfMentorship.map((area, i) => (
+                  {(mentor.areasOfMentorship || []).map((area, i) => (
                     <option key={i} value={area} className="bg-white dark:bg-[#181B1A]">
                       {area}
                     </option>
@@ -1552,7 +1571,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Session Type
                 </label>
                 <div className="grid grid-cols-3 gap-1.5">
-                  {mentor.meetingSlots.sessionTypes.map((type, i) => (
+                  {(mentor.meetingSlots?.sessionTypes || []).map((type, i) => (
                     <button
                       key={i}
                       type="button"
@@ -1575,7 +1594,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Duration
                 </label>
                 <div className="flex gap-1.5 flex-wrap">
-                  {mentor.meetingSlots.durations.map((dur, i) => (
+                  {(mentor.meetingSlots?.durations || []).map((dur, i) => (
                     <button
                       key={i}
                       type="button"
@@ -1595,14 +1614,14 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
               {/* Step 3: Available Time Slot */}
               <div>
                 <label className="text-[11px] font-bold text-[#565B59] dark:text-[#B6B8B7] uppercase block mb-1">
-                  Available Slot ({mentor.meetingSlots.timeZone})
+                  Available Slot ({mentor.meetingSlots?.timeZone || 'IST (UTC+5:30)'})
                 </label>
                 <select
                   value={selectedTimeSlot}
                   onChange={(e) => setSelectedTimeSlot(e.target.value)}
                   className="w-full h-9 px-3 rounded-xl border border-[#E5E7EB] dark:border-[#262A29] bg-gray-50 dark:bg-[#202422] text-xs text-[#101212] dark:text-white outline-none focus:border-[#D9FF3F]"
                 >
-                  {mentor.meetingSlots.availableTimeSlots.map((slot, i) => (
+                  {(mentor.meetingSlots?.availableTimeSlots || []).map((slot, i) => (
                     <option key={i} value={slot} className="bg-white dark:bg-[#181B1A]">
                       {slot}
                     </option>
@@ -1616,7 +1635,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Meeting Mode
                 </label>
                 <div className="flex gap-2">
-                  {mentor.meetingSlots.meetingModes.map((mode, i) => (
+                  {(mentor.meetingSlots?.meetingModes || []).map((mode, i) => (
                     <button
                       key={i}
                       type="button"
@@ -1752,7 +1771,7 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                   Mentorship Areas Required
                 </label>
                 <div className="flex flex-wrap gap-1.5">
-                  {selectedOffering.areasCovered.map((area, idx) => {
+                  {(selectedOffering.areasCovered || []).map((area, idx) => {
                     const isSelected = reqSelectedAreas.includes(area);
                     return (
                       <button
