@@ -337,10 +337,11 @@ export async function POST(req: NextRequest) {
     }
 
     // If INVESTOR_ORG entity, seed dedicated investment_organizations collection record
+    let invOrgDoc: any = null;
     if (canonicalType === 'INVESTOR_ORG') {
       const invOrgCol = db.collection('investment_organizations');
       const details = body.details || body;
-      const invOrgDoc = {
+      invOrgDoc = {
         entityId,
         name: entityName,
         username: cleanEntityTag,
@@ -508,6 +509,9 @@ export async function POST(req: NextRequest) {
 
     delete (entityDoc as any)._id;
     delete (membershipDoc as any)._id;
+    if (invOrgDoc?._id) {
+      delete (invOrgDoc as any)._id;
+    }
 
     return NextResponse.json(
       {
@@ -516,6 +520,7 @@ export async function POST(req: NextRequest) {
         data: {
           entity: entityDoc,
           membership: membershipDoc,
+          invOrg: invOrgDoc || null,
         },
         source: 'mongodb-atlas',
       },

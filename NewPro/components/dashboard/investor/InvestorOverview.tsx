@@ -144,7 +144,7 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
                   Active Member: <span className="text-white font-medium">{profile.name}</span> &bull; Role:{' '}
                   <span className="text-[#D9FF3F] font-semibold">Managing Partner</span> &bull; Fund Size:{' '}
                   <span className="text-white">{activeOrg?.fundSize || '₹500 Cr'}</span> &bull; Cheque:{' '}
-                  <span className="text-[#D9FF3F] font-semibold">{activeOrg?.investmentFocus.ticketSize.formatted || '₹2Cr – ₹10Cr'}</span>
+                  <span className="text-[#D9FF3F] font-semibold">{activeOrg?.investmentFocus?.ticketSize?.formatted || '₹2Cr – ₹10Cr'}</span>
                 </>
               ) : (
                 <>

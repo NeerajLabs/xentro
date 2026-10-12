@@ -381,14 +381,18 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
 
       const entityRes = await fetch('/api/entities', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-id': profile.id || currentUserProfile?.id || '',
+          'x-user-email': profile.email || currentUserProfile?.email || targetEmail || '',
+        },
         body: JSON.stringify({
           name: orgName.trim(),
           entityType: 'INVESTOR_ORG',
           officialEmail: targetEmail,
           challengeId: investorOrgChallengeId,
-          userId: profile.id,
-          userEmail: profile.email,
+          userId: profile.id || currentUserProfile?.id,
+          userEmail: profile.email || currentUserProfile?.email || targetEmail,
           requestedRole: orgRole,
           details: {
             organizationType: orgType,
@@ -400,27 +404,165 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
 
       const entityData = await entityRes.json();
       if (entityRes.ok && entityData.success) {
-        // Also register locally in service
+        const createdEntity = entityData.data?.entity;
+        const backendInvOrg = entityData.data?.invOrg;
+        const orgId = createdEntity?.id || `VCI-${Date.now().toString().slice(-6)}`;
+
+        // Also register locally in service with complete hydrated structure
         investorOrganizationService.createInvestorOrganization({
+          id: orgId,
+          entityId: orgId,
           name: orgName.trim(),
           organizationType: orgType,
+          logo: backendInvOrg?.logo || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80',
+          banner: backendInvOrg?.banner || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&auto=format&fit=crop&q=80',
+          shortDescription: backendInvOrg?.shortDescription || `Early-stage ${orgType} backing pioneering technology startups across India.`,
           website: orgWebsite.trim() || 'https://xentro.in',
+          linkedIn: backendInvOrg?.linkedIn || 'https://linkedin.com',
           officialEmail: targetEmail,
-          headquarters: { city: 'Bengaluru', country: 'India' },
+          headquarters: backendInvOrg?.headquarters || { city: 'Bengaluru', state: 'Karnataka', country: 'India' },
+          foundedYear: backendInvOrg?.foundedYear || '2026',
           legalName: orgName.trim(),
           fundSize: targetAum,
           aum: targetAum,
           verified: false,
-          ownerId: profile.id,
-        } as any);
+          ownerId: profile.id || currentUserProfile?.id || 'usr_investor',
+          ownerName: profile.name || currentUserProfile?.name || 'Managing Partner',
+          ownerEmail: profile.email || currentUserProfile?.email || targetEmail,
 
-        const createdOrg = entityData.data?.entity || {
-          id: `VCI-${Date.now().toString().slice(-6)}`,
+          about: backendInvOrg?.about || {
+            overview: `${orgName.trim()} is an institutional ${orgType} focused on early-stage investments.`,
+            thesis: 'We back high-conviction founders solving mission-critical problems with sustainable unit economics.',
+            mission: `Empowering founders to scale impactful tech enterprises from Bengaluru.`,
+            assetsInfo: targetAum ? `Active pool of ${targetAum}` : undefined,
+            fundGeneration: 'Active Deployment',
+            geographicPresence: 'Bengaluru, India',
+          },
+
+          investmentFocus: backendInvOrg?.investmentFocus || {
+            sectors: ['Enterprise SaaS', 'FinTech', 'AI & Machine Learning'],
+            stages: ['Seed', 'Series A'],
+            geography: {
+              countries: ['India'],
+              regions: ['Bengaluru'],
+            },
+            businessModels: ['B2B', 'SaaS', 'Marketplace'],
+            ticketSize: {
+              min: '₹1 Cr',
+              max: '₹5 Cr',
+              formatted: '₹1 Cr – ₹5 Cr',
+            },
+            leadInvestorPreference: 'Lead or Co-Lead',
+            investmentInstruments: ['Equity', 'CCPS', 'SAFE notes'],
+          },
+
+          valueBeyondCapital: backendInvOrg?.valueBeyondCapital || {
+            supportAreas: [
+              'Go-To-Market Acceleration',
+              'Customer Introductions',
+              'Follow-On Syndication',
+            ],
+            whatIBringToFounders:
+              'Hands-on platform support in enterprise scaling, strategic hiring, and fundraising guidance.',
+          },
+
+          investmentCriteria: backendInvOrg?.investmentCriteria || {
+            evaluationCriteria: [
+              'High founder integrity and velocity',
+              'Demonstrated customer demand',
+              'Defensible technology moat',
+            ],
+            preferredTraction: ['MVP', 'Early Revenue'],
+            diligenceHighlights: ['Customer references', 'Financial audit'],
+          },
+
+          investmentProcess: backendInvOrg?.investmentProcess || {
+            stages: [
+              {
+                stepNumber: 1,
+                title: 'Initial Review',
+                description: 'Deck review within 48 hours.',
+              },
+              {
+                stepNumber: 2,
+                title: 'Partner Meeting',
+                description: 'Discussion on product roadmap and traction.',
+              },
+              {
+                stepNumber: 3,
+                title: 'Due Diligence & Term Sheet',
+                description: 'Cap table evaluation and investment memo.',
+              },
+            ],
+            preferredConnectionMethod: 'Platform pitch submission',
+            informationRequiredInitially: ['Pitch Deck (PDF)', 'Metrics'],
+            typicalDecisionTimeline: '2 to 3 weeks',
+            pitchDeckRequirements: 'PDF deck with traction and financial summary',
+            warmIntroPreferred: false,
+            unsolicitedPitchesAccepted: true,
+          },
+
+          portfolio: backendInvOrg?.portfolio || [],
+          experienceStats: backendInvOrg?.experienceStats || {
+            totalInvestments: 0,
+            activePortfolio: 0,
+            followOnInvestments: 0,
+            exits: 0,
+          },
+          testimonials: backendInvOrg?.testimonials || [],
+          connectionPreferences: backendInvOrg?.connectionPreferences || {
+            openToConnectionRequests: true,
+            openToStartupPitches: true,
+            introductionPreferred: false,
+            currentlyInvesting: true,
+            notAcceptingNewPitches: false,
+            guidelines: 'Happy to review pitches from mission-driven founders.',
+          },
+          content: [],
+          activities: [],
+          invoices: backendInvOrg?.invoices || [],
+
+          subscription: backendInvOrg?.subscription || {
+            tier: 'pro',
+            status: 'active',
+            currentPeriodEnd: '2026-12-31T23:59:59Z',
+            cancelAtPeriodEnd: false,
+            seatsIncluded: 5,
+            seatsUsed: 1,
+            dealFlowLimit: -1,
+            dueDiligenceExportsLimit: 50,
+            monthlyPrice: 9999,
+            currency: 'INR',
+          },
+
+          billingAccount: backendInvOrg?.billingAccount || {
+            organizationName: orgName.trim(),
+            billingEmail: targetEmail,
+            taxExempt: false,
+            billingAddress: {
+              line1: 'Corporate Office',
+              city: 'Bengaluru',
+              state: 'Karnataka',
+              country: 'India',
+              postalCode: '560001',
+            },
+            defaultPaymentMethod: {
+              type: 'card',
+              brand: 'visa',
+              last4: '4242',
+              expiryMonth: '12',
+              expiryYear: '2028',
+            },
+          },
+        });
+
+        const createdOrg = createdEntity || {
+          id: orgId,
           name: orgName.trim(),
           entityType: 'INVESTOR_ORG',
           accountType: 'Investor Organization',
           officialEmail: targetEmail,
-          primaryOwnerId: profile.id,
+          primaryOwnerId: profile.id || currentUserProfile?.id,
           verificationStatus: 'PENDING',
           activationStatus: 'PENDING_COMMERCIAL_ACTIVATION',
         };
@@ -431,9 +573,14 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
           entityType: 'INVESTOR_ORG',
           accountType: 'Investor Organization',
           officialEmail: targetEmail,
-          primaryOwnerId: profile.id,
-          verificationStatus: 'PENDING',
-          activationStatus: 'PENDING_COMMERCIAL_ACTIVATION',
+          primaryOwnerId: profile.id || currentUserProfile?.id,
+          verificationStatus: createdOrg.verificationStatus || 'PENDING',
+          activationStatus: createdOrg.activationStatus || 'PENDING_COMMERCIAL_ACTIVATION',
+          details: {
+            organizationType: orgType,
+            fundSize: targetAum,
+            website: orgWebsite,
+          },
         });
 
         showToast(

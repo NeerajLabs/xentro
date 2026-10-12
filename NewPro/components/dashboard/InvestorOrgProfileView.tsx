@@ -250,7 +250,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                   <span>&bull;</span>
                   <span className="flex items-center gap-1">
                     <MapPin className="w-3.5 h-3.5" />
-                    {organization.headquarters.city}, {organization.headquarters.country}
+                    {organization.headquarters?.city || 'Bengaluru'}, {organization.headquarters?.country || 'India'}
                   </span>
                   <span>&bull;</span>
                   <span className="flex items-center gap-1">
@@ -408,7 +408,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                     <span>About the Organization</span>
                   </h3>
                   <p className="text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
-                    {organization.about.overview}
+                    {organization.about?.overview || organization.shortDescription || 'Institutional venture fund.'}
                   </p>
                 </div>
 
@@ -418,7 +418,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                     <span>Investment Thesis Summary</span>
                   </h3>
                   <p className="text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
-                    {organization.about.thesis}
+                    {organization.about?.thesis || 'We back visionary founders building compounding technology companies.'}
                   </p>
                 </div>
 
@@ -428,7 +428,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                     <span>Mission & Values</span>
                   </h3>
                   <p className="text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
-                    {organization.about.mission}
+                    {organization.about?.mission || 'Empowering founders to build enduring tech enterprises.'}
                   </p>
                 </div>
               </div>
@@ -473,7 +473,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                         Active Deployment
                       </span>
                       <span className="font-bold text-[#101212] dark:text-white">
-                        {organization.about.fundGeneration || 'Current Fund'}
+                        {organization.about?.fundGeneration || 'Current Fund'}
                       </span>
                     </div>
 
@@ -482,8 +482,8 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                         Geographic Presence
                       </span>
                       <span className="font-bold text-[#101212] dark:text-white">
-                        {organization.about.geographicPresence ||
-                          `${organization.headquarters.city}, ${organization.headquarters.country}`}
+                        {organization.about?.geographicPresence ||
+                          `${organization.headquarters?.city || 'Bengaluru'}, ${organization.headquarters?.country || 'India'}`}
                       </span>
                     </div>
                   </div>
@@ -563,10 +563,10 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                     Cheque Size Range
                   </span>
                   <div className="text-base font-bold text-[#71870A] dark:text-[#D9FF3F]">
-                    {organization.investmentFocus.ticketSize.formatted}
+                    {organization.investmentFocus?.ticketSize?.formatted || '₹1 Cr – ₹5 Cr'}
                   </div>
                   <span className="text-[10px] text-[#565B59] dark:text-[#B6B8B7] block">
-                    {organization.investmentFocus.leadInvestorPreference || 'Lead Check'}
+                    {organization.investmentFocus?.leadInvestorPreference || 'Lead Check'}
                   </span>
                 </div>
 
@@ -575,7 +575,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                     Target Stages
                   </span>
                   <div className="flex flex-wrap gap-1">
-                    {organization.investmentFocus.stages.map((stg) => (
+                    {(organization.investmentFocus?.stages || ['Seed', 'Series A']).map((stg) => (
                       <span
                         key={stg}
                         className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212]"
@@ -591,10 +591,10 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                     Geographies
                   </span>
                   <p className="text-xs font-semibold text-[#101212] dark:text-white">
-                    {organization.investmentFocus.geography.countries.join(', ')}
+                    {(organization.investmentFocus?.geography?.countries || ['India']).join(', ')}
                   </p>
                   <span className="text-[10px] text-[#565B59] dark:text-[#B6B8B7]">
-                    Hubs: {organization.investmentFocus.geography.regions.join(', ')}
+                    Hubs: {(organization.investmentFocus?.geography?.regions || ['Bengaluru']).join(', ')}
                   </span>
                 </div>
               </div>
@@ -605,7 +605,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                   Focus Sectors
                 </span>
                 <div className="flex flex-wrap gap-1.5">
-                  {organization.investmentFocus.sectors.map((sec) => (
+                  {(organization.investmentFocus?.sectors || ['Enterprise SaaS', 'FinTech', 'AI & Machine Learning']).map((sec) => (
                     <span
                       key={sec}
                       className="px-3 py-1 rounded-xl text-xs font-medium bg-gray-100 dark:bg-[#202422] text-[#101212] dark:text-white border border-gray-200 dark:border-[#262A29]"
@@ -624,10 +624,10 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                 <span>Value Beyond Capital</span>
               </h3>
               <p className="text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
-                {organization.valueBeyondCapital.whatIBringToFounders}
+                {organization.valueBeyondCapital?.whatIBringToFounders || 'Hands-on platform support in enterprise scaling, executive hiring, and fundraising guidance.'}
               </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-2">
-                {organization.valueBeyondCapital.supportAreas.map((area, idx) => (
+                {(organization.valueBeyondCapital?.supportAreas || ['Go-To-Market Acceleration', 'Customer Introductions', 'Follow-On Syndication']).map((area, idx) => (
                   <div key={idx} className="flex items-center gap-2 text-xs text-[#101212] dark:text-white">
                     <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
                     <span>{area}</span>
@@ -643,7 +643,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                 <span>Investment Criteria & Diligence Highlights</span>
               </h3>
               <div className="space-y-2 pt-1">
-                {organization.investmentCriteria.evaluationCriteria.map((crit, idx) => (
+                {(organization.investmentCriteria?.evaluationCriteria || ['High founder integrity and velocity', 'Demonstrated customer demand', 'Defensible technology moat']).map((crit, idx) => (
                   <div key={idx} className="flex items-start gap-2 text-xs text-[#565B59] dark:text-[#B6B8B7]">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#71870A] dark:text-[#D9FF3F] mt-1.5 flex-shrink-0" />
                     <span>{crit}</span>
@@ -660,7 +660,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 pt-1">
-                {organization.investmentProcess.stages.map((step) => (
+                {(organization.investmentProcess?.stages || []).map((step) => (
                   <div
                     key={step.stepNumber}
                     className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-1.5"
@@ -693,7 +693,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle text-center">
                 <span className="text-2xl font-black font-sora text-[#101212] dark:text-white">
-                  {organization.experienceStats.totalInvestments || 28}
+                  {organization.experienceStats?.totalInvestments || 0}
                 </span>
                 <span className="text-[10px] font-bold text-gray-400 block uppercase mt-0.5">
                   Total Deals
@@ -701,7 +701,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
               </div>
               <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle text-center">
                 <span className="text-2xl font-black font-sora text-[#71870A] dark:text-[#D9FF3F]">
-                  {organization.experienceStats.activePortfolio || 22}
+                  {organization.experienceStats?.activePortfolio || 0}
                 </span>
                 <span className="text-[10px] font-bold text-gray-400 block uppercase mt-0.5">
                   Active Portcos
@@ -709,7 +709,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
               </div>
               <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle text-center">
                 <span className="text-2xl font-black font-sora text-emerald-500">
-                  {organization.experienceStats.exits || 6}
+                  {organization.experienceStats?.exits || 0}
                 </span>
                 <span className="text-[10px] font-bold text-gray-400 block uppercase mt-0.5">
                   Exits
@@ -717,7 +717,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
               </div>
               <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle text-center">
                 <span className="text-2xl font-black font-sora text-blue-500">
-                  {organization.experienceStats.followOnInvestments || 14}
+                  {organization.experienceStats?.followOnInvestments || 0}
                 </span>
                 <span className="text-[10px] font-bold text-gray-400 block uppercase mt-0.5">
                   Follow-ons
@@ -733,7 +733,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-1">
-                {organization.portfolio.map((portco) => (
+                {(organization.portfolio || []).map((portco) => (
                   <div
                     key={portco.id}
                     className="p-4 rounded-xl border border-gray-100 dark:border-[#262A29] bg-gray-50/50 dark:bg-[#141615] space-y-2.5"
@@ -771,7 +771,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
             </div>
 
             {/* Testimonials */}
-            {organization.testimonials.length > 0 && (
+            {(organization.testimonials || []).length > 0 && (
               <div className="p-5 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-4">
                 <h3 className="text-sm font-bold font-sora text-[#101212] dark:text-white flex items-center gap-2">
                   <Sparkles className="w-4 h-4 text-[#71870A] dark:text-[#D9FF3F]" />
@@ -779,7 +779,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                 </h3>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {organization.testimonials.map((test) => (
+                  {(organization.testimonials || []).map((test) => (
                     <div
                       key={test.id}
                       className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-3"
@@ -919,7 +919,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                   Pitch Guidelines:
                 </span>
                 <p className="text-[11px] leading-relaxed">
-                  {organization.connectionPreferences.guidelines ||
+                  {organization.connectionPreferences?.guidelines ||
                     'Warm introductions via existing portfolio founders receive priority screening. Unsolicited pitches are evaluated weekly.'}
                 </p>
               </div>
@@ -938,7 +938,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
               </h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {organization.content.map((item) => (
+                {(organization.content || []).map((item) => (
                   <div
                     key={item.id}
                     className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-2"
@@ -962,9 +962,9 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                     </p>
 
                     <div className="flex items-center gap-3 text-[10px] text-gray-400 pt-1">
-                      <span>❤️ {item.metrics.likes}</span>
-                      <span>💬 {item.metrics.comments}</span>
-                      <span>🔄 {item.metrics.shares}</span>
+                      <span>❤️ {item.metrics?.likes || 0}</span>
+                      <span>💬 {item.metrics?.comments || 0}</span>
+                      <span>🔄 {item.metrics?.shares || 0}</span>
                     </div>
                   </div>
                 ))}
@@ -979,7 +979,7 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
               </h3>
 
               <div className="space-y-2.5">
-                {organization.activities.map((act) => (
+                {(organization.activities || []).map((act) => (
                   <div
                     key={act.id}
                     className="p-3.5 rounded-xl border border-gray-100 dark:border-[#262A29] bg-gray-50/50 dark:bg-[#141615] flex items-center justify-between gap-3"

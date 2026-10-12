@@ -706,6 +706,93 @@ class InvestorOrganizationService {
           this.saveOrganizations(INITIAL_ORGANIZATIONS);
           return INITIAL_ORGANIZATIONS;
         }
+        if (Array.isArray(parsed)) {
+          // Self-heal any organizations that have missing nested objects
+          return parsed.map((o) => ({
+            ...o,
+            headquarters: o.headquarters || { city: 'Bengaluru', country: 'India' },
+            about: o.about || {
+              overview: `${o.name} is an institutional ${o.organizationType || 'Investment Firm'}.`,
+              thesis: 'We back high-conviction founders building enduring technology companies.',
+              mission: 'Empowering founders to build enduring tech enterprises.',
+              fundGeneration: 'Active Deployment',
+              geographicPresence: `${o.headquarters?.city || 'Bengaluru'}, India`,
+            },
+            investmentFocus: o.investmentFocus || {
+              sectors: ['Enterprise SaaS', 'FinTech', 'AI & Machine Learning'],
+              stages: ['Seed', 'Series A'],
+              geography: { countries: ['India'], regions: ['Bengaluru'] },
+              businessModels: ['B2B', 'SaaS', 'Marketplace'],
+              ticketSize: { min: '₹1 Cr', max: '₹5 Cr', formatted: '₹1 Cr – ₹5 Cr' },
+              leadInvestorPreference: 'Lead or Co-Lead',
+              investmentInstruments: ['Equity', 'CCPS', 'SAFE notes'],
+            },
+            valueBeyondCapital: o.valueBeyondCapital || {
+              supportAreas: ['Go-To-Market Acceleration', 'Customer Introductions', 'Follow-On Syndication'],
+              whatIBringToFounders: 'Hands-on platform support in enterprise scaling, executive hiring, and fundraising guidance.',
+            },
+            investmentCriteria: o.investmentCriteria || {
+              evaluationCriteria: ['High founder integrity and velocity', 'Demonstrated customer demand', 'Defensible technology moat'],
+              preferredTraction: ['MVP', 'Early Revenue'],
+              diligenceHighlights: ['Customer references', 'Financial audit'],
+            },
+            investmentProcess: o.investmentProcess || {
+              stages: [
+                { stepNumber: 1, title: 'Initial Deal Review', description: 'Deck review within 48 hours.', estimatedTime: '2-3 Days' },
+                { stepNumber: 2, title: 'Partner Discussion', description: 'Discussion on product roadmap and traction.', estimatedTime: '1 Week' },
+                { stepNumber: 3, title: 'Due Diligence & Term Sheet', description: 'Cap table evaluation and term sheet.', estimatedTime: '1-2 Weeks' },
+              ],
+              preferredConnectionMethod: 'Platform pitch submission',
+              informationRequiredInitially: ['Pitch Deck (PDF)', 'Metrics'],
+              typicalDecisionTimeline: '2 to 3 weeks',
+              pitchDeckRequirements: 'PDF deck with traction and financial summary',
+              warmIntroPreferred: false,
+              unsolicitedPitchesAccepted: true,
+            },
+            portfolio: o.portfolio || [],
+            experienceStats: o.experienceStats || {
+              totalInvestments: 0,
+              activePortfolio: 0,
+              followOnInvestments: 0,
+              exits: 0,
+            },
+            testimonials: o.testimonials || [],
+            connectionPreferences: o.connectionPreferences || {
+              openToConnectionRequests: true,
+              openToStartupPitches: true,
+              introductionPreferred: false,
+              currentlyInvesting: true,
+              notAcceptingNewPitches: false,
+              guidelines: 'Happy to review pitches from mission-driven founders.',
+            },
+            content: o.content || [],
+            activities: o.activities || [],
+            subscription: o.subscription || {
+              tier: 'pro',
+              status: 'active',
+              currentPeriodEnd: '2026-12-31T23:59:59Z',
+              cancelAtPeriodEnd: false,
+              seatsIncluded: 5,
+              seatsUsed: 1,
+              dealFlowLimit: -1,
+              dueDiligenceExportsLimit: 50,
+              monthlyPrice: 9999,
+              currency: 'INR',
+            },
+            billingAccount: o.billingAccount || {
+              organizationName: o.name,
+              billingEmail: o.officialEmail || '',
+              taxExempt: false,
+              billingAddress: {
+                line1: 'Corporate Office',
+                city: 'Bengaluru',
+                state: 'Karnataka',
+                country: 'India',
+                postalCode: '560001',
+              },
+            },
+          }));
+        }
         return parsed;
       }
     } catch (e) {
@@ -728,7 +815,7 @@ class InvestorOrganizationService {
 
   getOrganizationById(orgId: string): InvestorOrganization | null {
     const orgs = this.getOrganizations();
-    return orgs.find((o) => o.id === orgId) || null;
+    return orgs.find((o) => o.id === orgId || (o as any).entityId === orgId) || null;
   }
 
   createInvestorOrganization(
@@ -745,16 +832,113 @@ class InvestorOrganizationService {
     const newOrg: InvestorOrganization = {
       ...data,
       id: orgId,
-      deals: [],
-      diligenceDocs: [],
-      meetings: [],
+      logo: data.logo || 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80',
+      banner: data.banner || 'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&auto=format&fit=crop&q=80',
+      shortDescription: data.shortDescription || `Early-stage ${data.organizationType || 'Investment Firm'} backing pioneering technology startups.`,
+      website: data.website || 'https://xentro.in',
+      linkedIn: data.linkedIn || 'https://linkedin.com',
+      officialEmail: data.officialEmail || '',
+      headquarters: data.headquarters || {
+        city: 'Bengaluru',
+        country: 'India',
+      },
+      foundedYear: data.foundedYear || '2026',
+      legalName: data.legalName || data.name,
+      fundSize: data.fundSize || '₹100 Cr',
+      aum: data.aum || data.fundSize || '₹100 Cr AUM',
+      verified: data.verified || false,
+      ownerId: data.ownerId || '',
+      about: data.about || {
+        overview: `${data.name} is an institutional ${data.organizationType || 'Investment Firm'} focused on early-stage investments.`,
+        thesis: 'We back high-conviction founders solving mission-critical problems with sustainable unit economics.',
+        mission: 'Empowering founders to build enduring tech enterprises.',
+        fundGeneration: 'Active Deployment',
+        geographicPresence: 'Bengaluru, India',
+      },
+      investmentFocus: data.investmentFocus || {
+        sectors: ['Enterprise SaaS', 'FinTech', 'AI & Machine Learning'],
+        stages: ['Seed', 'Series A'],
+        geography: { countries: ['India'], regions: ['Bengaluru'] },
+        businessModels: ['B2B', 'SaaS', 'Marketplace'],
+        ticketSize: { min: '₹1 Cr', max: '₹5 Cr', formatted: '₹1 Cr – ₹5 Cr' },
+        leadInvestorPreference: 'Lead or Co-Lead',
+        investmentInstruments: ['Equity', 'CCPS', 'SAFE notes'],
+      },
+      valueBeyondCapital: data.valueBeyondCapital || {
+        supportAreas: ['Go-To-Market Acceleration', 'Customer Introductions', 'Follow-On Syndication'],
+        whatIBringToFounders: 'Hands-on platform support in enterprise scaling, executive hiring, and fundraising guidance.',
+      },
+      investmentCriteria: data.investmentCriteria || {
+        evaluationCriteria: ['High founder integrity and velocity', 'Demonstrated customer demand', 'Defensible technology moat'],
+        preferredTraction: ['MVP', 'Early Revenue'],
+        diligenceHighlights: ['Customer references', 'Financial audit'],
+      },
+      investmentProcess: data.investmentProcess || {
+        stages: [
+          { stepNumber: 1, title: 'Initial Deal Review', description: 'Deck review within 48 hours.', estimatedTime: '2-3 Days' },
+          { stepNumber: 2, title: 'Partner Discussion', description: 'Discussion on product roadmap and traction.', estimatedTime: '1 Week' },
+          { stepNumber: 3, title: 'Due Diligence & Term Sheet', description: 'Cap table evaluation and term sheet.', estimatedTime: '1-2 Weeks' },
+        ],
+        preferredConnectionMethod: 'Platform pitch submission',
+        informationRequiredInitially: ['Pitch Deck (PDF)', 'Metrics'],
+        typicalDecisionTimeline: '2 to 3 weeks',
+        pitchDeckRequirements: 'PDF deck with traction and financial summary',
+        warmIntroPreferred: false,
+        unsolicitedPitchesAccepted: true,
+      },
+      portfolio: data.portfolio || [],
+      experienceStats: data.experienceStats || {
+        totalInvestments: 0,
+        activePortfolio: 0,
+        followOnInvestments: 0,
+        exits: 0,
+      },
+      testimonials: data.testimonials || [],
+      connectionPreferences: data.connectionPreferences || {
+        openToConnectionRequests: true,
+        openToStartupPitches: true,
+        introductionPreferred: false,
+        currentlyInvesting: true,
+        notAcceptingNewPitches: false,
+        guidelines: 'Happy to review pitches from mission-driven founders.',
+      },
+      content: data.content || [],
+      activities: data.activities || [],
+      invoices: (data as any).invoices || [],
+      subscription: data.subscription || {
+        tier: 'pro',
+        status: 'active',
+        currentPeriodEnd: '2026-12-31T23:59:59Z',
+        cancelAtPeriodEnd: false,
+        seatsIncluded: 5,
+        seatsUsed: 1,
+        dealFlowLimit: -1,
+        dueDiligenceExportsLimit: 50,
+        monthlyPrice: 9999,
+        currency: 'INR',
+      },
+      billingAccount: data.billingAccount || {
+        organizationName: data.name,
+        billingEmail: data.officialEmail || '',
+        taxExempt: false,
+        billingAddress: {
+          line1: 'Corporate Office',
+          city: 'Bengaluru',
+          state: 'Karnataka',
+          country: 'India',
+          postalCode: '560001',
+        },
+      },
+      deals: (data as any).deals || [],
+      diligenceDocs: (data as any).diligenceDocs || [],
+      meetings: (data as any).meetings || [],
       createdAt: now,
       updatedAt: now,
     };
 
     const orgs = this.getOrganizations();
     // avoid duplicates
-    const filtered = orgs.filter((o) => o.id !== orgId);
+    const filtered = orgs.filter((o) => o.id !== orgId && (o as any).entityId !== orgId);
     filtered.push(newOrg);
     this.saveOrganizations(filtered);
 
