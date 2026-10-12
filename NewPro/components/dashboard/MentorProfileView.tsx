@@ -600,6 +600,14 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
               )}
             </div>
 
+            {/* Account Tag Subline */}
+            <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+              <span className="font-bold text-[#101212] dark:text-[#D9FF3F]">
+                @{String((mentor as any)?.accountTag || (mentor as any)?.username || mentor.name.toLowerCase().replace(/[^a-z0-9]/g, '')).replace(/^@/, '')}
+              </span>
+              {' '}&bull; <span className="font-semibold text-[#101212] dark:text-white">Mentor Account</span>
+            </p>
+
             <p className="text-sm sm:text-base font-semibold text-[#101212] dark:text-[#D9FF3F]">
               {mentor.currentRole.designation} · {mentor.currentRole.organization}
             </p>

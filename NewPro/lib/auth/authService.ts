@@ -207,12 +207,14 @@ export const authService = {
 
     // Create Personal Account representation with XU-XXXXXX identity model
     const xuId = backendUser?.id || backendUser?.xentroId || generateXentroId("XU");
-    const username = backendUser?.username || generateUsername(data.fullName);
+    const username = backendUser?.username || (backendUser as any)?.accountTag || generateUsername(data.fullName);
 
     const newUser: User = {
       id: xuId,
       xentroId: xuId,
       username: username,
+      accountTag: username,
+      tag: username,
       fullName: backendUser?.fullName || data.fullName.trim(),
       email: normalizedEmail,
       phoneNumber: backendUser?.phoneNumber || data.phoneNumber?.trim() || "",
@@ -252,6 +254,9 @@ export const authService = {
       linkedin: existingProfile?.linkedin || "",
       website: existingProfile?.website || "",
       otherLinks: existingProfile?.otherLinks || [],
+      publicUsername: username,
+      accountTag: username,
+      username: username,
     };
     setStorageItem(PERSONAL_PROFILE_KEY, JSON.stringify(updatedProfile));
 
@@ -278,6 +283,8 @@ export const authService = {
       id: xuId,
       xentroId: xuId,
       username: "@alexrivera24",
+      accountTag: "@alexrivera24",
+      tag: "@alexrivera24",
       fullName: "Alex Rivera",
       email: "alex.rivera@xentro.network",
       phoneNumber: "+91 98765 43210",

@@ -88,6 +88,8 @@ export interface PersonalProfile {
   email?: string;
   phoneNumber?: string;
   publicUsername?: string;
+  accountTag?: string;
+  username?: string;
   visibility?: {
     profile?: string;
     education?: string;
@@ -101,6 +103,8 @@ export interface User {
   id: string; // e.g. "XU-284731"
   xentroId?: string; // "XU-XXXXXX"
   username?: string; // "@kranthi"
+  accountTag?: string; // "@kranthi"
+  tag?: string;
   roleId?: string; // "FO-594120", "MEN-350298", etc.
   fullName: string;
   email: string;
@@ -130,6 +134,8 @@ export interface StartupEntity {
   id: string; // e.g. "ST-726351"
   startupId?: string; // "ST-XXXXXX"
   username?: string; // "@apexventures"
+  accountTag?: string; // "@apexventures"
+  tag?: string;
   founderId?: string; // "FO-594120"
   startupName: string;
   founderName: string;
@@ -160,6 +166,8 @@ export interface InvestorOrgEntity {
   id: string; // e.g. "VCI-284912"
   vciId?: string;
   username?: string; // e.g. "@apexventures"
+  accountTag?: string; // e.g. "@apexventures"
+  tag?: string;
   orgName: string;
   regType: string;
   regNo: string;
@@ -171,6 +179,8 @@ export interface InvestorOrgEntity {
 
 export interface EspRequest {
   id: string;
+  username?: string;
+  accountTag?: string;
   institutionName: string;
   organizationType: string;
   website: string;

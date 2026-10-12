@@ -78,6 +78,49 @@ export const AddMemberWizardModal: React.FC<AddMemberWizardModalProps> = ({
     getDefaultPermissionsForRole('team_member')
   );
   const [isCustomizingPermissions, setIsCustomizingPermissions] = useState(false);
+  const [remoteResults, setRemoteResults] = useState<any[]>([]);
+  const [isSearchingRemote, setIsSearchingRemote] = useState(false);
+
+  // Debounced lookup from MongoDB Atlas /api/users/lookup by @tag or name
+  React.useEffect(() => {
+    const q = searchQuery.trim();
+    if (!q || q.length < 2) {
+      setRemoteResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingRemote(true);
+        const res = await fetch(`/api/users/lookup?q=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const json = await res.json();
+          if (json.data) {
+            const list = Array.isArray(json.data) ? json.data : [json.data];
+            setRemoteResults(
+              list.map((item: any) => ({
+                id: item.id,
+                name: item.name,
+                handle: item.accountTag || item.username || item.tag || `@${item.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+                role: item.role || 'Member',
+                category: item.role?.toLowerCase().includes('advisor') ? 'advisor' : 'core_team',
+                avatar: item.avatar || '/xentro-logo.png',
+                email: item.email || '',
+                bio: `Verified member with account tag ${item.accountTag || item.username}`,
+                expertise: [],
+              }))
+            );
+          }
+        }
+      } catch {
+        // ignore
+      } finally {
+        setIsSearchingRemote(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   if (!isOpen) return null;
 
@@ -99,6 +142,15 @@ export const AddMemberWizardModal: React.FC<AddMemberWizardModalProps> = ({
       return [];
     }
   }, []);
+
+  const allSearchUsers = React.useMemo(() => {
+    const map = new Map<string, any>();
+    platformUsers.forEach((u) => map.set(u.id, u));
+    remoteResults.forEach((u) => {
+      if (!map.has(u.id)) map.set(u.id, u);
+    });
+    return Array.from(map.values());
+  }, [platformUsers, remoteResults]);
 
   const handleSelectUser = (u: any) => {
     setSelectedPlatformUser(u);
@@ -147,6 +199,7 @@ export const AddMemberWizardModal: React.FC<AddMemberWizardModalProps> = ({
       linkedin,
       startDate,
       xentroUserId: selectedPlatformUser?.id || undefined,
+      xentroHandle: selectedPlatformUser?.handle || undefined,
       xentroProfile: selectedPlatformUser?.handle || undefined,
       xentroProfileLinked: !!selectedPlatformUser,
       entityMembershipStatus: selectedPlatformUser ? 'active' : 'invited',
@@ -251,15 +304,20 @@ export const AddMemberWizardModal: React.FC<AddMemberWizardModalProps> = ({
                     <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                     <input
                       type="text"
-                      placeholder="Search connected community members..."
+                      placeholder="Search by tag e.g. @bb or member name..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-medium text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
                     />
+                    {isSearchingRemote && (
+                      <span className="absolute right-3.5 top-1/2 -translate-y-1/2 text-[10px] text-[#D9FF3F] font-mono animate-pulse">
+                        Searching...
+                      </span>
+                    )}
                   </div>
 
                   <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {platformUsers
+                    {allSearchUsers
                       .filter(
                         (u) =>
                           !searchQuery.trim() ||

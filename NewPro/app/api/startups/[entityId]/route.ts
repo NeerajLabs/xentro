@@ -24,9 +24,16 @@ export async function GET(
     const startupsCol = db.collection('startups');
     const membershipsCol = db.collection('memberships');
 
-    // 1. Verify Entity in Central Registry
+    // 1. Verify Entity in Central Registry (by ID, username, or accountTag)
     const entity = await entitiesCol.findOne({
-      id: entityId,
+      $or: [
+        { id: entityId },
+        { entityId: entityId },
+        { username: entityId },
+        { username: `@${entityId.replace(/^@/, '')}` },
+        { accountTag: entityId },
+        { accountTag: `@${entityId.replace(/^@/, '')}` },
+      ],
       status: { $nin: ['ORPHANED_DELETED', 'DELETED'] },
       is_deleted: { $ne: true },
       deleted: { $ne: true },
@@ -35,6 +42,8 @@ export async function GET(
     if (!entity) {
       return NextResponse.json({ success: false, message: 'Startup entity not found or inactive' }, { status: 404 });
     }
+
+    const authoritativeEntityId = entity.id || entityId;
 
     // 2. Fetch Detailed Profile from startups Collection
     let startupProfile: any = await startupsCol.findOne({ entityId });
@@ -181,10 +190,21 @@ export async function GET(
       }
     }
 
-    // 4. Always sync authoritative entity verification status and legal name
+    // 4. Always sync authoritative entity verification status, legal name, and account tag
+    const effectiveStartupTag =
+      entity.accountTag ||
+      entity.username ||
+      startupProfile.accountTag ||
+      startupProfile.username ||
+      `@${(entity.name || 'startup').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}`;
+
     startupProfile.identity = startupProfile.identity || {};
     startupProfile.identity.name = entity.name || startupProfile.identity.name;
+    startupProfile.identity.username = effectiveStartupTag;
+    startupProfile.identity.accountTag = effectiveStartupTag;
     startupProfile.identity.isVerified = entity.verificationStatus === 'VERIFIED';
+    startupProfile.username = effectiveStartupTag;
+    startupProfile.accountTag = effectiveStartupTag;
     startupProfile.visibility = entity.visibility || startupProfile.visibility || 'PUBLIC';
 
     // Delete MongoDB internal _id

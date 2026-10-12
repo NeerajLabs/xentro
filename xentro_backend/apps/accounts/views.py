@@ -240,6 +240,8 @@ class SignUpView(APIView):
         user_doc = {
             "id": user_id,
             "username": username,
+            "accountTag": username,
+            "tag": username,
             "email": email,
             "phoneNumber": phone_number,
             "fullName": full_name,

@@ -33,6 +33,9 @@ function hydrateFullInvestorProfile(raw: any, fallbackId: string = 'inv_fallback
   return {
     id: raw.id || raw.entityId || fallbackId,
     name,
+    username: raw.username || raw.accountTag || `@${name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}`,
+    accountTag: raw.accountTag || raw.username || `@${name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}`,
+    tag: raw.accountTag || raw.username || `@${name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}`,
     logo: raw.logo || raw.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`,
     banner: raw.banner || 'https://images.unsplash.com/photo-1557804506-669a67965ba0?w=1600&auto=format&fit=crop&q=80',
     investorType: raw.investorType || 'Angel Network',
@@ -245,6 +248,10 @@ export async function GET(
       $or: [
         { id: rawEntityId },
         { entityId: rawEntityId },
+        { username: rawEntityId },
+        { username: `@${rawEntityId.replace(/^@/, '')}` },
+        { accountTag: rawEntityId },
+        { accountTag: `@${rawEntityId.replace(/^@/, '')}` },
         { createdByUserId: rawEntityId },
         { primaryOwnerId: rawEntityId },
       ],
@@ -297,6 +304,9 @@ export async function GET(
       { id: rawEntityId },
       { xentroId: rawEntityId },
       { username: rawEntityId },
+      { username: `@${rawEntityId.replace(/^@/, '')}` },
+      { accountTag: rawEntityId },
+      { accountTag: `@${rawEntityId.replace(/^@/, '')}` },
       { email: rawEntityId.toLowerCase() },
     ];
     const userDoc = await usersCol.findOne({

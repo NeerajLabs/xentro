@@ -514,7 +514,7 @@ export const ExplorerProfileView: React.FC<ExplorerProfileViewProps> = ({
                   <ShieldCheck className="w-5 h-5 text-[#9EBE12]" />
                 </div>
                 <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                  @{profile.username} &bull; <span className="font-semibold text-[#101212] dark:text-white">{profile.role}</span>
+                  @{String(profile.accountTag || profile.username || 'user').replace(/^@/, '')} &bull; <span className="font-semibold text-[#101212] dark:text-white">{profile.role}</span>
                 </p>
                 {profile.headline && (
                   <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] mt-0.5 italic">{profile.headline}</p>

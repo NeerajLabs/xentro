@@ -234,6 +234,14 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                   </h1>
                 </div>
 
+                {/* Account Tag Subline */}
+                <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                  <span className="font-bold text-[#101212] dark:text-[#D9FF3F]">
+                    @{String((organization as any)?.accountTag || (organization as any)?.username || organization.name.toLowerCase().replace(/[^a-z0-9]/g, '')).replace(/^@/, '')}
+                  </span>
+                  {' '}&bull; <span className="font-semibold text-[#101212] dark:text-white">Institutional Investor Account</span>
+                </p>
+
                 <div className="flex items-center gap-3 text-xs text-[#565B59] dark:text-[#B6B8B7] flex-wrap">
                   <span className="flex items-center gap-1 font-semibold text-[#101212] dark:text-white">
                     <Building2 className="w-3.5 h-3.5 text-[#71870A] dark:text-[#D9FF3F]" />

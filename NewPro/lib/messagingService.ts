@@ -543,10 +543,13 @@ export const messagingService = {
         }
 
         const partnerAvatar = resolveAvatarUrl(rawPartner.avatar, partnerName);
+        const partnerTag = rawPartner.accountTag || rawPartner.username || `@${partnerName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+        const personaTag = (persona as any).accountTag || (persona as any).username || `@${(persona.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
         const partnerUser: User = {
           id: otherId || rawPartner.id || 'usr_partner',
           name: partnerName,
-          username: `@${partnerName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+          username: partnerTag,
           role: (rawPartner.role && rawPartner.role !== 'Member') ? rawPartner.role : 'Explorer',
           company: rawPartner.company || partnerName || 'Xentro Network',
           avatar: partnerAvatar,
@@ -561,7 +564,7 @@ export const messagingService = {
           [persona.id]: {
             id: persona.id,
             name: persona.name,
-            username: `@${(persona.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+            username: personaTag,
             role: persona.role,
             company: persona.company,
             avatar: currentAvatar,
@@ -1014,10 +1017,13 @@ export const messagingService = {
     const partnerAvatar = resolveAvatarUrl(partnerAvatarRaw, partnerName);
     const currentAvatar = resolveAvatarUrl(persona.avatar, persona.name);
 
+    const partnerTag = (partner as any).accountTag || (partner as any).username || `@${partnerName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+    const personaTag = (persona as any).accountTag || (persona as any).username || `@${(persona.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+
     const partnerUser: User = {
       id: partner.id,
       name: partnerName,
-      username: `@${partnerName.toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+      username: partnerTag,
       role: partnerRole,
       company: partner.company || partnerName,
       avatar: partnerAvatar,
@@ -1028,7 +1034,7 @@ export const messagingService = {
     const currentUserObj: User = {
       id: currentUserId,
       name: persona.name,
-      username: `@${(persona.name).toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+      username: personaTag,
       role: persona.role,
       company: persona.company,
       avatar: currentAvatar,

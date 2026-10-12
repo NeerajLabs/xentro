@@ -73,6 +73,8 @@ export async function GET(req: NextRequest) {
       queryConditions.push({ xentroId: userId });
       queryConditions.push({ username: userId });
       queryConditions.push({ username: `@${userId.replace(/^@/, '')}` });
+      queryConditions.push({ accountTag: userId });
+      queryConditions.push({ accountTag: `@${userId.replace(/^@/, '')}` });
     }
     if (email) {
       queryConditions.push({
@@ -103,8 +105,19 @@ export async function GET(req: NextRequest) {
     } catch (_) {}
 
     const embeddedProfile = user.personalProfile || {};
+    const effectiveTag =
+      user.accountTag ||
+      user.username ||
+      canonicalProfile?.accountTag ||
+      canonicalProfile?.publicUsername ||
+      canonicalProfile?.username ||
+      `@${(user.fullName || 'user').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}`;
+
     const personalProfile = {
       fullName: user.fullName || user.name || canonicalProfile?.displayName || embeddedProfile.fullName || '',
+      username: effectiveTag,
+      accountTag: effectiveTag,
+      publicUsername: effectiveTag,
       headline: user.headline || canonicalProfile?.professional?.designation || embeddedProfile.headline || '',
       location: user.location || canonicalProfile?.location || embeddedProfile.location || '',
       bio: user.bio || canonicalProfile?.bio || embeddedProfile.bio || '',
@@ -127,6 +140,8 @@ export async function GET(req: NextRequest) {
       photoUrl: user.avatar || canonicalProfile?.avatarUrl || embeddedProfile.photoUrl || user.photoUrl,
     };
 
+    user.username = effectiveTag;
+    user.accountTag = effectiveTag;
     user.personalProfile = personalProfile;
 
     return NextResponse.json({
@@ -264,12 +279,31 @@ export async function POST(req: NextRequest) {
     const profileId = existingUser?.profileId || `PRF-${Math.floor(100000 + Math.random() * 900000)}`;
     const userActualId = existingUser?.id || userId || `XU-${Math.floor(100000 + Math.random() * 900000)}`;
 
+    const rawTag =
+      body.accountTag ||
+      body.username ||
+      existingUser?.accountTag ||
+      existingUser?.username ||
+      `@${(personalProfile.fullName || 'user').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}${Math.floor(10 + Math.random() * 90)}`;
+    const cleanTag = rawTag.startsWith('@') ? rawTag : `@${rawTag}`;
+
+    (personalProfile as any).username = cleanTag;
+    (personalProfile as any).accountTag = cleanTag;
+    (personalProfile as any).publicUsername = cleanTag;
+
+    updateFields.username = cleanTag;
+    updateFields.accountTag = cleanTag;
+    updateFields.tag = cleanTag;
+
     const canonicalProfile = {
       id: profileId,
       profileId,
       userId: userActualId,
       fullName: personalProfile.fullName,
-      publicUsername: `@${(personalProfile.fullName || 'user').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}${Math.floor(10 + Math.random() * 90)}`,
+      publicUsername: cleanTag,
+      username: cleanTag,
+      accountTag: cleanTag,
+      tag: cleanTag,
       professionalHeadline: personalProfile.headline,
       headline: personalProfile.headline,
       location: personalProfile.location,

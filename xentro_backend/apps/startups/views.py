@@ -63,6 +63,8 @@ class MyStartupsView(APIView):
             "accountType": "Startup",
             "name": name,
             "username": username,
+            "accountTag": username,
+            "tag": username,
             "primaryOwnerId": user_id,
             "oneLiner": data.get("oneLiner", ""),
             "sector": data.get("sector") or data.get("industry", ""),

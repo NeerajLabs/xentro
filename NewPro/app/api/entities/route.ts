@@ -187,12 +187,20 @@ export async function POST(req: NextRequest) {
 
     const nowIso = new Date().toISOString();
 
+    const rawEntityTag =
+      body.accountTag ||
+      body.username ||
+      `@${entityName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}${Math.floor(10 + Math.random() * 90)}`;
+    const cleanEntityTag = rawEntityTag.startsWith('@') ? rawEntityTag : `@${rawEntityTag}`;
+
     const entityDoc = {
       id: entityId,
       entityType: canonicalType,
       accountType: canonicalType,
       name: entityName,
-      username: `@${entityName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}${Math.floor(10 + Math.random() * 90)}`,
+      username: cleanEntityTag,
+      accountTag: cleanEntityTag,
+      tag: cleanEntityTag,
       officialEmail: officialEmail || user.email,
       createdByUserId: user.id,
       currentOwnerUserId: user.id,
@@ -216,10 +224,16 @@ export async function POST(req: NextRequest) {
       const startupDoc = {
         entityId,
         name: entityName,
+        username: cleanEntityTag,
+        accountTag: cleanEntityTag,
+        tag: cleanEntityTag,
         createdByUserId: user.id,
         currentOwnerUserId: user.id,
         identity: {
           name: entityName,
+          username: cleanEntityTag,
+          accountTag: cleanEntityTag,
+          tag: cleanEntityTag,
           logo: startupDetails.logo || '/xentro-logo.png',
           banner: startupDetails.banner || null,
           tagline: startupDetails.pitch || startupDetails.tagline || 'Building next-generation solutions',
@@ -329,6 +343,9 @@ export async function POST(req: NextRequest) {
       const invOrgDoc = {
         entityId,
         name: entityName,
+        username: cleanEntityTag,
+        accountTag: cleanEntityTag,
+        tag: cleanEntityTag,
         legalName: body.legalName || details.legalName || entityName,
         organizationType: details.investorType || details.organizationType || body.orgType || 'VC Firm',
         logo: details.logo || body.logo || '/xentro-logo.png',

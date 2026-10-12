@@ -278,6 +278,8 @@ export interface StartupTeamMember {
   experience?: string;
   linkedin?: string;
   xentroProfile?: string;
+  xentroHandle?: string;
+  accountTag?: string;
   xentroUserId?: string;
   xentroProfileLinked?: boolean;
   isFullTime?: boolean;

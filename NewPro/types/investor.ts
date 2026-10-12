@@ -128,6 +128,9 @@ export interface InvestorActivityItem {
 export interface FullInvestorProfile {
   id: string;
   name: string; // Fund / Investor Name
+  username?: string;
+  accountTag?: string;
+  tag?: string;
   logo: string;
   banner: string;
   investorType: InvestorType;

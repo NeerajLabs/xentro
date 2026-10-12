@@ -406,6 +406,15 @@ export const ESPProfileView: React.FC<ESPProfileViewProps> = ({
                     Est. {esp.identity.foundedYear}
                   </span>
                 </div>
+
+                {/* Account Tag Subline */}
+                <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                  <span className="font-bold text-[#101212] dark:text-[#D9FF3F]">
+                    @{String((esp.identity as any)?.accountTag || (esp.identity as any)?.username || (esp as any)?.accountTag || (esp as any)?.username || esp.identity.name.toLowerCase().replace(/[^a-z0-9]/g, '')).replace(/^@/, '')}
+                  </span>
+                  {' '}&bull; <span className="font-semibold text-[#101212] dark:text-white">Incubator & ESP Account</span>
+                </p>
+
                 <p className="text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7] font-medium max-w-2xl leading-snug">
                   {esp.identity.tagline}
                 </p>

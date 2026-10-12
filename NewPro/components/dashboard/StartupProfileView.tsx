@@ -987,6 +987,15 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
                     {startup.identity.businessModelType}
                   </span>
                 </div>
+
+                {/* Account Tag Subline */}
+                <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                  <span className="font-bold text-[#101212] dark:text-[#D9FF3F]">
+                    @{String((startup.identity as any)?.accountTag || (startup.identity as any)?.username || (startup as any)?.accountTag || (startup as any)?.username || startup.identity.name.toLowerCase().replace(/[^a-z0-9]/g, '')).replace(/^@/, '')}
+                  </span>
+                  {' '}&bull; <span className="text-[#565B59] dark:text-[#B6B8B7]">{startup.identity.stage} Stage Startup</span>
+                </p>
+
                 <p className="text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7] font-medium max-w-2xl leading-snug">
                   {startup.identity.tagline}
                 </p>
