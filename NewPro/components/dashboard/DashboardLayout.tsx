@@ -28,6 +28,7 @@ import { getUserProfile, UserProfile } from '@/lib/userProfile';
 import { getStartupProfileById } from '@/data/startupProfilesData';
 import { getInvestorProfileById } from '@/data/investorProfilesData';
 import { getMentorProfileById } from '@/data/mentorProfilesData';
+import { getESPProfileById } from '@/data/espProfilesData';
 import { DashboardWorkspace } from './workspace/DashboardWorkspace';
 import { DynamicDashboardView } from './DynamicDashboardView';
 import { RoleRequestModal } from './RoleRequestModal';
@@ -322,9 +323,10 @@ export const DashboardLayout: React.FC = () => {
                     onBackToFeed={() => setSelectedProfile(null)}
                     onBackToDiscover={() => setSelectedProfile(null)}
                   />
-                ) : selectedProfile.type === 'esp' ? (
+                ) : (selectedProfile.type === 'esp' || selectedProfile.type === 'university') ? (
                   <ESPProfileView
                     espId={selectedProfile.id}
+                    espData={selectedProfile.data || getESPProfileById(selectedProfile.id, selectedProfile.data)}
                     isOwnProfile={false}
                     onBackToFeed={() => setSelectedProfile(null)}
                     onBackToDiscover={() => setSelectedProfile(null)}
