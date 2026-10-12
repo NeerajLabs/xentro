@@ -187,6 +187,16 @@ export async function GET(req: NextRequest) {
           const sAvatar = (m.senderAvatar && !m.senderAvatar.includes('xentro-logo.png') && m.senderAvatar !== '/xentro-logo.png' && !m.senderAvatar.startsWith('blob:'))
             ? m.senderAvatar
             : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(sName)}`;
+          let msgCreatedAt = m.createdAt;
+          if (!msgCreatedAt) {
+            if (m._id && typeof m._id.getTimestamp === 'function') {
+              msgCreatedAt = m._id.getTimestamp().toISOString();
+            } else if (m.timestamp && !isNaN(new Date(m.timestamp).getTime())) {
+              msgCreatedAt = new Date(m.timestamp).toISOString();
+            } else {
+              msgCreatedAt = new Date().toISOString();
+            }
+          }
           return {
             id: m.id || String(m._id),
             clientMessageId: m.clientMessageId || m.id,
@@ -197,8 +207,8 @@ export async function GET(req: NextRequest) {
             senderRole: (m.senderRole && m.senderRole !== 'Member') ? m.senderRole : 'Explorer',
             text: m.text || m.content || '',
             content: m.text || m.content || '',
-            timestamp: m.timestamp || m.createdAt,
-            createdAt: m.createdAt,
+            timestamp: m.timestamp || msgCreatedAt,
+            createdAt: msgCreatedAt,
             readBy: Array.isArray(m.readBy) ? m.readBy : [m.senderId],
             status: m.status || 'delivered',
           };

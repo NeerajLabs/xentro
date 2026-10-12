@@ -62,6 +62,7 @@ export const FullMessagesPage: React.FC<FullMessagesPageProps> = ({ onBackToFeed
         const currentActive = messagingService.getActiveConversationId();
         const targetId = (currentActive && all.some(c => c.id === currentActive)) ? currentActive : all[0].id;
         setActiveConversationId(targetId);
+        messagingService.setActiveConversationId(targetId);
         messagingService.fetchConversationMessages(targetId);
       }
     });
@@ -81,10 +82,20 @@ export const FullMessagesPage: React.FC<FullMessagesPageProps> = ({ onBackToFeed
       const custom = e as CustomEvent;
       if (custom.detail?.conversationId) {
         setActiveConversationId(custom.detail.conversationId);
+        messagingService.setActiveConversationId(custom.detail.conversationId);
         messagingService.fetchConversationMessages(custom.detail.conversationId);
         setMobileView('thread');
       }
     };
+
+    // Dedicated fast active-thread polling while viewing FullMessagesPage
+    const activePollTimer = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      const curId = messagingService.getActiveConversationId();
+      if (curId) {
+        messagingService.fetchConversationMessages(curId).catch(() => {});
+      }
+    }, 1200);
 
     window.addEventListener(CONVERSATIONS_UPDATED_EVENT, handleUpdated);
     window.addEventListener(AUTO_REPLY_CHANGED_EVENT, handleAutoReply);
@@ -92,6 +103,7 @@ export const FullMessagesPage: React.FC<FullMessagesPageProps> = ({ onBackToFeed
     window.addEventListener('xentro-entity-switched', handleUpdated);
 
     return () => {
+      clearInterval(activePollTimer);
       window.removeEventListener(CONVERSATIONS_UPDATED_EVENT, handleUpdated);
       window.removeEventListener(AUTO_REPLY_CHANGED_EVENT, handleAutoReply);
       window.removeEventListener('xentro-navigate-tab', handleNavigate);
@@ -137,6 +149,7 @@ export const FullMessagesPage: React.FC<FullMessagesPageProps> = ({ onBackToFeed
 
   const handleSelectConversation = (id: string) => {
     setActiveConversationId(id);
+    messagingService.setActiveConversationId(id);
     setMobileView('thread');
     setConversations(messagingService.markRead(id));
     messagingService.fetchConversationMessages(id);

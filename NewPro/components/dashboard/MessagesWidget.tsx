@@ -87,6 +87,7 @@ export const MessagesWidget: React.FC<MessagesWidgetProps> = ({ isOpen, onToggle
 
   const handleSelectConversation = (id: string) => {
     setActiveConversationId(id);
+    messagingService.setActiveConversationId(id);
     setConversations(messagingService.markRead(id));
     messagingService.fetchConversationMessages(id);
   };

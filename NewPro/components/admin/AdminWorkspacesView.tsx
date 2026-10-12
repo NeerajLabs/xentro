@@ -20,10 +20,45 @@ import {
 } from 'lucide-react';
 
 export const AdminWorkspacesView: React.FC = () => {
-  const [workspaces] = useState<AdminWorkspace[]>(INITIAL_WORKSPACES);
+  const [workspaces, setWorkspaces] = useState<AdminWorkspace[]>(INITIAL_WORKSPACES);
   const [typeFilter, setTypeFilter] = useState<string>('All');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedWorkspace, setSelectedWorkspace] = useState<AdminWorkspace | null>(null);
+
+  React.useEffect(() => {
+    const loadWorkspaces = async () => {
+      try {
+        const resp = await fetch('/api/admin/entities');
+        if (resp.ok) {
+          const d = await resp.json();
+          const ents = d?.data?.entities || [];
+          const workspaceList: AdminWorkspace[] = ents.map((e: any) => {
+            let wsType: WorkspaceType = 'Startup Entity';
+            if (e.type === 'ESP') wsType = 'ESP';
+            else if (e.type === 'Investor Organization') wsType = 'Investor Organization';
+
+            return {
+              id: e.id,
+              type: wsType,
+              entityName: e.name,
+              userId: e.primaryOwner?.id || 'usr_owner',
+              userName: e.primaryOwner?.name || 'Owner',
+              role: e.primaryOwner?.role || 'Primary Owner',
+              permissionsCount: 12,
+              status: (e.verificationStatus === 'Verified' ? 'Active' : 'Active') as 'Active',
+              createdDate: e.createdDate || 'Recently',
+            };
+          });
+          if (workspaceList.length > 0) {
+            setWorkspaces(workspaceList);
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load workspaces for admin view:', err);
+      }
+    };
+    loadWorkspaces();
+  }, []);
 
   const filtered = workspaces.filter((w) => {
     if (typeFilter !== 'All' && w.type !== typeFilter) return false;

@@ -54,6 +54,43 @@ export function formatMessageTime(rawTimestamp?: string): string {
   return trimmed;
 }
 
+export function getMessageTimestampMs(m: SharedChatMessage): number {
+  if (m.createdAt) {
+    const t = new Date(m.createdAt).getTime();
+    if (!isNaN(t) && t > 0) return t;
+  }
+  if (m.timestamp) {
+    const t = new Date(m.timestamp).getTime();
+    if (!isNaN(t) && t > 0) return t;
+
+    // Parse clock format: "3:55 am", "11:42 pm"
+    const match = m.timestamp.trim().match(/^(\d{1,2}):(\d{2})\s*(am|pm)?$/i);
+    if (match) {
+      let hours = parseInt(match[1], 10);
+      const minutes = parseInt(match[2], 10);
+      const ampm = match[3]?.toLowerCase();
+      if (ampm === 'pm' && hours < 12) hours += 12;
+      if (ampm === 'am' && hours === 12) hours = 0;
+      const d = new Date();
+      d.setHours(hours, minutes, 0, 0);
+      return d.getTime();
+    }
+  }
+  // Try extracting timestamp from ID (e.g. msg_1712345678901_... or 1712345678901)
+  const idMatch = (m.id || '').match(/(\d{10,13})/);
+  if (idMatch) {
+    const parsed = parseInt(idMatch[1], 10);
+    const ts = parsed < 10000000000 ? parsed * 1000 : parsed;
+    if (!isNaN(ts) && ts > 1600000000000) return ts;
+  }
+  // MongoDB ObjectId (first 4 bytes are seconds)
+  if (m.id && /^[a-f\d]{24}$/i.test(m.id)) {
+    const seconds = parseInt(m.id.substring(0, 8), 16);
+    if (!isNaN(seconds) && seconds > 1600000000) return seconds * 1000;
+  }
+  return 0;
+}
+
 export function formatIdToName(id: string): string {
   if (!id) return 'User';
   let clean = id
@@ -268,17 +305,61 @@ if (typeof window !== 'undefined') {
     window.dispatchEvent(new CustomEvent(CONVERSATIONS_UPDATED_EVENT));
   });
 
-  // Background polling every 4 seconds to guarantee real-time delivery even across different sessions
+  let isFetchingActive = false;
+  let isSyncingAll = false;
+
+  // 1. High-frequency active conversation poll: every 1200ms for instantaneous chat delivery
   setInterval(() => {
+    if (typeof document !== 'undefined' && document.hidden) return;
     const persona = getActiveMessagingPersona();
-    if (persona.personalUserId || persona.id) {
-      messagingService.syncFromServer().catch(() => {});
-      const activeId = messagingService.getActiveConversationId();
-      if (activeId) {
-        messagingService.fetchConversationMessages(activeId).catch(() => {});
-      }
+    if (!persona.personalUserId && !persona.id) return;
+    const activeId = messagingService.getActiveConversationId();
+    if (activeId && !isFetchingActive) {
+      isFetchingActive = true;
+      messagingService.fetchConversationMessages(activeId)
+        .catch(() => {})
+        .finally(() => {
+          isFetchingActive = false;
+        });
     }
-  }, 4000);
+  }, 1200);
+
+  // 2. Background conversations sync: every 6000ms for thread list & unread indicators
+  setInterval(() => {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    const persona = getActiveMessagingPersona();
+    if (!persona.personalUserId && !persona.id) return;
+    if (!isSyncingAll) {
+      isSyncingAll = true;
+      messagingService.syncFromServer()
+        .catch(() => {})
+        .finally(() => {
+          isSyncingAll = false;
+        });
+    }
+  }, 6000);
+
+  // 3. Catch up immediately when tab is focused or becomes visible
+  const triggerInstantCatchUp = () => {
+    const activeId = messagingService.getActiveConversationId();
+    if (activeId) {
+      messagingService.fetchConversationMessages(activeId).catch(() => {});
+    }
+    messagingService.syncFromServer().catch(() => {});
+  };
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) triggerInstantCatchUp();
+    });
+  }
+  window.addEventListener('focus', triggerInstantCatchUp);
+  window.addEventListener('xentro-active-conversation-changed', (e: any) => {
+    const convId = e?.detail?.conversationId;
+    if (convId) {
+      messagingService.fetchConversationMessages(convId).catch(() => {});
+    }
+  });
 }
 
 function normalizeId(id?: string | null): string {
@@ -329,6 +410,11 @@ export const messagingService = {
   setActiveConversationId(convId: string): void {
     if (typeof window === 'undefined') return;
     localStorage.setItem(ACTIVE_CONVERSATION_KEY, convId);
+    window.dispatchEvent(
+      new CustomEvent('xentro-active-conversation-changed', {
+        detail: { conversationId: convId },
+      })
+    );
   },
 
   getCustomConversations(): StoredConversationMeta[] {
@@ -392,9 +478,15 @@ export const messagingService = {
   applyIncomingMessage(incoming: SharedChatMessage): void {
     if (incoming.conversationId === 'conv_neeraj_xentro') return;
     const current = this.getRawMessages();
+    const resolvedCreatedAt =
+      incoming.createdAt ||
+      (incoming.timestamp && !isNaN(new Date(incoming.timestamp).getTime())
+        ? incoming.timestamp
+        : new Date().toISOString());
     const formattedIncoming: SharedChatMessage = {
       ...incoming,
-      timestamp: formatMessageTime(incoming.timestamp || incoming.createdAt),
+      createdAt: resolvedCreatedAt,
+      timestamp: formatMessageTime(incoming.timestamp || resolvedCreatedAt),
       failed: false,
     };
 
@@ -432,9 +524,15 @@ export const messagingService = {
 
     remoteList.forEach((incoming) => {
       if (incoming.conversationId === 'conv_neeraj_xentro') return;
+      const resolvedCreatedAt =
+        incoming.createdAt ||
+        (incoming.timestamp && !isNaN(new Date(incoming.timestamp).getTime())
+          ? incoming.timestamp
+          : new Date().toISOString());
       const formatted: SharedChatMessage = {
         ...incoming,
-        timestamp: formatMessageTime(incoming.timestamp || incoming.createdAt),
+        createdAt: resolvedCreatedAt,
+        timestamp: formatMessageTime(incoming.timestamp || resolvedCreatedAt),
         failed: false,
       };
 
@@ -623,6 +721,12 @@ export const messagingService = {
               ...(existingMsg?.readBy || []),
               ...(Array.isArray(m.readBy) ? m.readBy : [m.senderId]),
             ]));
+            const resolvedCreatedAt =
+              m.createdAt ||
+              existingMsg?.createdAt ||
+              (m.timestamp && !isNaN(new Date(m.timestamp).getTime())
+                ? m.timestamp
+                : new Date().toISOString());
 
             msgMap.set(srvId, {
               id: srvId,
@@ -633,7 +737,7 @@ export const messagingService = {
               text,
               content: text,
               timestamp: timeFormatted,
-              createdAt: m.createdAt || '',
+              createdAt: resolvedCreatedAt,
               readBy: mergedReadBy,
               failed: false,
             });
@@ -702,6 +806,12 @@ export const messagingService = {
           ...(existingMsg?.readBy || []),
           ...(Array.isArray(m.readBy) ? m.readBy : [m.senderId]),
         ]));
+        const resolvedCreatedAt =
+          m.createdAt ||
+          existingMsg?.createdAt ||
+          (m.timestamp && !isNaN(new Date(m.timestamp).getTime())
+            ? m.timestamp
+            : new Date().toISOString());
 
         msgMap.set(srvId, {
           id: srvId,
@@ -712,7 +822,7 @@ export const messagingService = {
           text,
           content: text,
           timestamp: timeFormatted,
-          createdAt: m.createdAt || '',
+          createdAt: resolvedCreatedAt,
           readBy: mergedReadBy,
           failed: false,
         });
@@ -720,7 +830,6 @@ export const messagingService = {
 
       const updated = Array.from(msgMap.values());
       this.saveRawMessages(updated);
-      window.dispatchEvent(new CustomEvent(CONVERSATIONS_UPDATED_EVENT));
       return serverMsgs;
     } catch (err) {
       console.debug('[Messaging] fetchConversationMessages error:', err);
@@ -899,11 +1008,12 @@ export const messagingService = {
         dedupedThread.push(m);
       }
 
-      // Sort chronologically
+      // Sort chronologically with rock-solid fallback
       dedupedThread.sort((a, b) => {
-        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
-        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
-        return tA - tB;
+        const tA = getMessageTimestampMs(a);
+        const tB = getMessageTimestampMs(b);
+        if (tA !== tB) return tA - tB;
+        return (a.id || '').localeCompare(b.id || '');
       });
 
       const convMsgs = dedupedThread.map((m) => {
