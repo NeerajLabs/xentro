@@ -12,7 +12,7 @@ import {
   UserPlus,
   Compass,
 } from 'lucide-react';
-import { UserRole, UserProfile, getUserProfile, setActiveRole, getUserRegisteredRoles } from '@/lib/userProfile';
+import { UserRole, UserProfile, getUserProfile, getActiveRole, setActiveRole, getUserRegisteredRoles } from '@/lib/userProfile';
 import { isDevToolsEnabled } from '@/lib/devTools';
 import { useToast } from '@/components/ui/Toast';
 import { personaDashboardConfigs, PersonaDashboardConfig } from './dashboardNavConfig';
@@ -80,6 +80,30 @@ interface DashboardWorkspaceProps {
   onSignupNewRole?: () => void;
 }
 
+function resolveEffectiveRole(entity: LinkedEntity | null, currentProfile?: UserProfile): UserRole {
+  if (entity) {
+    const et = (entity.entityType || '').toLowerCase();
+    if (et.includes('startup')) return 'startup';
+    if (et.includes('investor')) return 'investor';
+    if (et.includes('mentor')) return 'mentor';
+    if (et.includes('esp') || et.includes('institution') || et.includes('incubator') || et.includes('accelerator')) return 'esp';
+  }
+
+  // Check locally persisted active role from user role selector
+  const activeRole = getActiveRole();
+  if (activeRole && (activeRole === 'startup' || activeRole === 'investor' || activeRole === 'mentor' || activeRole === 'esp')) {
+    return activeRole;
+  }
+
+  // Check profile role
+  if (currentProfile?.role && currentProfile.role !== 'explorer') {
+    return currentProfile.role;
+  }
+
+  // Inside DashboardWorkspace, default to startup workspace rather than empty explorer
+  return 'startup';
+}
+
 export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
   onBackToUniversal,
   lastUniversalTab = 'Universal',
@@ -106,46 +130,24 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
       const customEvent = e as CustomEvent;
       const newProfile = customEvent.detail?.profile || getUserProfile();
       setProfile(newProfile);
-
-      // Determine authoritative active workspace role (considering linked active entity)
-      const currentEntity = entityContextService.getActiveEntity();
-      const currentEffectiveRole: UserRole = (currentEntity
-        ? currentEntity.entityType?.toLowerCase() === 'startup'
-          ? 'startup'
-          : currentEntity.entityType?.toLowerCase().includes('investor') || currentEntity.entityType === 'INVESTOR_ORG'
-          ? 'investor'
-          : currentEntity.entityType?.toLowerCase() === 'esp'
-          ? 'esp'
-          : (newProfile.role as UserRole)
-        : (newProfile.role as UserRole)) || 'startup';
-
-      // Check if current activeModuleId exists in the active workspace config
-      const targetConfig = personaDashboardConfigs[currentEffectiveRole] || personaDashboardConfigs.startup;
-      const allItemIds = targetConfig?.sections?.flatMap((s) => s.items.map((i) => i.id)) || [];
-      if (allItemIds.length > 0 && !allItemIds.includes(activeModuleIdRef.current)) {
-        setActiveModuleId('overview');
-      }
+      // NOTE: Background profile sync (name, photo, etc.) must NEVER reset activeModuleId!
     };
 
     const handleEntityChanged = (e: Event) => {
       const ce = e as CustomEvent;
       const newEntity = ce.detail?.entity || entityContextService.getActiveEntity();
+      const prevRole = resolveEffectiveRole(activeEntity, profile);
+      const nextRole = resolveEffectiveRole(newEntity, profile);
       setActiveEntity(newEntity);
 
-      const newEffectiveRole: UserRole = (newEntity
-        ? newEntity.entityType?.toLowerCase() === 'startup'
-          ? 'startup'
-          : newEntity.entityType?.toLowerCase().includes('investor') || newEntity.entityType === 'INVESTOR_ORG'
-          ? 'investor'
-          : newEntity.entityType?.toLowerCase() === 'esp'
-          ? 'esp'
-          : (profile.role as UserRole)
-        : (profile.role as UserRole)) || 'startup';
-
-      const targetConfig = personaDashboardConfigs[newEffectiveRole] || personaDashboardConfigs.startup;
-      const allItemIds = targetConfig?.sections?.flatMap((s) => s.items.map((i) => i.id)) || [];
-      if (allItemIds.length > 0 && !allItemIds.includes(activeModuleIdRef.current)) {
-        setActiveModuleId('overview');
+      // Only if the persona role fundamentally changed (e.g. Startup -> Investor)
+      if (prevRole !== nextRole) {
+        const targetConfig = personaDashboardConfigs[nextRole] || personaDashboardConfigs.startup;
+        const allItemIds = targetConfig?.sections?.flatMap((s) => s.items.map((i) => i.id)) || [];
+        if (allItemIds.length > 0 && !allItemIds.includes(activeModuleIdRef.current)) {
+          setActiveModuleId('overview');
+          activeModuleIdRef.current = 'overview';
+        }
       }
     };
 
@@ -161,17 +163,9 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
       window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntityChanged);
       window.removeEventListener('xentro-open-create-investor-org', handleOpenCreateOrg);
     };
-  }, []);
+  }, [activeEntity, profile]);
 
-  const effectiveRole: UserRole = (activeEntity
-    ? activeEntity.entityType?.toLowerCase() === 'startup'
-      ? 'startup'
-      : activeEntity.entityType?.toLowerCase().includes('investor') || activeEntity.entityType === 'INVESTOR_ORG'
-      ? 'investor'
-      : activeEntity.entityType?.toLowerCase() === 'esp'
-      ? 'esp'
-      : (profile.role as UserRole)
-    : (profile.role as UserRole)) || 'startup';
+  const effectiveRole: UserRole = resolveEffectiveRole(activeEntity, profile);
 
   const baseConfig = personaDashboardConfigs[effectiveRole] || personaDashboardConfigs.startup;
   const currentConfig: PersonaDashboardConfig = activeEntity
@@ -190,7 +184,8 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
   };
 
   const handleNavigateModule = (target: string) => {
-    const normalized = target.toLowerCase();
+    if (!target) return;
+    const normalized = target.trim().toLowerCase();
     const map: Record<string, string> = {
       overview: 'overview',
       my_listings: 'my_listings',
@@ -229,7 +224,8 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
       profile: 'profile',
     };
 
-    const targetModule = map[normalized] || 'overview';
+    const targetModule = map[normalized] || normalized;
+    activeModuleIdRef.current = targetModule;
     setActiveModuleId(targetModule);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
