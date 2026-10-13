@@ -260,6 +260,7 @@ export const feedService = {
       id: `post_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
       author: input.author,
       authorRoleType: input.authorRoleType || 'startup',
+      createdAt: new Date().toISOString(),
       timestamp: 'Just now',
       category: input.category || 'all',
       postType: input.postType || 'General Post',

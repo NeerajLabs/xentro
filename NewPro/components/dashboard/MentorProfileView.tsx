@@ -267,7 +267,9 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
     }
 
     if (connectionStatus === 'pending') {
-      showToast(`Your connection request is pending ${mentor.name}'s approval.`, 'info');
+      connectionService.cancelConnection(partnerId);
+      setConnectionStatus('none');
+      showToast(`Cancelled connection request to ${mentor.name}.`, 'info');
       return;
     }
 
@@ -517,12 +519,11 @@ export const MentorProfileView: React.FC<MentorProfileViewProps> = ({
                 <>
                   <button
                     onClick={handleToggleConnect}
-                    disabled={connectionStatus === 'pending'}
                     className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer active:scale-95 ${
                       connectionStatus === 'connected'
                         ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
                         : connectionStatus === 'pending'
-                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 cursor-not-allowed opacity-90'
+                        ? 'bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 opacity-90'
                         : connectionStatus === 'received'
                         ? 'bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212]'
                         : 'bg-gray-100 hover:bg-gray-200 dark:bg-[#202422] dark:hover:bg-gray-800 text-[#101212] dark:text-white'

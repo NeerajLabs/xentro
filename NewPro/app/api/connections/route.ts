@@ -25,6 +25,12 @@ function formatIdToName(id: string): string {
     .join(' ');
 }
 
+function computePairKey(a: string, b: string): string {
+  const s = (a || '').trim().toLowerCase();
+  const r = (b || '').trim().toLowerCase();
+  return [s, r].sort().join('_');
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -39,17 +45,17 @@ export async function GET(req: NextRequest) {
     let targetIds: string[] = [];
 
     if (userId) {
-      targetIds.push(userId);
-      targetIds.push(userId.toLowerCase());
+      targetIds.push(userId, userId.toLowerCase(), userId.toUpperCase());
+      const userVariants = [userId, userId.toLowerCase(), userId.toUpperCase()];
 
       // Fetch all entities owned or created by this user so startup connections are included
       try {
         const ownedEntities = await entitiesCol
           .find({
             $or: [
-              { primaryOwnerId: userId },
-              { createdByUserId: userId },
-              { 'members.userId': userId },
+              { primaryOwnerId: { $in: userVariants } },
+              { createdByUserId: { $in: userVariants } },
+              { 'members.userId': { $in: userVariants } },
             ],
             status: { $nin: ['DELETED', 'ORPHANED_DELETED'] },
           })
@@ -57,8 +63,8 @@ export async function GET(req: NextRequest) {
           .toArray();
 
         ownedEntities.forEach((ent: any) => {
-          if (ent.id) targetIds.push(ent.id);
-          if (ent.entityId) targetIds.push(ent.entityId);
+          if (ent.id) targetIds.push(ent.id, ent.id.toLowerCase(), ent.id.toUpperCase());
+          if (ent.entityId) targetIds.push(ent.entityId, ent.entityId.toLowerCase(), ent.entityId.toUpperCase());
         });
       } catch (err) {
         console.warn('[Connections GET] Error fetching owned entities:', err);
@@ -66,12 +72,12 @@ export async function GET(req: NextRequest) {
     }
 
     if (entityId) {
-      targetIds.push(entityId);
-      targetIds.push(entityId.toLowerCase());
+      targetIds.push(entityId, entityId.toLowerCase(), entityId.toUpperCase());
     }
 
     // Deduplicate target IDs
     targetIds = Array.from(new Set(targetIds.filter(Boolean)));
+    const targetIdsLower = targetIds.map((t) => t.toLowerCase());
 
     const query: any = {};
     if (targetIds.length > 0) {
@@ -117,23 +123,23 @@ export async function GET(req: NextRequest) {
         note: c.note || '',
         createdAt: c.createdAt || new Date().toISOString(),
         updatedAt: c.updatedAt || new Date().toISOString(),
-        pair_key: c.pair_key || undefined,
+        pair_key: c.pair_key || computePairKey(c.senderId, c.recipientId),
       };
     });
 
     // Calculate metrics and connected partners
     const acceptedList = connections.filter((c) => c.status === 'accepted');
     const pendingReceived = connections.filter((c) => {
-      const isRecipient = targetIds.includes(c.recipientId) || targetIds.includes(c.recipientId?.toLowerCase());
+      const isRecipient = targetIdsLower.includes((c.recipientId || '').toLowerCase());
       return isRecipient && c.status === 'pending';
     });
     const pendingSent = connections.filter((c) => {
-      const isSender = targetIds.includes(c.senderId) || targetIds.includes(c.senderId?.toLowerCase());
+      const isSender = targetIdsLower.includes((c.senderId || '').toLowerCase());
       return isSender && c.status === 'pending';
     });
 
     const connectedPartners = acceptedList.map((c) => {
-      const isSenderMe = targetIds.includes(c.senderId) || targetIds.includes(c.senderId?.toLowerCase());
+      const isSenderMe = targetIdsLower.includes((c.senderId || '').toLowerCase());
       return {
         id: isSenderMe ? c.recipientId : c.senderId,
         name: isSenderMe ? c.recipientName : c.senderName,
@@ -170,8 +176,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const action = body?.action || 'request';
     const connection = body?.connection;
-    const partnerId = body?.partnerId || connection?.recipientId;
-    const userId = body?.userId || connection?.senderId;
+    const partnerId = (body?.partnerId || connection?.recipientId || '').trim();
+    const userId = (body?.userId || connection?.senderId || '').trim();
 
     if (!connection && !partnerId && !body?.connectionId) {
       return NextResponse.json(
@@ -187,20 +193,29 @@ export async function POST(req: NextRequest) {
     const nowIso = new Date().toISOString();
 
     if (action === 'request') {
-      const senderId = connection?.senderId || userId;
-      const recipientId = connection?.recipientId || partnerId;
+      const senderId = (connection?.senderId || userId).trim();
+      const recipientId = (connection?.recipientId || partnerId).trim();
+      const pair_key = computePairKey(senderId, recipientId);
       const connectionId =
         connection?.id ||
-        `conn_${senderId}_${recipientId}`.replace(/[^a-zA-Z0-9_-]/g, '_');
+        `conn_${pair_key}`;
+
+      const senderName = (connection?.senderName && connection?.senderName !== 'Member')
+        ? connection.senderName
+        : formatIdToName(senderId);
+      const recipientName = (connection?.recipientName && connection?.recipientName !== 'Member')
+        ? connection.recipientName
+        : formatIdToName(recipientId);
 
       const doc = {
         id: connectionId,
+        pair_key,
         senderId,
-        senderName: connection?.senderName || 'Member',
+        senderName,
         senderRole: connection?.senderRole || 'Member',
         senderAvatar: connection?.senderAvatar || '/xentro-logo.png',
         recipientId,
-        recipientName: connection?.recipientName || 'Member',
+        recipientName,
         recipientRole: connection?.recipientRole || 'Member',
         recipientAvatar: connection?.recipientAvatar || '/xentro-logo.png',
         status: 'pending',
@@ -209,40 +224,71 @@ export async function POST(req: NextRequest) {
         updatedAt: nowIso,
       };
 
-      // Upsert connection in MongoDB Atlas
-      await connectionsCol.updateOne(
-        {
-          $or: [
-            { id: connectionId },
-            { senderId, recipientId },
-            { senderId: recipientId, recipientId: senderId },
-          ],
-        },
-        { $set: doc },
-        { upsert: true }
-      );
+      // Find existing connection safely to avoid pair_key duplicate key errors
+      const pairKeyUpper = [senderId.toUpperCase(), recipientId.toUpperCase()].sort().join('_');
+      const existingConn = await connectionsCol.findOne({
+        $or: [
+          { pair_key },
+          { pair_key: pairKeyUpper },
+          { id: connectionId },
+          { senderId, recipientId },
+          { senderId: recipientId, recipientId: senderId },
+        ],
+      });
 
-      // Create durable recipient notification in MongoDB Atlas
+      if (existingConn) {
+        await connectionsCol.updateOne(
+          { _id: existingConn._id },
+          {
+            $set: {
+              ...doc,
+              id: existingConn.id || connectionId,
+              pair_key: existingConn.pair_key || pair_key,
+              createdAt: existingConn.createdAt || nowIso,
+              updatedAt: nowIso,
+            },
+          }
+        );
+      } else {
+        await connectionsCol.insertOne(doc);
+      }
+
+      // Create or update durable recipient notification in MongoDB Atlas
       try {
-        await notifsCol.insertOne({
-          id: `notif_conn_${connectionId}`,
-          userId: recipientId,
-          category: 'mentorship',
-          title: `${doc.senderName} sent you a connection request`,
-          description: `Looking to connect and collaborate on Xentro.`,
-          time: 'Just now',
-          avatar: doc.senderAvatar,
-          actorName: doc.senderName,
-          actorRole: doc.senderRole,
-          actorId: doc.senderId,
-          connectionId,
-          actionRequired: true,
-          actionType: 'connection_request',
-          targetTab: 'notifications',
-          createdAt: nowIso,
-        });
+        const notifCategory = (doc.senderRole?.toLowerCase().includes('investor'))
+          ? 'investor'
+          : (doc.senderRole?.toLowerCase().includes('esp') ? 'esp' : 'mentorship');
+        const notifId = `notif_conn_${connectionId}`;
+
+        await notifsCol.updateOne(
+          { id: notifId },
+          {
+            $set: {
+              id: notifId,
+              userId: recipientId,
+              recipientId,
+              category: notifCategory,
+              title: `${doc.senderName} sent you a connection request`,
+              description: body?.note ? `"${body.note}"` : `Looking to connect and collaborate on Xentro.`,
+              time: 'Just now',
+              avatar: doc.senderAvatar,
+              actorName: doc.senderName,
+              actorRole: doc.senderRole,
+              actorId: doc.senderId,
+              connectionId,
+              actionRequired: true,
+              actionType: 'connection_request',
+              targetTab: 'notifications',
+              unread: true,
+              read: false,
+              createdAt: nowIso,
+              updatedAt: nowIso,
+            },
+          },
+          { upsert: true }
+        );
       } catch (notifErr) {
-        console.warn('[Connections POST] Notification insert warning:', notifErr);
+        console.warn('[Connections POST] Notification update warning:', notifErr);
       }
 
       broadcast({ type: 'connection_event', data: doc });
@@ -256,15 +302,23 @@ export async function POST(req: NextRequest) {
 
     if (action === 'accept') {
       const connectionId = body?.connectionId || connection?.id;
-      const filter: any = {};
+      const pair_key = (userId && partnerId) ? computePairKey(userId, partnerId) : '';
+
+      const filterConditions: any[] = [];
       if (connectionId) {
-        filter.$or = [{ id: connectionId }, { _id: connectionId }];
-      } else {
-        filter.$or = [
-          { senderId: partnerId, recipientId: userId },
-          { senderId: userId, recipientId: partnerId },
-        ];
+        filterConditions.push({ id: connectionId });
       }
+      if (pair_key) {
+        filterConditions.push({ pair_key });
+      }
+      if (userId && partnerId) {
+        filterConditions.push(
+          { senderId: partnerId, recipientId: userId },
+          { senderId: userId, recipientId: partnerId }
+        );
+      }
+
+      const filter = filterConditions.length > 0 ? { $or: filterConditions } : { id: connectionId };
 
       await connectionsCol.updateOne(filter, {
         $set: { status: 'accepted', updatedAt: nowIso },
@@ -273,6 +327,63 @@ export async function POST(req: NextRequest) {
       const updated = await connectionsCol.findOne(filter);
 
       if (updated) {
+        // 1. Resolve pending request notification for the recipient
+        try {
+          await notifsCol.updateMany(
+            {
+              $or: [
+                { connectionId: updated.id },
+                { id: `notif_conn_${updated.id}` },
+              ],
+            },
+            {
+              $set: {
+                actionRequired: false,
+                unread: false,
+                read: true,
+                description: `Connected with ${updated.senderName}.`,
+                updatedAt: nowIso,
+              },
+            }
+          );
+
+          // 2. Create durable notification for the SENDER that request was accepted
+          const acceptNotifId = `notif_accepted_${updated.id}`;
+          const acceptCategory = (updated.recipientRole?.toLowerCase().includes('investor'))
+            ? 'investor'
+            : (updated.recipientRole?.toLowerCase().includes('esp') ? 'esp' : 'mentorship');
+
+          await notifsCol.updateOne(
+            { id: acceptNotifId },
+            {
+              $set: {
+                id: acceptNotifId,
+                userId: updated.senderId,
+                recipientId: updated.senderId,
+                category: acceptCategory,
+                title: `${updated.recipientName} accepted your connection request!`,
+                description: `You are now connected on Xentro! Start collaborating.`,
+                time: 'Just now',
+                avatar: updated.recipientAvatar,
+                actorName: updated.recipientName,
+                actorRole: updated.recipientRole,
+                actorId: updated.recipientId,
+                connectionId: updated.id,
+                actionType: 'connection',
+                actionRequired: false,
+                targetTab: 'messages',
+                unread: true,
+                read: false,
+                createdAt: nowIso,
+                updatedAt: nowIso,
+              },
+            },
+            { upsert: true }
+          );
+        } catch (notifErr) {
+          console.warn('[Connections POST] Notification accept update warning:', notifErr);
+        }
+
         broadcast({ type: 'connection_event', data: updated });
       }
 
@@ -285,19 +396,49 @@ export async function POST(req: NextRequest) {
 
     if (action === 'decline') {
       const connectionId = body?.connectionId || connection?.id;
-      const filter: any = {};
-      if (connectionId) {
-        filter.$or = [{ id: connectionId }, { _id: connectionId }];
-      } else {
-        filter.$or = [
+      const pair_key = (userId && partnerId) ? computePairKey(userId, partnerId) : '';
+
+      const filterConditions: any[] = [];
+      if (connectionId) filterConditions.push({ id: connectionId });
+      if (pair_key) filterConditions.push({ pair_key });
+      if (userId && partnerId) {
+        filterConditions.push(
           { senderId: partnerId, recipientId: userId },
-          { senderId: userId, recipientId: partnerId },
-        ];
+          { senderId: userId, recipientId: partnerId }
+        );
       }
+
+      const filter = filterConditions.length > 0 ? { $or: filterConditions } : { id: connectionId };
 
       await connectionsCol.updateOne(filter, {
         $set: { status: 'declined', updatedAt: nowIso },
       });
+
+      // Mark notification as resolved
+      try {
+        await notifsCol.updateMany(
+          {
+            $or: [
+              { connectionId: connectionId },
+              { id: `notif_conn_${connectionId}` },
+            ],
+          },
+          {
+            $set: {
+              actionRequired: false,
+              description: 'Connection request declined.',
+              updatedAt: nowIso,
+            },
+          }
+        );
+      } catch (err) {
+        console.warn('[Connections POST] Notification decline warning:', err);
+      }
+
+      const updated = await connectionsCol.findOne(filter);
+      if (updated) {
+        broadcast({ type: 'connection_event', data: updated });
+      }
 
       return NextResponse.json({
         success: true,
@@ -307,17 +448,44 @@ export async function POST(req: NextRequest) {
 
     if (action === 'cancel') {
       const connectionId = body?.connectionId || connection?.id;
-      const filter: any = {};
-      if (connectionId) {
-        filter.$or = [{ id: connectionId }, { _id: connectionId }];
-      } else {
-        filter.$or = [
+      const pair_key = (userId && partnerId) ? computePairKey(userId, partnerId) : '';
+
+      const filterConditions: any[] = [];
+      if (connectionId) filterConditions.push({ id: connectionId });
+      if (pair_key) filterConditions.push({ pair_key });
+      if (userId && partnerId) {
+        filterConditions.push(
           { senderId: userId, recipientId: partnerId },
-          { senderId: partnerId, recipientId: userId },
-        ];
+          { senderId: partnerId, recipientId: userId }
+        );
       }
 
+      const filter = filterConditions.length > 0 ? { $or: filterConditions } : { id: connectionId };
+
+      const existing = await connectionsCol.findOne(filter);
       await connectionsCol.deleteOne(filter);
+
+      // Clean up notification
+      try {
+        await notifsCol.deleteMany({
+          $or: [
+            { connectionId: connectionId || existing?.id },
+            { id: `notif_conn_${connectionId || existing?.id}` },
+          ],
+        });
+      } catch (err) {
+        console.warn('[Connections POST] Notification cancel delete warning:', err);
+      }
+
+      broadcast({
+        type: 'connection_event',
+        data: {
+          id: connectionId || existing?.id,
+          senderId: userId || existing?.senderId,
+          recipientId: partnerId || existing?.recipientId,
+          status: 'cancelled',
+        },
+      });
 
       return NextResponse.json({
         success: true,

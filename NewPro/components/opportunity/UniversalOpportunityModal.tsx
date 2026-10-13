@@ -64,6 +64,8 @@ import { opportunityService } from '@/lib/opportunityService';
 import { getUserProfile, UserProfile } from '@/lib/userProfile';
 import { getAdminSession } from '@/lib/adminAuth';
 import { AdminSession } from '@/types/admin';
+import { createPortal } from 'react-dom';
+import { entityContextService, LinkedEntity } from '@/lib/entityContextService';
 
 interface UniversalOpportunityModalProps {
   isOpen: boolean;
@@ -92,24 +94,62 @@ export const UniversalOpportunityModal: React.FC<UniversalOpportunityModalProps>
 }) => {
   const { showToast } = useToast();
   const [currentStep, setCurrentStep] = useState<number>(1);
+  const [mounted, setMounted] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfile>(getUserProfile());
+  const [activeEntity, setActiveEntity] = useState<LinkedEntity | null>(() =>
+    typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null
+  );
   const [adminSession, setAdminSession] = useState<AdminSession | null>(getAdminSession());
   const [lastSavedDraftTime, setLastSavedDraftTime] = useState<string | null>(null);
+  const stepperRef = useRef<HTMLDivElement>(null);
 
-  // Publisher details
+  useEffect(() => {
+    setMounted(true);
+    if (typeof window !== 'undefined') {
+      setActiveEntity(entityContextService.getActiveEntity());
+      setUserProfile(getUserProfile());
+    }
+  }, []);
+
+  // Prevent background scroll while modal is visible
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
+
+  // Smooth scroll active step in stepper bar into view
+  useEffect(() => {
+    if (!stepperRef.current) return;
+    const activeBtn = stepperRef.current.querySelector<HTMLElement>(`[data-step="${currentStep}"]`);
+    if (activeBtn) {
+      activeBtn.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, [currentStep]);
+
+  // Publisher details - Authoritative entity auto-population
   const publisherId = adminMode
     ? adminSession?.employeeId || 'admin_op'
-    : userProfile.id;
+    : activeEntity?.id || userProfile.id;
   const publisherType = adminMode
     ? 'Xentro Admin'
+    : activeEntity
+    ? activeEntity.entityType || 'Entity Account'
     : userProfile.role === 'startup' || userProfile.role === 'esp'
     ? 'Entity Account'
     : 'Personal Account';
   const publisherName = adminMode
     ? `${adminSession?.name || 'Admin Officer'} (#${adminSession?.employeeId || '9922953'})`
-    : userProfile.name;
-  const publisherOrg = adminMode ? 'Xentro Operational Control Plane' : userProfile.organization;
-  const publisherRoleTitle = adminMode ? 'Super Administrator' : userProfile.roleTitle;
+    : userProfile.name || activeEntity?.primaryOwnerName || 'Founder';
+  const publisherOrg = adminMode
+    ? 'Xentro Operational Control Plane'
+    : activeEntity?.name || userProfile.organization || 'Personal Account';
+  const publisherRoleTitle = adminMode
+    ? 'Super Administrator'
+    : activeEntity?.role || userProfile.roleTitle || 'Founder';
 
   // STEP 1 State
   const [targetUserTypes, setTargetUserTypes] = useState<string[]>(['startup']);
@@ -273,7 +313,9 @@ export const UniversalOpportunityModal: React.FC<UniversalOpportunityModalProps>
       }
     } else {
       // Check for saved draft
-      const draft = opportunityService.getDraft(publisherId);
+      const draft =
+        opportunityService.getDraft(publisherId) ||
+        (userProfile.id ? opportunityService.getDraft(userProfile.id) : null);
       if (draft && !isEditMode) {
         setTitle(draft.title || '');
         if (draft.category) setCategory(draft.category as any);
@@ -599,14 +641,17 @@ export const UniversalOpportunityModal: React.FC<UniversalOpportunityModalProps>
     { num: 9, title: 'Preview & Publish' },
   ];
 
-  return (
+  if (!isOpen) return null;
+  if (!mounted || typeof document === 'undefined') return null;
+
+  const modalContent = (
     <div
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in"
+      className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-hidden animate-in fade-in duration-200"
     >
-      <div className="relative m-auto w-full max-w-4xl h-[90vh] max-h-[850px] bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95">
+      <div className="relative w-full max-w-4xl h-[92vh] max-h-[850px] bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in zoom-in-95">
         {/* TOP BAR: Header, Step Indicator, Save Draft, Close */}
         <div className="shrink-0 p-4 sm:p-5 border-b border-[#E5E7EB] dark:border-[#262A29] bg-gray-50/70 dark:bg-[#202422]/60 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3">
@@ -658,22 +703,34 @@ export const UniversalOpportunityModal: React.FC<UniversalOpportunityModalProps>
           </div>
         </div>
 
+        {/* PROGRESS INDICATOR BAR */}
+        <div className="shrink-0 w-full h-1 bg-gray-100 dark:bg-[#202422]">
+          <div
+            className="h-full bg-[#D9FF3F] transition-all duration-300"
+            style={{ width: `${(currentStep / 9) * 100}%` }}
+          />
+        </div>
+
         {/* STEPPER PROGRESS STRIP */}
-        <div className="shrink-0 px-4 py-2.5 bg-white dark:bg-[#181B1A] border-b border-[#E5E7EB] dark:border-[#262A29] overflow-x-auto no-scrollbar">
-          <div className="flex items-center gap-1.5 min-w-max">
+        <div className="shrink-0 px-3 sm:px-4 py-2 bg-white dark:bg-[#181B1A] border-b border-[#E5E7EB] dark:border-[#262A29] relative flex items-center">
+          <div
+            ref={stepperRef}
+            className="flex items-center gap-1.5 overflow-x-auto scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-[#262A29] py-0.5 w-full"
+          >
             {STEPS.map((s) => {
               const isCurrent = currentStep === s.num;
               const isDone = currentStep > s.num;
               return (
                 <button
                   key={s.num}
+                  data-step={s.num}
                   type="button"
                   onClick={() => {
                     if (s.num < currentStep || validateStep(currentStep)) {
                       setCurrentStep(s.num);
                     }
                   }}
-                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-semibold transition-all ${
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-[11px] font-semibold whitespace-nowrap shrink-0 transition-all cursor-pointer ${
                     isCurrent
                       ? 'bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] shadow-xs'
                       : isDone
@@ -700,7 +757,7 @@ export const UniversalOpportunityModal: React.FC<UniversalOpportunityModalProps>
         </div>
 
         {/* SCROLLABLE STEP FORM BODY */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-7 space-y-6">
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-4 sm:p-6 md:p-7 space-y-6 scrollbar-thin">
           {/* ================= STEP 1: AUDIENCE & SOURCE ================= */}
           {currentStep === 1 && (
             <div className="space-y-6 animate-in fade-in">
@@ -2503,4 +2560,6 @@ export const UniversalOpportunityModal: React.FC<UniversalOpportunityModalProps>
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };

@@ -113,6 +113,22 @@ export function getActiveConnectionPersona(): ActiveConnectionPersona {
   };
 }
 
+export function getUserIdentityIds(): string[] {
+  const ids = new Set<string>();
+  const persona = getActiveConnectionPersona();
+  if (persona.id) ids.add(persona.id.trim().toLowerCase());
+  if (persona.personalUserId) ids.add(persona.personalUserId.trim().toLowerCase());
+  if (typeof window !== 'undefined') {
+    try {
+      const linked = entityContextService.getLinkedEntities();
+      linked.forEach((e) => {
+        if (e.id) ids.add(e.id.trim().toLowerCase());
+      });
+    } catch {}
+  }
+  return Array.from(ids).filter(Boolean);
+}
+
 function getCurrentUserId(): { id: string; name: string; role: string; avatar: string } {
   const persona = getActiveConnectionPersona();
   return {
@@ -146,6 +162,14 @@ if (typeof window !== 'undefined') {
     connectionService.syncFromServer();
     window.dispatchEvent(new CustomEvent(CONNECTIONS_UPDATED_EVENT));
   });
+
+  // Background polling sync every 5 seconds for authoritative state across tabs & users
+  setInterval(() => {
+    const persona = getActiveConnectionPersona();
+    if (persona.personalUserId || persona.id) {
+      connectionService.syncFromServer().catch(() => {});
+    }
+  }, 5000);
 
   // Fetch initial on page load
   setTimeout(() => {
@@ -299,20 +323,23 @@ export const connectionService = {
     this.saveRawConnections(updated);
 
     const persona = getActiveConnectionPersona();
+    const myIds = getUserIdentityIds();
     const normalizedRecipient = normalizeUserId(conn.recipientId).toLowerCase();
     const normalizedSender = normalizeUserId(conn.senderId).toLowerCase();
-    const normalizedCurrent = normalizeUserId(persona.id).toLowerCase();
-    const normalizedPersonal = normalizeUserId(persona.personalUserId).toLowerCase();
 
-    const isRecipientMe = normalizedRecipient === normalizedCurrent || normalizedRecipient === normalizedPersonal;
-    const isSenderMe = normalizedSender === normalizedCurrent || normalizedSender === normalizedPersonal;
+    const isRecipientMe = myIds.includes(normalizedRecipient);
+    const isSenderMe = myIds.includes(normalizedSender);
 
     // If we are the recipient of a pending request, notify the UI
     if (isRecipientMe && conn.status === 'pending') {
+      const notifCategory = (conn.senderRole?.toLowerCase().includes('investor'))
+        ? 'investor'
+        : (conn.senderRole?.toLowerCase().includes('esp') ? 'esp' : 'mentorship');
+
       notificationService.sendNotification({
         id: `notif_conn_${conn.id}`,
         userId: persona.id,
-        category: 'mentorship',
+        category: notifCategory,
         title: `${conn.senderName} sent you a connection request`,
         description: `Looking to connect and collaborate on Xentro.`,
         time: 'Just now',
@@ -326,10 +353,14 @@ export const connectionService = {
         targetTab: 'notifications',
       });
     } else if (isSenderMe && conn.status === 'accepted') {
+      const notifCategory = (conn.recipientRole?.toLowerCase().includes('investor'))
+        ? 'investor'
+        : (conn.recipientRole?.toLowerCase().includes('esp') ? 'esp' : 'mentorship');
+
       notificationService.sendNotification({
         id: `notif_accepted_${conn.id}`,
         userId: persona.id,
-        category: 'mentorship',
+        category: notifCategory,
         title: `${conn.recipientName} accepted your connection request!`,
         description: `You are now connected on Xentro! Start collaborating.`,
         time: 'Just now',
@@ -357,24 +388,19 @@ export const connectionService = {
 
   /** Get current relationship status with a given partner directly from MongoDB source */
   getConnectionStatus(partnerId: string): 'none' | 'pending' | 'received' | 'connected' {
-    const persona = getActiveConnectionPersona();
-    const all = this.getRawConnections();
-    const normalizedCurrent = normalizeUserId(persona.id).toLowerCase();
-    const normalizedPersonal = normalizeUserId(persona.personalUserId).toLowerCase();
+    const myIds = getUserIdentityIds();
     const normalizedPartner = normalizeUserId(partnerId).toLowerCase();
 
-    if (!normalizedPartner || !normalizedCurrent) return 'none';
-    if (normalizedPartner === normalizedCurrent || normalizedPartner === normalizedPersonal) return 'none';
+    if (!normalizedPartner || myIds.length === 0) return 'none';
+    if (myIds.includes(normalizedPartner)) return 'none';
 
-    // Match either direction with normalized IDs (active persona or personal ID)
+    const all = this.getRawConnections();
     const conn = all.find((c) => {
       const s = normalizeUserId(c.senderId).toLowerCase();
       const r = normalizeUserId(c.recipientId).toLowerCase();
       return (
-        (s === normalizedCurrent && r === normalizedPartner) ||
-        (r === normalizedCurrent && s === normalizedPartner) ||
-        (s === normalizedPersonal && r === normalizedPartner) ||
-        (r === normalizedPersonal && s === normalizedPartner)
+        (myIds.includes(s) && r === normalizedPartner) ||
+        (myIds.includes(r) && s === normalizedPartner)
       );
     });
 
@@ -388,7 +414,7 @@ export const connectionService = {
 
     if (conn.status === 'pending') {
       const s = normalizeUserId(conn.senderId).toLowerCase();
-      if (s === normalizedCurrent || s === normalizedPersonal) {
+      if (myIds.includes(s)) {
         return 'pending'; // Current user requested it
       } else {
         return 'received'; // Current user received it
@@ -595,54 +621,90 @@ export const connectionService = {
   },
 
   /** Cancel an outgoing connection request */
-  cancelConnection(partnerId: string): void {
-    this.declineConnection(partnerId);
+  async cancelConnection(partnerId: string, connectionId?: string): Promise<void> {
+    const persona = getActiveConnectionPersona();
+    const all = this.getRawConnections();
+    const currentNorm = normalizeUserId(persona.id);
+    const personalNorm = normalizeUserId(persona.personalUserId);
+    const partnerNorm = normalizeUserId(partnerId);
+
+    const remaining = all.filter((c) => {
+      if (connectionId && c.id === connectionId) return false;
+      const s = normalizeUserId(c.senderId).toLowerCase();
+      const r = normalizeUserId(c.recipientId).toLowerCase();
+      const p = partnerNorm.toLowerCase();
+      const cur = currentNorm.toLowerCase();
+      const per = personalNorm.toLowerCase();
+      if ((s === cur && r === p) || (s === per && r === p)) return false;
+      return true;
+    });
+    this.saveRawConnections(remaining);
+
+    try {
+      await fetch('/api/connections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'cancel',
+          connectionId,
+          userId: currentNorm,
+          partnerId: partnerNorm,
+        }),
+      });
+    } catch (err) {
+      console.warn('[Connections] Failed to persist cancel:', err);
+    }
+
+    await this.syncFromServer();
   },
 
   /** Number of pending connection requests received by current user from MongoDB */
   getPendingReceivedCount(): number {
-    const persona = getActiveConnectionPersona();
-    const currentNorm = normalizeUserId(persona.id).toLowerCase();
-    const personalNorm = normalizeUserId(persona.personalUserId).toLowerCase();
+    const myIds = getUserIdentityIds();
     const all = this.getRawConnections();
     return all.filter((c) => {
       const r = normalizeUserId(c.recipientId).toLowerCase();
-      return (r === currentNorm || (!persona.isEntity && r === personalNorm)) && c.status === 'pending';
+      return myIds.includes(r) && c.status === 'pending';
     }).length;
   },
 
   /** Number of established connections for active persona (or specified target user) from MongoDB */
   getConnectedCount(userId?: string): number {
-    const persona = getActiveConnectionPersona();
-    const currentNorm = normalizeUserId(persona.id).toLowerCase();
-    const targetNorm = userId ? normalizeUserId(userId).toLowerCase() : currentNorm;
-    if (!targetNorm) return 0;
-    
     const all = this.getRawConnections();
+    if (userId) {
+      const targetNorm = normalizeUserId(userId).toLowerCase();
+      return all.filter((c) => {
+        if (c.status !== 'accepted') return false;
+        const s = normalizeUserId(c.senderId).toLowerCase();
+        const r = normalizeUserId(c.recipientId).toLowerCase();
+        return s === targetNorm || r === targetNorm;
+      }).length;
+    }
+
+    const myIds = getUserIdentityIds();
     return all.filter((c) => {
       if (c.status !== 'accepted') return false;
       const s = normalizeUserId(c.senderId).toLowerCase();
       const r = normalizeUserId(c.recipientId).toLowerCase();
-      return s === targetNorm || r === targetNorm;
+      return myIds.includes(s) || myIds.includes(r);
     }).length;
   },
 
   /** Get all user profiles that active persona (or specified target user) has an accepted connection with */
   getConnectedPartners(userId?: string): ConnectedPartner[] {
-    const persona = getActiveConnectionPersona();
-    const targetNorm = userId ? normalizeUserId(userId).toLowerCase() : normalizeUserId(persona.id).toLowerCase();
-    if (!targetNorm) return [];
-
     const all = this.getRawConnections();
+    const myIds = userId ? [normalizeUserId(userId).toLowerCase()] : getUserIdentityIds();
+    if (myIds.length === 0) return [];
+
     const connected = all.filter(
       (c) =>
-        (normalizeUserId(c.senderId).toLowerCase() === targetNorm ||
-         normalizeUserId(c.recipientId).toLowerCase() === targetNorm) &&
-        c.status === 'accepted'
+        c.status === 'accepted' &&
+        (myIds.includes(normalizeUserId(c.senderId).toLowerCase()) ||
+         myIds.includes(normalizeUserId(c.recipientId).toLowerCase()))
     );
 
     return connected.map((c) => {
-      const isSender = normalizeUserId(c.senderId).toLowerCase() === targetNorm;
+      const isSender = myIds.includes(normalizeUserId(c.senderId).toLowerCase());
       const partnerName = (isSender ? c.recipientName : c.senderName) || 'Connected Member';
       const partnerAvatar = isSender ? c.recipientAvatar : c.senderAvatar;
       return {

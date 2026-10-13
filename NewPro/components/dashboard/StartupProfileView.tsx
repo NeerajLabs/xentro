@@ -630,7 +630,9 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
     }
 
     if (connectionStatus === 'pending') {
-      showToast(`Your connection request is pending ${startup.identity.name}'s approval.`, "info");
+      connectionService.cancelConnection(partnerId);
+      setConnectionStatus('none');
+      showToast(`Cancelled connection request to ${startup.identity.name}.`, "info");
       return;
     }
 
@@ -1125,12 +1127,11 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
                   {/* Connect Action */}
                   <button
                     onClick={handleToggleConnect}
-                    disabled={connectionStatus === 'pending'}
                     className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                       connectionStatus === 'connected'
                         ? "bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800"
                         : connectionStatus === 'pending'
-                        ? "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 cursor-not-allowed opacity-90"
+                        ? "bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800 opacity-90"
                         : connectionStatus === 'received'
                         ? "bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212]"
                         : "bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] shadow-xs active:scale-95"

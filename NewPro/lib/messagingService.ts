@@ -220,6 +220,8 @@ function connectRealtimeStream() {
           messagingService.applyRemoteMessages(payload.data);
         } else if (payload.type === 'new_message' && payload.data) {
           messagingService.applyIncomingMessage(payload.data);
+        } else if (payload.type === 'connection_event' && payload.data) {
+          window.dispatchEvent(new CustomEvent('xentro-connection-event', { detail: payload.data }));
         } else if (payload.type === 'feed_event' && payload.data) {
           // Live feed like/comment patches share this stream; handled by feedService
           window.dispatchEvent(new CustomEvent('xentro-feed-event', { detail: payload.data }));

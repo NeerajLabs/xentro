@@ -298,12 +298,11 @@ export const InvestorOrgProfileView: React.FC<InvestorOrgProfileViewProps> = ({
                   });
                   showToast(`Connection request dispatched to ${organization.name} team!`, 'success');
                 }}
-                disabled={connStatus === 'pending'}
                 className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md ${
                   connStatus === 'connected'
                     ? 'bg-emerald-500 text-white'
                     : connStatus === 'pending'
-                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 opacity-90 cursor-not-allowed'
+                    ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 opacity-90'
                     : connStatus === 'received'
                     ? 'bg-[#D9FF3F] text-[#101212]'
                     : 'bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] hover:opacity-90 active:scale-98'

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Search,
@@ -130,6 +131,21 @@ export const OpportunityApplicationManager: React.FC<OpportunityApplicationManag
     };
   }, [opportunity]);
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -175,6 +191,7 @@ export const OpportunityApplicationManager: React.FC<OpportunityApplicationManag
   }, [applicants, selectedStatusTab, searchQuery]);
 
   if (!isOpen || !opportunity) return null;
+  if (!mounted || typeof document === 'undefined') return null;
 
   const handleStatusChange = (applicantId: string, newStatus: ApplicantStatus) => {
     const updated = opportunityService.updateApplicantStatus(
@@ -242,14 +259,14 @@ export const OpportunityApplicationManager: React.FC<OpportunityApplicationManag
     showToast('Applicant export CSV downloaded', 'success');
   };
 
-  return (
+  const modalContent = (
     <div
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-hidden animate-in fade-in duration-200"
     >
-      <div className="relative m-auto bg-white dark:bg-[#181B1A] w-full max-w-6xl rounded-2xl shadow-floating border border-[#E5E7EB] dark:border-[#262A29] h-[90vh] max-h-[850px] flex flex-col overflow-hidden animate-fade-slide">
+      <div className="relative w-full max-w-6xl bg-white dark:bg-[#181B1A] rounded-2xl shadow-floating border border-[#E5E7EB] dark:border-[#262A29] h-[92vh] max-h-[850px] flex flex-col overflow-hidden animate-fade-slide">
         {/* Header */}
         <div className="shrink-0 p-5 sm:p-6 border-b border-[#E5E7EB] dark:border-[#262A29] flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gray-50/50 dark:bg-[#202422]/50">
           <div>
@@ -702,4 +719,6 @@ export const OpportunityApplicationManager: React.FC<OpportunityApplicationManag
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };

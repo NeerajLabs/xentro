@@ -28,6 +28,51 @@ interface PostCardProps {
   onLikeToggle?: (postId: string) => void;
 }
 
+function formatPostTime(createdAt?: string, fallbackTimestamp?: string): { display: string; tooltip?: string } {
+  const raw = createdAt || fallbackTimestamp;
+  if (!raw) return { display: 'Recently' };
+
+  const parsed = new Date(raw);
+  const isValidDate = !isNaN(parsed.getTime());
+
+  const targetDate = (createdAt && !isNaN(new Date(createdAt).getTime()))
+    ? new Date(createdAt)
+    : (isValidDate ? parsed : null);
+
+  if (!targetDate) {
+    return { display: fallbackTimestamp || 'Recently' };
+  }
+
+  const now = new Date();
+  const diffMs = Math.max(0, now.getTime() - targetDate.getTime());
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  const tooltip = targetDate.toLocaleString([], {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  if (diffSecs < 45) return { display: 'Just now', tooltip };
+  if (diffMins < 60) return { display: `${Math.max(1, diffMins)}m ago`, tooltip };
+  if (diffHours < 24) return { display: `${diffHours}h ago`, tooltip };
+  if (diffDays === 1) return { display: 'Yesterday', tooltip };
+  if (diffDays < 7) return { display: `${diffDays}d ago`, tooltip };
+
+  const isSameYear = now.getFullYear() === targetDate.getFullYear();
+  const display = targetDate.toLocaleDateString([], {
+    month: 'short',
+    day: 'numeric',
+    ...(isSameYear ? {} : { year: 'numeric' }),
+  });
+  return { display, tooltip };
+}
+
 export const PostCard: React.FC<PostCardProps> = ({ post, onLikeToggle }) => {
   const authorRawName = (post as any).authorName || (post.author as any)?.name || 'Ecosystem Member';
   const authorRawAvatar = (post as any).authorAvatar || (post.author as any)?.avatar;
@@ -363,7 +408,14 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onLikeToggle }) => {
               )}
             </div>
             <div className="flex items-center gap-1.5 text-xs text-[#565B59] dark:text-[#B6B8B7] flex-wrap">
-              <span>{post.timestamp}</span>
+              {(() => {
+                const timeInfo = formatPostTime(post.createdAt, post.timestamp);
+                return (
+                  <span title={timeInfo.tooltip} className="hover:underline cursor-default">
+                    {timeInfo.display}
+                  </span>
+                );
+              })()}
               <span>•</span>
               <span className="truncate max-w-[200px] sm:max-w-xs">{author.role}</span>
               {author.company && (
@@ -613,7 +665,14 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onLikeToggle }) => {
                   <span className="font-bold text-[#101212] dark:text-white font-heading">
                     {comment.author.name}
                   </span>
-                  <span className="text-[10px] text-[#565B59] dark:text-[#B6B8B7]">{comment.timestamp}</span>
+                  {(() => {
+                    const cTimeInfo = formatPostTime(comment.createdAt, comment.timestamp);
+                    return (
+                      <span title={cTimeInfo.tooltip} className="text-[10px] text-[#565B59] dark:text-[#B6B8B7] hover:underline cursor-default">
+                        {cTimeInfo.display}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <p className="mt-1 text-[#565B59] dark:text-gray-300">{comment.content}</p>
               </div>

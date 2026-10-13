@@ -95,24 +95,58 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
   const [isCreateOrgOpen, setIsCreateOrgOpen] = useState(false);
 
-  // Sync role and entity changes
+  const activeModuleIdRef = React.useRef<string>(activeModuleId);
+  useEffect(() => {
+    activeModuleIdRef.current = activeModuleId;
+  }, [activeModuleId]);
+
+  // Sync role and entity changes without auto-reverting activeModuleId
   useEffect(() => {
     const handleRoleChanged = (e: Event) => {
       const customEvent = e as CustomEvent;
       const newProfile = customEvent.detail?.profile || getUserProfile();
       setProfile(newProfile);
 
-      // Check if current activeModuleId exists in the new persona config
-      const targetConfig = personaDashboardConfigs[newProfile.role as UserRole];
-      const allItemIds = targetConfig.sections.flatMap((s) => s.items.map((i) => i.id));
-      if (!allItemIds.includes(activeModuleId)) {
+      // Determine authoritative active workspace role (considering linked active entity)
+      const currentEntity = entityContextService.getActiveEntity();
+      const currentEffectiveRole: UserRole = (currentEntity
+        ? currentEntity.entityType?.toLowerCase() === 'startup'
+          ? 'startup'
+          : currentEntity.entityType?.toLowerCase().includes('investor') || currentEntity.entityType === 'INVESTOR_ORG'
+          ? 'investor'
+          : currentEntity.entityType?.toLowerCase() === 'esp'
+          ? 'esp'
+          : (newProfile.role as UserRole)
+        : (newProfile.role as UserRole)) || 'startup';
+
+      // Check if current activeModuleId exists in the active workspace config
+      const targetConfig = personaDashboardConfigs[currentEffectiveRole] || personaDashboardConfigs.startup;
+      const allItemIds = targetConfig?.sections?.flatMap((s) => s.items.map((i) => i.id)) || [];
+      if (allItemIds.length > 0 && !allItemIds.includes(activeModuleIdRef.current)) {
         setActiveModuleId('overview');
       }
     };
 
     const handleEntityChanged = (e: Event) => {
       const ce = e as CustomEvent;
-      setActiveEntity(ce.detail?.entity || entityContextService.getActiveEntity());
+      const newEntity = ce.detail?.entity || entityContextService.getActiveEntity();
+      setActiveEntity(newEntity);
+
+      const newEffectiveRole: UserRole = (newEntity
+        ? newEntity.entityType?.toLowerCase() === 'startup'
+          ? 'startup'
+          : newEntity.entityType?.toLowerCase().includes('investor') || newEntity.entityType === 'INVESTOR_ORG'
+          ? 'investor'
+          : newEntity.entityType?.toLowerCase() === 'esp'
+          ? 'esp'
+          : (profile.role as UserRole)
+        : (profile.role as UserRole)) || 'startup';
+
+      const targetConfig = personaDashboardConfigs[newEffectiveRole] || personaDashboardConfigs.startup;
+      const allItemIds = targetConfig?.sections?.flatMap((s) => s.items.map((i) => i.id)) || [];
+      if (allItemIds.length > 0 && !allItemIds.includes(activeModuleIdRef.current)) {
+        setActiveModuleId('overview');
+      }
     };
 
     const handleOpenCreateOrg = () => {
@@ -127,7 +161,7 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
       window.removeEventListener(ENTITY_CONTEXT_CHANGED_EVENT, handleEntityChanged);
       window.removeEventListener('xentro-open-create-investor-org', handleOpenCreateOrg);
     };
-  }, [activeModuleId]);
+  }, []);
 
   const effectiveRole: UserRole = (activeEntity
     ? activeEntity.entityType?.toLowerCase() === 'startup'

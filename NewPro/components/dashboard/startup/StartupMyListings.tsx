@@ -22,6 +22,7 @@ import {
 import { Opportunity } from '@/types/opportunity';
 import { opportunityService } from '@/lib/opportunityService';
 import { getUserProfile } from '@/lib/userProfile';
+import { entityContextService } from '@/lib/entityContextService';
 import { UniversalOpportunityModal } from '@/components/opportunity/UniversalOpportunityModal';
 import { OpportunityDetailModal } from '@/components/opportunity/OpportunityDetailModal';
 import { OpportunityApplicationManager } from '@/components/opportunity/OpportunityApplicationManager';
@@ -30,6 +31,19 @@ import { useToast } from '@/components/ui/Toast';
 export const StartupMyListings: React.FC = () => {
   const { showToast } = useToast();
   const currentUser = getUserProfile();
+  const activeEntity = typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null;
+
+  const effectiveRole = (
+    activeEntity
+      ? activeEntity.entityType?.toLowerCase() === 'startup'
+        ? 'startup'
+        : activeEntity.entityType?.toLowerCase().includes('investor') || activeEntity.entityType === 'INVESTOR_ORG'
+        ? 'investor'
+        : activeEntity.entityType?.toLowerCase() === 'esp'
+        ? 'esp'
+        : currentUser.role
+      : currentUser.role
+  ) || 'startup';
 
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
   const [activeTab, setActiveTab] = useState<'published' | 'drafts'>('published');
@@ -49,38 +63,50 @@ export const StartupMyListings: React.FC = () => {
 
   const loadData = () => {
     const all = opportunityService.getOpportunities();
+    const activeEntity = typeof window !== 'undefined' ? entityContextService.getActiveEntity() : null;
+
     // Exclude archived listings and match publisherAccountId or startup ownership
     const myListings = all.filter(
       (opp) =>
         opp.status !== 'archived' &&
         (opp.publisherAccountId === currentUser.id ||
+          (activeEntity && opp.publisherAccountId === activeEntity.id) ||
+          (activeEntity && opp.publisherOrgName?.toLowerCase() === activeEntity.name?.toLowerCase()) ||
           opp.publisherOrgName?.toLowerCase() === currentUser.organization?.toLowerCase() ||
           opp.publisherName?.toLowerCase() === currentUser.name?.toLowerCase())
     );
 
     // Also include any standalone draft from getDraft if not present
-    const singleDraft = opportunityService.getDraft(currentUser.id);
-    if (singleDraft && singleDraft.title) {
-      const alreadyHas = myListings.some(
-        (m) => m.id === (singleDraft as Opportunity).id || m.title === singleDraft.title
-      );
-      if (!alreadyHas) {
-        myListings.push({
-          id: (singleDraft as any).id || `draft_${currentUser.id}`,
-          publisherAccountId: currentUser.id,
-          publisherType: 'Personal Account',
-          publisherName: currentUser.name,
-          title: singleDraft.title,
-          category: singleDraft.category || 'Pilot Opportunity',
-          subcategory: singleDraft.subcategory,
-          shortDescription: singleDraft.shortDescription || 'Draft opportunity',
-          fullDescription: singleDraft.fullDescription || 'Draft details',
-          targetUserTypes: singleDraft.targetUserTypes || ['startup'],
-          status: 'draft',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          coverImage: singleDraft.coverImage,
-        } as Opportunity);
+    const draftKeys = [currentUser.id];
+    if (activeEntity && activeEntity.id && !draftKeys.includes(activeEntity.id)) {
+      draftKeys.push(activeEntity.id);
+    }
+
+    for (const dKey of draftKeys) {
+      const singleDraft = opportunityService.getDraft(dKey);
+      if (singleDraft && singleDraft.title) {
+        const alreadyHas = myListings.some(
+          (m) => m.id === (singleDraft as Opportunity).id || m.title === singleDraft.title
+        );
+        if (!alreadyHas) {
+          myListings.push({
+            id: (singleDraft as any).id || `draft_${dKey}`,
+            publisherAccountId: dKey,
+            publisherType: activeEntity ? (activeEntity.entityType as any) || 'Entity Account' : 'Personal Account',
+            publisherName: currentUser.name || activeEntity?.primaryOwnerName || 'Founder',
+            publisherOrgName: activeEntity?.name || currentUser.organization,
+            title: singleDraft.title,
+            category: singleDraft.category || 'Pilot Opportunity',
+            subcategory: singleDraft.subcategory,
+            shortDescription: singleDraft.shortDescription || 'Draft opportunity',
+            fullDescription: singleDraft.fullDescription || 'Draft details',
+            targetUserTypes: singleDraft.targetUserTypes || ['startup'],
+            status: 'draft',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            coverImage: singleDraft.coverImage,
+          } as Opportunity);
+        }
       }
     }
 
@@ -196,7 +222,13 @@ export const StartupMyListings: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-              Manage opportunities, pilot requests, challenges, and collaboration calls posted by your startup.
+              {effectiveRole === 'investor'
+                ? 'Manage deal-flow scouting calls, syndicate invitations, and RFP opportunities posted by your firm.'
+                : effectiveRole === 'mentor'
+                ? 'Manage advisory clinic listings, office-hours calls, and mentorship openings posted by your profile.'
+                : effectiveRole === 'esp'
+                ? 'Manage incubation cohorts, grant challenges, and accelerator program calls posted by your hub.'
+                : 'Manage opportunities, pilot requests, challenges, and collaboration calls posted by your startup.'}
             </p>
           </div>
 
@@ -304,7 +336,13 @@ export const StartupMyListings: React.FC = () => {
               {activeTab === 'drafts'
                 ? 'When you start creating an opportunity call and click "Save Draft", it will be saved here so you can resume editing anytime.'
                 : opportunities.length === 0
-                ? 'Create a listing to invite enterprise pilots, research collaborations, hackathon teams, or co-founder fellowships.'
+                ? effectiveRole === 'investor'
+                  ? 'Publish a call to discover innovative startups, syndication co-investors, or RFP pitch decks.'
+                  : effectiveRole === 'mentor'
+                  ? 'Publish an advisory offering, office hours workshop, or 1:1 guidance program to help founders.'
+                  : effectiveRole === 'esp'
+                  ? 'Publish an accelerator program, grant challenge, or corporate hackathon to source top teams.'
+                  : 'Create a listing to invite enterprise pilots, research collaborations, hackathon teams, or co-founder fellowships.'
                 : 'Try adjusting your search query or category filter.'}
             </p>
           </div>
@@ -516,7 +554,7 @@ export const StartupMyListings: React.FC = () => {
           isOpen={detailModalOpen}
           onClose={() => setDetailModalOpen(false)}
           opportunity={selectedOpportunity}
-          currentUserRole="startup"
+          currentUserRole={effectiveRole}
           currentUserId={currentUser.id}
           onManageApplicants={(opp) => {
             setDetailModalOpen(false);

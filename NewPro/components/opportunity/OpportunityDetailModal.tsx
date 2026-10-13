@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
   X,
   Calendar,
@@ -58,6 +59,21 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
   const [activeTab, setActiveTab] = useState<'overview' | 'eligibility' | 'benefits' | 'timeline' | 'links'>('overview');
   const [isSaved, setIsSaved] = useState(false);
 
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -71,6 +87,7 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
   }, [isOpen, onClose]);
 
   if (!isOpen || !opportunity) return null;
+  if (!mounted || typeof document === 'undefined') return null;
 
   const isOwnerOrAdmin =
     adminMode ||
@@ -128,14 +145,14 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
     opportunity.coverImage ||
     'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=1200&auto=format&fit=crop&q=80';
 
-  return (
+  const modalContent = (
     <div
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-[100] bg-black/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-200"
+      className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 overflow-hidden animate-in fade-in duration-200"
     >
-      <div className="relative m-auto bg-white dark:bg-[#181B1A] w-full max-w-5xl xl:max-w-6xl rounded-3xl shadow-2xl border border-[#E5E7EB] dark:border-[#262A29] h-[90vh] max-h-[90vh] flex flex-col overflow-hidden animate-fade-slide">
+      <div className="relative w-full max-w-5xl xl:max-w-6xl rounded-3xl shadow-2xl border border-[#E5E7EB] dark:border-[#262A29] h-[92vh] max-h-[850px] flex flex-col overflow-hidden animate-fade-slide">
         {/* Hero Cover Banner */}
         <div className="relative h-48 sm:h-64 w-full bg-gray-900 shrink-0 overflow-hidden">
           <img
@@ -788,4 +805,6 @@ export const OpportunityDetailModal: React.FC<OpportunityDetailModalProps> = ({
       </div>
     </div>
   );
+
+  return createPortal(modalContent, document.body);
 };

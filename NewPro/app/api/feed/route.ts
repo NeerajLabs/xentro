@@ -33,6 +33,32 @@ async function getMongoClient(): Promise<MongoClient> {
   return cachedClient;
 }
 
+function formatRelativeTime(dateInput?: string | Date | null): string {
+  if (!dateInput) return 'Recently';
+  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+  if (isNaN(date.getTime())) return typeof dateInput === 'string' ? dateInput : 'Recently';
+
+  const now = new Date();
+  const diffMs = Math.max(0, now.getTime() - date.getTime());
+  const diffSecs = Math.floor(diffMs / 1000);
+  const diffMins = Math.floor(diffSecs / 60);
+  const diffHours = Math.floor(diffMins / 60);
+  const diffDays = Math.floor(diffHours / 24);
+
+  if (diffSecs < 45) return 'Just now';
+  if (diffMins < 60) return `${Math.max(1, diffMins)}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'Yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  const isSameYear = now.getFullYear() === date.getFullYear();
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    ...(isSameYear ? {} : { year: 'numeric' }),
+  });
+}
+
 function mapBackendComment(c: any): PostComment {
   const a = c?.author || {};
   const name = a.name || 'Xentro User';
@@ -48,9 +74,8 @@ function mapBackendComment(c: any): PostComment {
       verified: Boolean(a.verified),
     },
     content: c.content || '',
-    timestamp: c.createdAt
-      ? new Date(c.createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-      : c.timestamp || 'Recently',
+    createdAt: c.createdAt || undefined,
+    timestamp: formatRelativeTime(c.createdAt || c.timestamp),
     likes: c.likes || 0,
     isLiked: false,
   } as PostComment;
@@ -144,9 +169,8 @@ export async function GET(req: NextRequest) {
             postType: p.postType || 'General Post',
             tags: p.tags || [],
             media,
-            timestamp: p.createdAt
-              ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              : 'Recently',
+            createdAt: p.createdAt || undefined,
+            timestamp: formatRelativeTime(p.createdAt),
             metrics: {
               likes: postLikesCount || p.likesCount || 0,
               comments: Array.isArray(p.commentsList) ? p.commentsList.length : p.commentsCount || 0,
@@ -218,9 +242,8 @@ export async function GET(req: NextRequest) {
             postType: p.postType || 'General Post',
             tags: p.tags || [],
             media,
-            timestamp: p.createdAt
-              ? new Date(p.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-              : 'Recently',
+            createdAt: p.createdAt || undefined,
+            timestamp: formatRelativeTime(p.createdAt),
             metrics: {
               likes: p.likesCount || 0,
               comments: Array.isArray(p.commentsList) ? p.commentsList.length : p.commentsCount || 0,

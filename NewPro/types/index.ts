@@ -14,6 +14,7 @@ export interface PostComment {
   author: User;
   content: string;
   timestamp: string;
+  createdAt?: string;
   likes: number;
   isLiked?: boolean;
 }
@@ -22,6 +23,7 @@ export interface Post {
   id: string;
   author: User;
   timestamp: string;
+  createdAt?: string;
   category: 'all' | 'following' | 'opportunities' | 'mentors' | 'investors' | 'startup' | 'esp' | string;
   content: string;
   postType?: string;
