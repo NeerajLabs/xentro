@@ -1,53 +1,90 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import crypto from 'crypto';
+import { getDatabase } from '@/lib/mongodb';
+import {
+  extractAuthToken,
+  verifyJwtToken,
+  requireAuthenticatedUser,
+  logSecurityAuditEvent,
+} from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
-
-let cachedClient: MongoClient | null = null;
-
-async function getMongoClient(): Promise<MongoClient> {
-  if (!cachedClient) {
-    cachedClient = new MongoClient(MONGODB_URI, {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-    });
-    await cachedClient.connect();
-  }
-  return cachedClient;
+/**
+ * Generates collision-resistant entity identifiers:
+ * e.g., ST-4A8F29BC, VCI-81D299E1, ES-9B4109C2, INS-5E3A1290
+ */
+function generateCollisionResistantEntityId(prefix: string): string {
+  const hex = crypto.randomBytes(4).toString('hex').toUpperCase();
+  return `${prefix}-${hex}`;
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const userId = req.headers.get('x-user-id') || body.userId || '';
-    const userEmail = req.headers.get('x-user-email') || body.userEmail || body.email || '';
+    // Step 1: Enforce cryptographically verified server-side identity (SEC-01 / High Risk)
+    const authRes = await requireAuthenticatedUser(req);
+    if ('error' in authRes) {
+      return authRes.error;
+    }
+    const user = authRes.user;
 
-    if (!userId && !userEmail) {
-      return NextResponse.json(
-        { success: false, message: 'Authentication required to create an entity account' },
-        { status: 401 }
-      );
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ success: false, message: 'Invalid JSON request payload' }, { status: 422 });
     }
 
-    const client = await getMongoClient();
-    const db = client.db('xentro_db');
+    const db = await getDatabase();
     const usersCol = db.collection('users');
     const entitiesCol = db.collection('entities');
     const membershipsCol = db.collection('memberships');
+    const otpCol = db.collection('otp_codes');
 
-    const query: any[] = [];
-    if (userId) query.push({ id: userId }, { _id: userId });
-    if (userEmail) query.push({ email: { $regex: `^${userEmail.trim()}$`, $options: 'i' } });
+    // Step 2: Enforce V1 Single-Created-Entity Limit per person (Concurrency-Safe)
+    // Check if user already created an active entity
+    const existingCreatedEntity = await entitiesCol.findOne({
+      createdByUserId: user.id,
+      status: { $nin: ['DELETED', 'ORPHANED_DELETED', 'ARCHIVED'] },
+      is_deleted: { $ne: true },
+    });
 
-    const user = await usersCol.findOne({ $or: query });
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
+    if (existingCreatedEntity) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Xentro V1 limits each personal account to creating at most one organization entity. You have already created entity "${existingCreatedEntity.name}" (${existingCreatedEntity.id}).`,
+          existingEntityId: existingCreatedEntity.id,
+        },
+        { status: 403 }
+      );
+    }
+
+    // Atomic reservation on user document to prevent concurrent duplicate entity creation
+    const reservation = await usersCol.findOneAndUpdate(
+      {
+        $or: [{ id: user.id }, { _id: user.id }],
+        $or: [
+          { activeCreatedEntityId: { $exists: false } },
+          { activeCreatedEntityId: null },
+          { activeCreatedEntityId: '' },
+        ],
+      },
+      {
+        $set: {
+          entityCreationPendingAt: new Date().toISOString(),
+        },
+      },
+      { returnDocument: 'after' }
+    );
+
+    if (!reservation) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Concurrent entity creation request detected or entity already created for this account.',
+        },
+        { status: 409 }
+      );
     }
 
     const entityTypeRaw = String(body.entityType || body.type || 'STARTUP').toUpperCase();
@@ -55,16 +92,22 @@ export async function POST(req: NextRequest) {
     const officialEmail = String(body.officialEmail || body.email || '').trim().toLowerCase();
 
     if (!entityName) {
-      return NextResponse.json({ success: false, message: 'Entity name is required' }, { status: 400 });
+      // Clear reservation on validation failure
+      await usersCol.updateOne(
+        { $or: [{ id: user.id }, { _id: user.id }] },
+        { $unset: { entityCreationPendingAt: '' } }
+      );
+      return NextResponse.json({ success: false, message: 'Entity name is required' }, { status: 422 });
     }
 
-    const otpCol = db.collection('otp_codes');
     const challengeId = String(body.challengeId || '').trim();
 
     // Verify OTP challenge for Startup & Investor Org entities
     if (entityTypeRaw.includes('STARTUP') || entityTypeRaw.includes('VENTURE')) {
       const targetEmail = (officialEmail || user.email).toLowerCase();
-      const skipOtp = body.skipOtpIfAuthenticated === true || (!challengeId && (user.email?.toLowerCase() === targetEmail || !officialEmail));
+      const skipOtp =
+        body.skipOtpIfAuthenticated === true ||
+        (!challengeId && (user.email?.toLowerCase() === targetEmail || !officialEmail));
 
       if (challengeId) {
         const otpQuery: any = {
@@ -76,6 +119,10 @@ export async function POST(req: NextRequest) {
         };
         const otpRec = await otpCol.findOne(otpQuery);
         if (!otpRec) {
+          await usersCol.updateOne(
+            { $or: [{ id: user.id }, { _id: user.id }] },
+            { $unset: { entityCreationPendingAt: '' } }
+          );
           return NextResponse.json(
             {
               success: false,
@@ -95,6 +142,10 @@ export async function POST(req: NextRequest) {
         };
         const otpRec = await otpCol.findOne(otpQuery);
         if (!otpRec) {
+          await usersCol.updateOne(
+            { $or: [{ id: user.id }, { _id: user.id }] },
+            { $unset: { entityCreationPendingAt: '' } }
+          );
           return NextResponse.json(
             {
               success: false,
@@ -108,7 +159,9 @@ export async function POST(req: NextRequest) {
       }
     } else if (entityTypeRaw.includes('INVESTOR') || entityTypeRaw.includes('VC') || entityTypeRaw.includes('FIRM')) {
       const targetEmail = (officialEmail || user.email).toLowerCase();
-      const skipOtp = body.skipOtpIfAuthenticated === true || (!challengeId && (user.email?.toLowerCase() === targetEmail || !officialEmail));
+      const skipOtp =
+        body.skipOtpIfAuthenticated === true ||
+        (!challengeId && (user.email?.toLowerCase() === targetEmail || !officialEmail));
 
       if (challengeId) {
         const otpQuery: any = {
@@ -120,6 +173,10 @@ export async function POST(req: NextRequest) {
         };
         const otpRec = await otpCol.findOne(otpQuery);
         if (!otpRec) {
+          await usersCol.updateOne(
+            { $or: [{ id: user.id }, { _id: user.id }] },
+            { $unset: { entityCreationPendingAt: '' } }
+          );
           return NextResponse.json(
             {
               success: false,
@@ -139,6 +196,10 @@ export async function POST(req: NextRequest) {
         };
         const otpRec = await otpCol.findOne(otpQuery);
         if (!otpRec) {
+          await usersCol.updateOne(
+            { $or: [{ id: user.id }, { _id: user.id }] },
+            { $unset: { entityCreationPendingAt: '' } }
+          );
           return NextResponse.json(
             {
               success: false,
@@ -152,37 +213,59 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const randomSuffix = Math.floor(100000 + Math.random() * 900000);
-    let entityId = '';
+    // Step 3: Collision-resistant ID generation & strict activation defaults
+    let prefix = 'ST';
     let canonicalType = 'STARTUP';
     let verificationStatus = 'PENDING';
     let activationStatus = 'ACTIVE';
+    let overallStatus = 'ACTIVE';
     let roleInOrg = 'Founder';
+    let initialMembershipStatus = 'ACTIVE';
 
     if (entityTypeRaw.includes('STARTUP') || entityTypeRaw.includes('VENTURE')) {
-      entityId = `ST-${randomSuffix}`;
+      prefix = 'ST';
       canonicalType = 'STARTUP';
       verificationStatus = 'PENDING';
       activationStatus = 'ACTIVE';
+      overallStatus = 'ACTIVE';
       roleInOrg = 'Founder';
+      initialMembershipStatus = 'ACTIVE';
     } else if (entityTypeRaw.includes('INVESTOR') || entityTypeRaw.includes('VC') || entityTypeRaw.includes('FIRM')) {
-      entityId = `VCI-${randomSuffix}`;
+      prefix = 'VCI';
       canonicalType = 'INVESTOR_ORG';
       verificationStatus = 'PENDING';
+      // High-Risk Remediation: Paid-only entities MUST NOT be set to ACTIVE prematurely
       activationStatus = 'PENDING_COMMERCIAL_ACTIVATION';
+      overallStatus = 'PENDING_ACTIVATION';
       roleInOrg = 'Managing Partner';
+      initialMembershipStatus = 'PENDING_COMMERCIAL_ACTIVATION';
     } else if (entityTypeRaw.includes('ESP') || entityTypeRaw.includes('INCUBATOR')) {
-      entityId = `ES-${randomSuffix}`;
+      prefix = 'ES';
       canonicalType = 'ESP';
       verificationStatus = 'PENDING';
       activationStatus = 'PENDING_ADMIN_APPROVAL';
+      overallStatus = 'PENDING_APPROVAL';
       roleInOrg = 'Director';
+      initialMembershipStatus = 'PENDING_ADMIN_APPROVAL';
     } else {
-      entityId = `INS-${randomSuffix}`;
+      prefix = 'INS';
       canonicalType = 'INSTITUTION';
       verificationStatus = 'PENDING';
       activationStatus = 'PENDING_ADMIN_APPROVAL';
+      overallStatus = 'PENDING_APPROVAL';
       roleInOrg = 'Dean / Lead';
+      initialMembershipStatus = 'PENDING_ADMIN_APPROVAL';
+    }
+
+    // Generate unique ID
+    let entityId = generateCollisionResistantEntityId(prefix);
+    let collisionAttempts = 0;
+    while (await entitiesCol.findOne({ id: entityId })) {
+      collisionAttempts++;
+      if (collisionAttempts > 5) {
+        throw new Error('Collision resolution exceeded maximum attempts for entity identifier');
+      }
+      entityId = generateCollisionResistantEntityId(prefix);
     }
 
     const nowIso = new Date().toISOString();
@@ -190,7 +273,7 @@ export async function POST(req: NextRequest) {
     const rawEntityTag =
       body.accountTag ||
       body.username ||
-      `@${entityName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}${Math.floor(10 + Math.random() * 90)}`;
+      `@${entityName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}${crypto.randomBytes(2).toString('hex')}`;
     const cleanEntityTag = rawEntityTag.startsWith('@') ? rawEntityTag : `@${rawEntityTag}`;
 
     const entityDoc = {
@@ -207,8 +290,8 @@ export async function POST(req: NextRequest) {
       primaryOwnerId: user.id,
       primaryOwnerName: user.fullName,
       verificationStatus,
-      activationStatus: 'ACTIVE',
-      status: 'ACTIVE',
+      activationStatus,
+      status: overallStatus,
       visibility: 'PUBLIC',
       details: body.details || {},
       createdAt: nowIso,
@@ -309,7 +392,7 @@ export async function POST(req: NextRequest) {
               name: user.fullName || 'Founder',
               role: 'Founder & CEO',
               roleCategory: 'founder',
-              avatar: user.avatar || '/xentro-logo.png',
+              avatar: '/xentro-logo.png',
               bio: `Founder & Lead at ${entityName}.`,
               isFullTime: true,
               isVerified: true,
@@ -351,7 +434,11 @@ export async function POST(req: NextRequest) {
         organizationType: details.investorType || details.organizationType || body.orgType || 'VC Firm',
         logo: details.logo || body.logo || '/xentro-logo.png',
         banner: details.banner || body.banner || '',
-        shortDescription: details.pitch || details.shortDescription || body.shortDescription || `Early-stage investment fund backing technology startups across India.`,
+        shortDescription:
+          details.pitch ||
+          details.shortDescription ||
+          body.shortDescription ||
+          `Early-stage investment fund backing technology startups across India.`,
         website: details.website || body.website || '',
         linkedIn: details.linkedIn || details.linkedin || body.linkedIn || '',
         headquarters: {
@@ -370,7 +457,11 @@ export async function POST(req: NextRequest) {
         createdByUserId: user.id,
         about: {
           overview: details.about?.overview || details.shortDescription || `${entityName} is an institutional venture fund.`,
-          thesis: details.about?.thesis || details.thesis || body.thesis || 'We back visionary founders building scalable, compounding technology companies.',
+          thesis:
+            details.about?.thesis ||
+            details.thesis ||
+            body.thesis ||
+            'We back visionary founders building scalable, compounding technology companies.',
           mission: details.about?.mission || `Empowering founders to build enduring tech enterprises.`,
           assetsInfo: details.about?.assetsInfo || details.fundSize || body.fundSize || 'Active fund deployment',
           fundGeneration: details.about?.fundGeneration || 'Active Deployment',
@@ -398,15 +489,34 @@ export async function POST(req: NextRequest) {
           advisoryCapabilities: ['GTM Playbooks', 'Pricing Strategy', 'Enterprise Sales'],
         },
         investmentCriteria: details.investmentCriteria || {
-          evaluationCriteria: ['High founder integrity and velocity', 'Demonstrated customer demand', 'Defensible technology moat'],
+          evaluationCriteria: [
+            'High founder integrity and velocity',
+            'Demonstrated customer demand',
+            'Defensible technology moat',
+          ],
           preferredTraction: ['MVP', 'Early Revenue'],
           diligenceHighlights: ['Customer references', 'Financial audit'],
         },
         investmentProcess: details.investmentProcess || {
           stages: [
-            { stepNumber: 1, title: 'Initial Deal Review & Screening', description: 'Deck review within 48 hours.', estimatedTime: '2-3 Days' },
-            { stepNumber: 2, title: 'Partner Discussion', description: 'Discussion on product roadmap and traction.', estimatedTime: '1 Week' },
-            { stepNumber: 3, title: 'Due Diligence & Term Sheet', description: 'Cap table evaluation and investment memo.', estimatedTime: '1-2 Weeks' },
+            {
+              stepNumber: 1,
+              title: 'Initial Deal Review & Screening',
+              description: 'Deck review within 48 hours.',
+              estimatedTime: '2-3 Days',
+            },
+            {
+              stepNumber: 2,
+              title: 'Partner Discussion',
+              description: 'Discussion on product roadmap and traction.',
+              estimatedTime: '1 Week',
+            },
+            {
+              stepNumber: 3,
+              title: 'Due Diligence & Term Sheet',
+              description: 'Cap table evaluation and investment memo.',
+              estimatedTime: '1-2 Weeks',
+            },
           ],
           preferredConnectionMethod: 'Platform pitch submission',
           informationRequiredInitially: ['Pitch Deck (PDF)', 'Metrics'],
@@ -433,15 +543,16 @@ export async function POST(req: NextRequest) {
           notAcceptingNewPitches: false,
           guidelines: 'Happy to review pitches from mission-driven founders.',
         },
+        // Real commercial state: Unactivated paid entity must NOT have simulated active entitlement
         subscription: {
           tier: 'institutional',
-          status: 'active',
-          currentPeriodEnd: '2026-12-31T23:59:59Z',
+          status: 'pending_payment',
+          currentPeriodEnd: null,
           cancelAtPeriodEnd: false,
-          seatsIncluded: 15,
+          seatsIncluded: 1,
           seatsUsed: 1,
-          dealFlowLimit: -1,
-          dueDiligenceExportsLimit: 100,
+          dealFlowLimit: 0,
+          dueDiligenceExportsLimit: 0,
           monthlyPrice: 11490,
           currency: 'INR',
         },
@@ -466,11 +577,10 @@ export async function POST(req: NextRequest) {
       await invOrgCol.insertOne(invOrgDoc);
     }
 
-    const isPrivilegedOrg = canonicalType === 'INVESTOR_ORG';
     const requestedOrgRole = body.requestedRole || roleInOrg;
 
     const membershipDoc = {
-      id: `MEM-${Date.now().toString().slice(-6)}`,
+      id: `MEM-${crypto.randomBytes(3).toString('hex').toUpperCase()}`,
       entityId,
       entityName,
       entityType: canonicalType,
@@ -478,34 +588,28 @@ export async function POST(req: NextRequest) {
       userEmail: user.email,
       role: requestedOrgRole,
       permissions: ['OWNER', 'ADMIN', 'MANAGE_TEAM'],
-      status: 'ACTIVE',
+      status: initialMembershipStatus,
       createdAt: nowIso,
       updatedAt: nowIso,
     };
 
     await membershipsCol.insertOne(membershipDoc);
 
-    // If privileged Investor Organization role, create specific role verification ticket for Admin Console review
-    if (isPrivilegedOrg) {
-      try {
-        const roleReqCol = db.collection('role_requests');
-        await roleReqCol.insertOne({
-          id: `REQ-${Date.now().toString().slice(-6)}`,
-          requestId: `REQ-${Date.now().toString().slice(-6)}`,
-          userId: user.id,
-          userEmail: user.email,
-          userName: user.fullName || user.name || 'Member',
-          currentRole: user.accountType || 'Explorer',
-          requestedRole: `Investor Org Privileged Role: ${requestedOrgRole} (${entityName})`,
-          reason: `Privileged administrative verification for Investor Organization ${entityName}`,
-          entityId,
-          entityName,
-          status: 'PENDING',
-          createdAt: nowIso,
-          updatedAt: nowIso,
-        });
-      } catch (_) {}
-    }
+    // Commit active created entity ID on user record
+    await usersCol.updateOne(
+      { $or: [{ id: user.id }, { _id: user.id }] },
+      {
+        $set: { activeCreatedEntityId: entityId },
+        $unset: { entityCreationPendingAt: '' },
+      }
+    );
+
+    await logSecurityAuditEvent('ENTITY_CREATED', 'INFO', {
+      userId: user.id,
+      entityId,
+      entityType: canonicalType,
+      activationStatus,
+    });
 
     delete (entityDoc as any)._id;
     delete (membershipDoc as any)._id;
@@ -536,17 +640,27 @@ export async function POST(req: NextRequest) {
 
 export async function GET(req: NextRequest) {
   try {
-    const userId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    if (!userId) {
-      return NextResponse.json({ success: false, message: 'User identification required' }, { status: 400 });
+    let userId = '';
+    const token = extractAuthToken(req);
+    if (token) {
+      const payload = verifyJwtToken(token);
+      if (payload?.sub) {
+        userId = payload.sub;
+      }
     }
 
-    const client = await getMongoClient();
-    const db = client.db('xentro_db');
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, message: 'Authentication required to retrieve entity memberships' },
+        { status: 401 }
+      );
+    }
+
+    const db = await getDatabase();
     const membershipsCol = db.collection('memberships');
     const entitiesCol = db.collection('entities');
 
-    const memberships = await membershipsCol.find({ userId }).toArray();
+    const memberships = await membershipsCol.find({ userId, status: { $ne: 'REMOVED' } }).toArray();
     const entityIds = memberships.map((m) => m.entityId);
 
     const entities = await entitiesCol.find({ id: { $in: entityIds } }).toArray();
@@ -554,8 +668,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       data: {
-        memberships,
-        entities,
+        memberships: memberships.map(({ _id, ...m }) => m),
+        entities: entities.map(({ _id, ...e }) => e),
         totalCount: entities.length,
       },
       source: 'mongodb-atlas',

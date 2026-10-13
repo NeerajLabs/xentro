@@ -1,28 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { getMongoClient } from '@/lib/mongodb';
 import fs from 'fs';
 import path from 'path';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
-
-let cachedClient: MongoClient | null = null;
-
-async function getMongoClient(): Promise<MongoClient> {
-  if (!cachedClient) {
-    cachedClient = new MongoClient(MONGODB_URI, {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-    });
-    await cachedClient.connect();
-  }
-  return cachedClient;
-}
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   const rawId = params.id || '';

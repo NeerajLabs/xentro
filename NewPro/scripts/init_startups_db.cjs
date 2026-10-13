@@ -1,8 +1,10 @@
 const { MongoClient } = require('mongodb');
 
-const uri =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
+const uri = process.env.MONGODB_URI;
+if (!uri) {
+  console.error('ERROR: MONGODB_URI environment variable is required.');
+  process.exit(1);
+}
 
 async function initStartupDatabase() {
   const client = new MongoClient(uri);

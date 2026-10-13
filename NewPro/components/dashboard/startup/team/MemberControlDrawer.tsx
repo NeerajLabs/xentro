@@ -669,16 +669,7 @@ export const MemberControlDrawer: React.FC<MemberControlDrawerProps> = ({
               </h4>
 
               <div className="flex flex-wrap gap-2">
-                {isSoleOwner && allMembers.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => setIsTransferModalOpen(true)}
-                    className="px-3.5 py-2 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Crown className="w-3.5 h-3.5" />
-                    <span>Transfer Ownership</span>
-                  </button>
-                )}
+                {/* Self-service ownership transfer disabled under Xentro V1 policy. Emergency governing changes require platform support ticket review. */}
 
                 {member.entityMembershipStatus !== 'former' && !isSoleOwner && (
                   <button

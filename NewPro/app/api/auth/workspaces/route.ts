@@ -1,26 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { getMongoClient } from '@/lib/mongodb';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
-
-let cachedClient: MongoClient | null = null;
-
-async function getMongoClient(): Promise<MongoClient> {
-  if (!cachedClient) {
-    cachedClient = new MongoClient(MONGODB_URI, {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-    });
-    await cachedClient.connect();
-  }
-  return cachedClient;
-}
 
 export async function GET(req: NextRequest) {
   try {
@@ -83,7 +65,7 @@ export async function GET(req: NextRequest) {
           { userId: String(user._id) },
           { userEmail: user.email },
         ],
-        status: { $in: ['ACTIVE', 'APPROVED', 'Active', 'PENDING_ADMIN_VERIFICATION', 'PENDING'] },
+        status: { $in: ['ACTIVE', 'APPROVED', 'Active'] },
       })
       .toArray();
 
@@ -335,20 +317,20 @@ export async function POST(req: NextRequest) {
 
     // Check 3: Membership status must not be suspended/revoked
     const memStatus = String(membership?.status || (isEntityOwner ? 'ACTIVE' : '')).toUpperCase();
-    if (memStatus === 'SUSPENDED' || memStatus === 'REVOKED' || memStatus === 'EXPIRED') {
+    if (['SUSPENDED', 'REVOKED', 'EXPIRED', 'PENDING', 'PENDING_ADMIN_VERIFICATION', 'INVITED'].includes(memStatus)) {
       return NextResponse.json(
         {
           success: false,
-          message: `Your membership in organization "${targetEntityId}" is ${memStatus.toLowerCase()}. Access denied.`,
+          message: `Your membership in organization "${targetEntityId}" is ${memStatus.toLowerCase()}. Active accepted membership is required for workspace access.`,
         },
         { status: 403 }
       );
     }
-    if (!['ACTIVE', 'APPROVED', 'PENDING_ADMIN_VERIFICATION', 'PENDING'].includes(memStatus) && !isEntityOwner) {
+    if (!['ACTIVE', 'APPROVED'].includes(memStatus) && !isEntityOwner) {
       return NextResponse.json(
         {
           success: false,
-          message: `Membership in organization "${targetEntityId}" is pending verification or inactive.`,
+          message: `Active membership in organization "${targetEntityId}" is required. Access denied.`,
         },
         { status: 403 }
       );

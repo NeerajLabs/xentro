@@ -1,8 +1,10 @@
 const { MongoClient } = require('mongodb');
 
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
+const MONGODB_URI = process.env.MONGODB_URI;
+if (!MONGODB_URI) {
+  console.error('ERROR: MONGODB_URI environment variable is required.');
+  process.exit(1);
+}
 
 async function runEndToEndVerification() {
   console.log('--- STARTING INVESTMENT ORGANIZATIONS MONGODB PERSISTENCE VALIDATION ---');

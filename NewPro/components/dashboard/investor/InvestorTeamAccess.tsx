@@ -304,14 +304,7 @@ export const InvestorTeamAccess: React.FC = () => {
             <span>Permissions Matrix</span>
           </button>
 
-          <button
-            onClick={() => setIsTransferOpen(true)}
-            className="px-3.5 py-2 rounded-xl bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-bold text-amber-600 dark:text-amber-400 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
-            title="Transfer firm ownership"
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            <span>Transfer Ownership</span>
-          </button>
+          {/* Self-service ownership transfer disabled under Xentro V1 policy */}
 
           <button
             onClick={() => setIsInviteOpen(true)}

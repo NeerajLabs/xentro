@@ -4,7 +4,11 @@ import datetime
 import pymongo
 
 def run_tests():
-    client = pymongo.MongoClient('mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db')
+    mongo_uri = os.getenv('MONGODB_URI')
+    if not mongo_uri:
+        print('MONGODB_URI environment variable not set. Skipping live test.')
+        return
+    client = pymongo.MongoClient(mongo_uri)
     db = client['xentro_db']
     tickets_col = db['support_tickets']
     users_col = db['users']

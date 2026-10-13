@@ -1,15 +1,19 @@
 import { MongoClient, Db } from 'mongodb';
 
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
-
+const MONGODB_URI = process.env.MONGODB_URI;
 const DB_NAME = process.env.MONGODB_DB_NAME || 'xentro_db';
+
+if (!MONGODB_URI && process.env.NODE_ENV === 'production') {
+  console.error('[CRITICAL_SECURITY] Missing MONGODB_URI environment variable in production.');
+}
 
 let cachedClient: MongoClient | null = null;
 let cachedDb: Db | null = null;
 
 export async function getMongoClient(): Promise<MongoClient> {
+  if (!MONGODB_URI) {
+    throw new Error('Database configuration error: MONGODB_URI environment variable is not defined.');
+  }
   if (!cachedClient) {
     cachedClient = new MongoClient(MONGODB_URI, {
       maxPoolSize: 10,

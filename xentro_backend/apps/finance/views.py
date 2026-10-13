@@ -8,10 +8,73 @@ from integrations.mongodb import get_collection
 from common.response import api_success, api_error
 from common.permissions import IsXentroAuthenticated
 
+def check_startup_finance_access(user_id: str, startup_id: str) -> bool:
+    """
+    Validates whether the user is authorized to access confidential financial metrics.
+    Authorized actors:
+    1. Governing Startup Entity Head / Owner
+    2. Active member holding Founder, Admin, or Finance role
+    3. External investor with Approved DD Locker access grant for 'Financial' folder
+    """
+    if not user_id or not startup_id:
+        return False
+
+    entities_col = get_collection("entities")
+    entity = entities_col.find_one({"id": startup_id})
+    if not entity:
+        startups_col = get_collection("startups")
+        startup_doc = startups_col.find_one({"entityId": startup_id})
+        if not startup_doc:
+            return False
+        if startup_doc.get("createdByUserId") == user_id or startup_doc.get("currentOwnerUserId") == user_id:
+            return True
+    else:
+        if (
+            entity.get("currentOwnerUserId") == user_id
+            or entity.get("primaryOwnerId") == user_id
+            or entity.get("createdByUserId") == user_id
+        ):
+            return True
+
+    # Check active membership
+    mem_col = get_collection("memberships")
+    membership = mem_col.find_one({
+        "entityId": startup_id,
+        "userId": user_id,
+        "status": {"$in": ["ACTIVE", "APPROVED", "Active"]}
+    })
+    if membership:
+        role = str(membership.get("role", "")).upper()
+        perms = [str(p).upper() for p in membership.get("permissions", [])]
+        if "OWNER" in perms or "ADMIN" in perms or "FINANCE" in perms or "MANAGE_FINANCE" in perms:
+            return True
+        if any(keyword in role for keyword in ["FOUNDER", "FINANCE", "OWNER", "LEAD"]):
+            return True
+
+    # Check approved diligence grant
+    dd_req_col = get_collection("diligence_access_requests")
+    grant = dd_req_col.find_one({
+        "entityId": startup_id,
+        "requesterId": user_id,
+        "status": "Approved"
+    })
+    if grant:
+        folders = [str(f).upper() for f in grant.get("grantedFolders", [])]
+        if "FINANCIAL" in folders or "ALL" in folders:
+            return True
+
+    return False
+
 class StartupFinanceMetricsView(APIView):
     permission_classes = [IsXentroAuthenticated]
 
     def get(self, request, startup_id):
+        if not check_startup_finance_access(request.user.id, startup_id):
+            return api_error(
+                "Access denied. Confidential financial data requires verified entity authorization.",
+                status_code=403
+            )
+
         fin_col = get_collection("financial_metrics")
         metrics = fin_col.find_one({"startupId": startup_id})
 
@@ -41,6 +104,12 @@ class ImportSpreadsheetView(APIView):
     permission_classes = [IsXentroAuthenticated]
 
     def post(self, request, startup_id):
+        if not check_startup_finance_access(request.user.id, startup_id):
+            return api_error(
+                "Access denied. Importing financial models requires Finance or Head authorization.",
+                status_code=403
+            )
+
         file_obj = request.FILES.get("file")
         if not file_obj:
             return api_error("Please upload a .xlsx or .csv spreadsheet file.")

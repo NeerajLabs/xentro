@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { getMongoClient } from '@/lib/mongodb';
 import {
   getServerFeed,
   addServerPost,
@@ -14,24 +14,6 @@ import { Post, PostComment } from '@/types';
 import { getBackendBaseUrl } from '@/lib/backendUrl';
 
 const BACKEND = getBackendBaseUrl();
-
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
-
-let cachedClient: MongoClient | null = null;
-
-async function getMongoClient(): Promise<MongoClient> {
-  if (!cachedClient) {
-    cachedClient = new MongoClient(MONGODB_URI, {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-    });
-    await cachedClient.connect();
-  }
-  return cachedClient;
-}
 
 function formatRelativeTime(dateInput?: string | Date | null): string {
   if (!dateInput) return 'Recently';

@@ -26,7 +26,7 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
-MONGODB_URI = os.getenv("MONGODB_URI", "mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db")
+MONGODB_URI = os.getenv("MONGODB_URI", "")
 MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "xentro_db")
 
 _client = None
@@ -324,6 +324,12 @@ def get_mongodb_client():
     except Exception:
         ca_file = None
 
+    if not MONGODB_URI:
+        logger.warning("MONGODB_URI is not set. Activating persistent offline store.")
+        _client = None
+        _is_connected = False
+        return None
+
     try:
         kwargs = {
             "serverSelectionTimeoutMS": 15000,
@@ -334,7 +340,7 @@ def get_mongodb_client():
         _client = MongoClient(MONGODB_URI, **kwargs)
         _client.admin.command('ping')
         _is_connected = True
-        logger.info(f"Connected to live MongoDB at {MONGODB_URI}")
+        logger.info("Connected to live MongoDB successfully.")
     except (ConnectionFailure, ServerSelectionTimeoutError, Exception) as e:
         logger.warning(f"Could not connect to live MongoDB ({e}). Activating persistent offline store.")
         _client = None

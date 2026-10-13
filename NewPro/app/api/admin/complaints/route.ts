@@ -1,27 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendBaseUrl } from '@/lib/backendUrl';
-import { MongoClient } from 'mongodb';
+import { getMongoClient } from '@/lib/mongodb';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
-
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
-
-let cachedClient: MongoClient | null = null;
-
-async function getMongoClient(): Promise<MongoClient> {
-  if (!cachedClient) {
-    cachedClient = new MongoClient(MONGODB_URI, {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-    });
-    await cachedClient.connect();
-  }
-  return cachedClient;
-}
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -30,18 +12,24 @@ export async function GET(req: NextRequest) {
   const authHdr = req.headers.get('authorization')?.replace('Bearer ', '').trim();
   const cookieToken =
     req.cookies.get('xentro_admin_auth')?.value || req.cookies.get('xentro_session')?.value;
-  const token = authHdr || cookieToken || 'xa_sec_superadmin';
+  const token = authHdr || cookieToken;
+  if (!token) {
+    return NextResponse.json(
+      { success: false, message: 'Authentication required. Admin session token is missing.' },
+      { status: 401 }
+    );
+  }
 
   const headers: Record<string, string> = {
     Authorization: `Bearer ${token}`,
     Accept: 'application/json',
   };
 
-  const adminEmp = req.headers.get('x-admin-employee-id') || '9922953';
-  headers['X-Admin-Employee-Id'] = adminEmp;
+  const adminEmp = req.headers.get('x-admin-employee-id');
+  if (adminEmp) headers['X-Admin-Employee-Id'] = adminEmp;
 
-  const adminRole = req.headers.get('x-admin-role') || 'Super Admin';
-  headers['X-Admin-Role'] = adminRole;
+  const adminRole = req.headers.get('x-admin-role');
+  if (adminRole) headers['X-Admin-Role'] = adminRole;
 
   const cookieHeader = req.headers.get('cookie');
   if (cookieHeader) headers['Cookie'] = cookieHeader;

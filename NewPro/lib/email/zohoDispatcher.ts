@@ -6,19 +6,17 @@ interface SendZohoEmailOptions {
   text: string;
 }
 
-// Fallback Zoho credentials if not configured in platform environment variables
-const FALLBACK_ZOHO_PASS = Buffer.from('eTBKVkIycDloS2JF', 'base64').toString('utf8');
-
-/**
- * Dispatches transactional email directly through Zoho Mail SMTP over SSL (Port 465).
- * Uses Node.js native TLS socket for maximum reliability on serverless / Vercel functions.
- */
 export function sendZohoEmail({ to, subject, text }: SendZohoEmailOptions): Promise<boolean> {
   return new Promise((resolve, reject) => {
     const host = process.env.EMAIL_HOST || 'smtp.zoho.in';
     const port = parseInt(process.env.EMAIL_PORT || '465', 10);
     const user = process.env.EMAIL_HOST_USER || 'no-reply@xentro.in';
-    const pass = process.env.EMAIL_HOST_PASSWORD || FALLBACK_ZOHO_PASS;
+    const pass = process.env.EMAIL_HOST_PASSWORD;
+
+    if (!pass) {
+      console.warn('[ZohoDispatcher] EMAIL_HOST_PASSWORD environment variable is not configured. Email dispatch skipped safely in development.');
+      return resolve(false);
+    }
 
     const socket = tls.connect(port, host, { timeout: 8000 }, () => {
       socket.setTimeout(8000);

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { MongoClient } from 'mongodb';
+import { getMongoClient } from '@/lib/mongodb';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import fs from 'fs';
 import path from 'path';
@@ -7,30 +7,14 @@ import path from 'path';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const MONGODB_URI =
-  process.env.MONGODB_URI ||
-  'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
-
-const R2_ACCOUNT_ID = process.env.CLOUDFLARE_R2_ACCOUNT_ID || '4ff64ea5dee31120b3a955f327ee4ce5';
-const R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || 'cbcf6c53791119c4c2a5c8eee7245912';
-const R2_SECRET_ACCESS_KEY = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '473f81dfb62b22325b8e5339129e69b228ec4a845607c4da4fdee006065e9897';
+const R2_ACCOUNT_ID = process.env.CLOUDFLARE_R2_ACCOUNT_ID || '';
+const R2_ACCESS_KEY_ID = process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '';
+const R2_SECRET_ACCESS_KEY = process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '';
 const R2_BUCKET_NAME = process.env.CLOUDFLARE_R2_BUCKET_NAME || 'xentro-storage';
-const R2_ENDPOINT_URL = process.env.CLOUDFLARE_R2_ENDPOINT_URL || `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`;
+const R2_ENDPOINT_URL =
+  process.env.CLOUDFLARE_R2_ENDPOINT_URL ||
+  (R2_ACCOUNT_ID ? `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com` : '');
 const R2_PUBLIC_URL = (process.env.CLOUDFLARE_R2_PUBLIC_URL || 'https://media.xentro.in').replace(/\/+$/, '');
-
-let cachedClient: MongoClient | null = null;
-
-async function getMongoClient(): Promise<MongoClient> {
-  if (!cachedClient) {
-    cachedClient = new MongoClient(MONGODB_URI, {
-      maxPoolSize: 10,
-      serverSelectionTimeoutMS: 5000,
-      connectTimeoutMS: 5000,
-    });
-    await cachedClient.connect();
-  }
-  return cachedClient;
-}
 
 let cachedS3Client: S3Client | null = null;
 

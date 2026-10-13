@@ -45,63 +45,15 @@ def decode_token(token: str) -> dict:
     if token_str.startswith("Bearer "):
         token_str = token_str[7:].strip()
 
-    # 1. Try standard JWT decode
+    # 1. Strictly enforce cryptographic JWT verification
     try:
         return jwt.decode(token_str, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
-        # Check if expired token has valid admin payload before outright rejection
-        try:
-            unverified = jwt.decode(token_str, options={"verify_signature": False, "verify_exp": False})
-            if unverified.get("is_staff") or unverified.get("employeeId") or unverified.get("admin_role"):
-                return unverified
-        except Exception:
-            pass
         raise exceptions.AuthenticationFailed("Session token has expired. Please sign in again.")
+    except jwt.InvalidTokenError:
+        raise exceptions.AuthenticationFailed("Invalid session token.")
     except Exception:
-        pass
-
-    # 2. Check admin token formats (xa_sec_..., admin_..., etc.)
-    if token_str.startswith("xa_sec_") or token_str.startswith("admin_") or token_str in ["superadmin", "admin"]:
-        admin_id = "9922953"
-        admin_name = "Karunya Kranthi Kumar"
-        admin_role = "Super Admin"
-        if "8121417" in token_str:
-            admin_id = "8121417"
-            admin_name = "Sravan Kumar"
-        return {
-            "sub": admin_id,
-            "employeeId": admin_id,
-            "name": admin_name,
-            "role": admin_role,
-            "is_staff": True,
-            "permissions": ["all"]
-        }
-
-    # 3. Check JSON / URL-encoded JSON session object (used in client-side cookies)
-    import json
-    import urllib.parse
-    for raw in [token_str, urllib.parse.unquote(token_str)]:
-        try:
-            parsed = json.loads(raw)
-            if isinstance(parsed, dict):
-                user_id = parsed.get("userId") or parsed.get("id") or parsed.get("sub") or parsed.get("employeeId")
-                if user_id:
-                    is_admin = bool(parsed.get("is_staff") or parsed.get("employeeId") or parsed.get("role") in ["Super Admin", "Master Admin", "Operations Admin"])
-                    return {
-                        "sub": str(user_id),
-                        "id": str(user_id),
-                        "user_id": str(user_id),
-                        "employeeId": parsed.get("employeeId") or (str(user_id) if is_admin else None),
-                        "name": parsed.get("name") or parsed.get("fullName") or "Ecosystem Member",
-                        "email": parsed.get("email", ""),
-                        "role": parsed.get("role", "Admin" if is_admin else "Explorer"),
-                        "is_staff": is_admin,
-                        "permissions": parsed.get("permissions", []),
-                    }
-        except Exception:
-            continue
-
-    raise exceptions.AuthenticationFailed("Invalid session token.")
+        raise exceptions.AuthenticationFailed("Authentication failed.")
 
 decode_jwt_token = decode_token
 
