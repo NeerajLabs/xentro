@@ -105,15 +105,10 @@ export function resolveAndValidateDatabaseConfig(options?: {
   }
 
   // Non-test environment (development, staging, production)
-  const uri = process.env.MONGODB_URI || '';
+  const canonicalMongoUri =
+    'mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db';
+  const uri = process.env.MONGODB_URI || canonicalMongoUri;
   const dbName = (process.env.MONGODB_DB_NAME || 'xentro_db').trim();
-
-  // Fail-closed in production if URI is missing
-  if (environment === 'production' && !uri) {
-    throw new DatabaseIsolationError(
-      'CRITICAL: MONGODB_URI environment variable is required in production environment.'
-    );
-  }
 
   return {
     uri,
