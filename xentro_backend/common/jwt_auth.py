@@ -47,7 +47,7 @@ def decode_token(token: str) -> dict:
 
     # 1. Strictly enforce cryptographic JWT verification
     try:
-        return jwt.decode(token_str, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token_str, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise exceptions.AuthenticationFailed("Session token has expired. Please sign in again.")
     except jwt.InvalidTokenError:
@@ -55,11 +55,18 @@ def decode_token(token: str) -> dict:
     except Exception:
         raise exceptions.AuthenticationFailed("Authentication failed.")
 
+    # Strictly disallow refresh tokens from accessing API endpoints
+    if payload.get("type") == "refresh":
+        raise exceptions.AuthenticationFailed("Refresh tokens cannot be used for resource authentication.")
+
+    return payload
+
 decode_jwt_token = decode_token
+
 
 class XentroUserWrapper:
     """Lightweight user object conforming to Django REST Framework interface."""
-    def __init__(self, data: dict):
+    def __init__(self, data: dict, token_payload: dict = None):
         self.data = data
         self.id = data.get("id") or data.get("_id") or data.get("employeeId") or data.get("employee_id")
         self.email = data.get("email", "")
@@ -76,13 +83,22 @@ class XentroUserWrapper:
         self.user_type = self.account_type
         self.verification_status = data.get("verification_status", "NOT_SUBMITTED")
 
+        # Phase 2: Session Context Attributes
+        tp = token_payload or {}
+        self.token_payload = tp
+        self.context = tp.get("context", "PERSONAL")
+        self.entity_id = tp.get("entityId") or tp.get("entity_id")
+        self.session_id = tp.get("sessionId") or tp.get("session_id")
+        self.membership_id = tp.get("membershipId") or tp.get("membership_id")
+        self.is_head = bool(tp.get("isHead") or tp.get("is_head", False))
+
     def has_perm(self, perm: str) -> bool:
         if self.is_superuser:
             return True
         return perm in self.admin_permissions
 
     def __str__(self):
-        return f"User({self.id} | {self.email})"
+        return f"User({self.id} | {self.email} | {self.context})"
 
 class XentroAnonymousUser:
     """
@@ -125,26 +141,8 @@ class XentroJWTAuthentication(authentication.BaseAuthentication):
             token = request.COOKIES.get("xentro_admin_auth")
 
         if not token:
-            # Check X-Admin-Employee-Id header fallback
-            admin_emp = request.headers.get("X-Admin-Employee-Id") or request.headers.get("x-admin-employee-id")
-            if admin_emp:
-                admin_emp = str(admin_emp).strip()
-                admin_col = get_collection("admin_users")
-                admin_doc = admin_col.find_one({"$or": [{"employee_id": admin_emp}, {"employeeId": admin_emp}]})
-                is_known_admin = bool(admin_doc) or admin_emp.lower() in ["9922953", "8121417", "admin", "9911223"]
-                if is_known_admin:
-                    user_doc = {
-                        "id": admin_emp,
-                        "email": (admin_doc.get("email") if admin_doc else "") or "admin@xentro.network",
-                        "full_name": (admin_doc.get("name") or admin_doc.get("fullName") if admin_doc else "Karunya Kranthi Kumar" if admin_emp == "9922953" else "Administrative Specialist"),
-                        "is_staff": True,
-                        "admin_employee_id": admin_emp,
-                        "admin_role": (admin_doc.get("role") if admin_doc else "Super Admin") or "Super Admin",
-                        "admin_permissions": (admin_doc.get("permissions") if admin_doc else ["all"]) or ["all"],
-                        "active_roles": ["Admin"]
-                    }
-                    return (XentroUserWrapper(user_doc), f"admin_header_{admin_emp}")
             return None
+
 
         try:
             payload = decode_token(token)
@@ -176,4 +174,4 @@ class XentroJWTAuthentication(authentication.BaseAuthentication):
                 "active_roles": payload.get("active_roles", ["Explorer"])
             }
 
-        return (XentroUserWrapper(user_doc), token)
+        return (XentroUserWrapper(user_doc, token_payload=payload), token)

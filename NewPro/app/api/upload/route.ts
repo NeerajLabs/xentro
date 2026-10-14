@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getMongoClient } from '@/lib/mongodb';
+import { getDatabase } from '@/lib/mongodb';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import fs from 'fs';
 import path from 'path';
@@ -106,8 +106,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Persist directly in MongoDB Atlas media_uploads for durable serverless storage
     try {
-      const client = await getMongoClient();
-      const db = client.db('xentro_db');
+      const db = await getDatabase();
       const mediaCol = db.collection('media_uploads');
 
       await mediaCol.insertOne({

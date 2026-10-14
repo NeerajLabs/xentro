@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
+import { extractAuthToken, verifyJwtToken } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -30,37 +31,70 @@ export async function GET(
       return NextResponse.json({ success: false, message: 'Startup entity not found' }, { status: 404 });
     }
 
-    const userId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
+    // Cryptographically verified session identity
+    let verifiedUserId: string | null = null;
+    const token = extractAuthToken(req);
+    if (token) {
+      const payload = verifyJwtToken(token);
+      if (payload?.sub && payload.type !== 'refresh') {
+        verifiedUserId = payload.sub;
+      }
+    }
 
     // Check authorization
     let isAuthorizedMember = false;
     let hasApprovedDiligence = false;
 
-    if (userId) {
-      if (
-        entity.createdByUserId === userId ||
-        entity.currentOwnerUserId === userId ||
-        entity.primaryOwnerId === userId
-      ) {
+    if (verifiedUserId) {
+      const isHead =
+        entity.createdByUserId === verifiedUserId ||
+        entity.currentOwnerUserId === verifiedUserId ||
+        entity.primaryOwnerId === verifiedUserId;
+
+      if (isHead) {
         isAuthorizedMember = true;
       } else {
         const mem = await membershipsCol.findOne({
           entityId,
-          userId,
-          status: { $in: ['ACTIVE', 'APPROVED', 'Active'] },
+          userId: verifiedUserId,
         });
-        if (mem) isAuthorizedMember = true;
+        if (mem) {
+          const status = String(mem.status || '').toUpperCase().trim();
+          if (status === 'ACTIVE' || status === 'APPROVED') {
+            const role = String(mem.role || '').toUpperCase().trim();
+            const perms: string[] = (mem.permissions || []).map((p: string) => String(p).toUpperCase().trim());
+
+            if (role === 'FOUNDER' || role === 'HEAD' || perms.includes('OWNER')) {
+              isAuthorizedMember = true;
+            } else if (role === 'FINANCE' || role === 'FINANCE LEAD' || perms.includes('MANAGE_FINANCE')) {
+              isAuthorizedMember = true;
+            }
+            // Admin without MANAGE_FINANCE and Viewers remain false
+          }
+        }
       }
 
       if (!isAuthorizedMember) {
         const ddReq = await diligenceCol.findOne({
           entityId,
-          requesterId: userId,
-          status: 'Approved',
+          requesterId: verifiedUserId,
+          status: { $in: ['Approved', 'APPROVED'] },
         });
-        if (ddReq) hasApprovedDiligence = true;
+        if (ddReq && !ddReq.isRevoked && ddReq.status !== 'REVOKED') {
+          // Check expiration
+          const nowIso = new Date().toISOString();
+          const expiry = ddReq.expiryDate || ddReq.validUntil;
+          const isExpired = expiry && String(expiry).toLowerCase() !== 'never' && String(expiry) < nowIso;
+          if (!isExpired) {
+            const grantedFolders = (ddReq.grantedFolders || []).map((f: string) => String(f).toUpperCase().trim());
+            if (grantedFolders.includes('FINANCIAL') || grantedFolders.includes('ALL')) {
+              hasApprovedDiligence = true;
+            }
+          }
+        }
       }
     }
+
 
     let records: any = await financialsCol.findOne({ entityId });
     if (!records) {
@@ -160,8 +194,22 @@ export async function PUT(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const body = await req.json();
-    const userId = req.headers.get('x-user-id') || body.userId || '';
+    // Cryptographically verified session identity
+    const token = extractAuthToken(req);
+    if (!token) {
+      return NextResponse.json(
+        { success: false, message: 'Authentication required. Missing session credentials.' },
+        { status: 401 }
+      );
+    }
+    const payload = verifyJwtToken(token);
+    if (!payload?.sub || payload.type === 'refresh') {
+      return NextResponse.json(
+        { success: false, message: 'Invalid or expired session credentials.' },
+        { status: 401 }
+      );
+    }
+    const verifiedUserId = payload.sub;
 
     const db = await getDatabase();
     const entitiesCol = db.collection('entities');
@@ -173,28 +221,32 @@ export async function PUT(
       return NextResponse.json({ success: false, message: 'Startup entity not found' }, { status: 404 });
     }
 
-    // RBAC: Verify Owner or Finance Lead
+    // RBAC: Verify Owner or Finance capability
     const isDirectOwner =
-      entity.createdByUserId === userId ||
-      entity.currentOwnerUserId === userId ||
-      entity.primaryOwnerId === userId;
+      entity.createdByUserId === verifiedUserId ||
+      entity.currentOwnerUserId === verifiedUserId ||
+      entity.primaryOwnerId === verifiedUserId;
 
     let isAuthorized = isDirectOwner;
 
-    if (!isAuthorized && userId) {
+    if (!isAuthorized) {
       const mem = await membershipsCol.findOne({
         entityId,
-        userId,
-        status: { $in: ['ACTIVE', 'APPROVED', 'Active'] },
+        userId: verifiedUserId,
       });
       if (mem) {
-        const perms: string[] = mem.permissions || [];
-        isAuthorized =
-          perms.includes('OWNER') ||
-          perms.includes('ADMIN') ||
-          perms.includes('MANAGE_FINANCE') ||
-          mem.role === 'Finance' ||
-          mem.role === 'Finance Lead';
+        const status = String(mem.status || '').toUpperCase().trim();
+        if (status === 'ACTIVE' || status === 'APPROVED') {
+          const role = String(mem.role || '').toUpperCase().trim();
+          const perms: string[] = (mem.permissions || []).map((p: string) => String(p).toUpperCase().trim());
+
+          if (role === 'FOUNDER' || role === 'HEAD' || perms.includes('OWNER')) {
+            isAuthorized = true;
+          } else if (role === 'FINANCE' || role === 'FINANCE LEAD' || perms.includes('MANAGE_FINANCE')) {
+            isAuthorized = true;
+          }
+          // Admin without MANAGE_FINANCE and Viewers are strictly NOT authorized
+        }
       }
     }
 
@@ -205,6 +257,7 @@ export async function PUT(
       );
     }
 
+    const body = await req.json().catch(() => ({}));
     const nowIso = new Date().toISOString();
     const updateFields: any = {
       entityId,

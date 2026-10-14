@@ -26,12 +26,23 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
-MONGODB_URI = os.getenv("MONGODB_URI", "")
-MONGODB_DB_NAME = os.getenv("MONGODB_DB_NAME", "xentro_db")
+from common.db_safety_guard import (
+    resolve_and_validate_database_config,
+    DatabaseIsolationError,
+    redact_mongo_uri,
+)
 
 _client = None
 _db = None
 _is_connected = False
+_active_config = None
+
+
+def get_active_db_config():
+    global _active_config
+    if _active_config is None:
+        _active_config = resolve_and_validate_database_config()
+    return _active_config
 
 
 def _get_nested(doc, key):
@@ -318,13 +329,18 @@ def get_mongodb_client():
     if _client is not None:
         return _client
 
+    config = get_active_db_config()
+    uri = config.get("uri", "")
+
     try:
         import certifi
         ca_file = certifi.where()
     except Exception:
         ca_file = None
 
-    if not MONGODB_URI:
+    if not uri:
+        if config.get("environment") == "production":
+            raise DatabaseIsolationError("CRITICAL: MONGODB_URI is not set in production.")
         logger.warning("MONGODB_URI is not set. Activating persistent offline store.")
         _client = None
         _is_connected = False
@@ -332,16 +348,18 @@ def get_mongodb_client():
 
     try:
         kwargs = {
-            "serverSelectionTimeoutMS": 15000,
+            "serverSelectionTimeoutMS": 10000,
             "tlsAllowInvalidCertificates": True,
         }
         if ca_file:
             kwargs["tlsCAFile"] = ca_file
-        _client = MongoClient(MONGODB_URI, **kwargs)
+        _client = MongoClient(uri, **kwargs)
         _client.admin.command('ping')
         _is_connected = True
-        logger.info("Connected to live MongoDB successfully.")
+        logger.info(f"Connected to MongoDB ({config.get('db_name')}) at {redact_mongo_uri(uri)} successfully.")
     except (ConnectionFailure, ServerSelectionTimeoutError, Exception) as e:
+        if config.get("environment") == "production":
+            raise DatabaseIsolationError(f"CRITICAL: Failed to connect to live MongoDB in production: {e}")
         logger.warning(f"Could not connect to live MongoDB ({e}). Activating persistent offline store.")
         _client = None
         _is_connected = False
@@ -353,12 +371,16 @@ def get_db():
     if _db is not None:
         return _db
 
+    config = get_active_db_config()
     client = get_mongodb_client()
     if client and _is_connected:
-        _db = client[MONGODB_DB_NAME]
+        _db = client[config["db_name"]]
     else:
+        if config.get("environment") == "production":
+            raise DatabaseIsolationError("CRITICAL: In-memory fallback is disabled in production environment.")
         _db = MemoryDatabase()
     return _db
+
 
 
 def get_collection(name: str):

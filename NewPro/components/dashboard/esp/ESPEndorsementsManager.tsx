@@ -20,6 +20,9 @@ import {
   Building2,
   FileCheck,
   RefreshCw,
+  Copy,
+  Link2,
+  Globe,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import {
@@ -32,6 +35,7 @@ import {
 } from '@/data/espWorkspaceData';
 import { logAuditEvent, evaluateEndorsementEntitlement } from '@/lib/espDomainService';
 import { getUserProfile } from '@/lib/userProfile';
+import { entityContextService } from '@/lib/entityContextService';
 import {
   Eye,
   Edit3,
@@ -86,13 +90,80 @@ export const ESPEndorsementsManager: React.FC = () => {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteStartupName, setInviteStartupName] = useState('');
 
-  useEffect(() => {
+  // Authoritative MongoDB State & V1 Capacity Tracking
+  const [capacity, setCapacity] = useState<{ used: number; max: number; remaining: number; isAtCapacity: boolean } | null>(null);
+  const [pendingLinks, setPendingLinks] = useState<any[]>([]);
+  const [generatedLink, setGeneratedLink] = useState<{ code: string; expiresAt: string; linkUrl: string; intendedStartupName?: string } | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
+  const loadAuthoritativeAffiliations = async () => {
+    const eid = entityContextService.getActiveEntityId();
+    if (!eid) {
+      setEndorsements(getStoredESPEndorsements());
+      return;
+    }
+    try {
+      setIsLoading(true);
+      const res = await fetch(`/api/affiliates?issuingId=${encodeURIComponent(eid)}`);
+      const json = await res.json();
+      if (json?.success && json?.data) {
+        if (json.data.capacity) {
+          setCapacity(json.data.capacity);
+        }
+        if (Array.isArray(json.data.links)) {
+          setPendingLinks(json.data.links.filter((l: any) => l.status === 'PENDING'));
+        }
+        if (Array.isArray(json.data.affiliations) && json.data.affiliations.length > 0) {
+          const mapped: ESPEndorsement[] = json.data.affiliations.map((a: any) => ({
+            id: a.id,
+            startupId: a.startupEntityId,
+            startupName: a.startupName || 'Startup Venture',
+            startupLogo: '/images/profile_avatar.webp',
+            relationshipType: (a.relationshipType || a.programName?.includes('Incubat') ? 'Incubated' : 'Accelerated') as ESPRelationshipType,
+            status: a.status === 'Active' ? 'active' : (a.status === 'Revoked' ? 'revoked' : 'pending'),
+            programName: a.programName || 'Incubation Program',
+            cohortName: a.cohort || 'Cohort 2026',
+            startDate: a.acceptedAt ? a.acceptedAt.split('T')[0] : a.createdAt.split('T')[0],
+            endDate: '2027-03-31',
+            issuedAt: a.createdAt.split('T')[0],
+            expiresAt: '2027-03-31',
+            endorsedBy: `${a.issuingOrgName || 'Incubator'} (${a.issuingOrgType || 'ESP'})`,
+            startupProEntitlementGranted: a.issuingOrgType === 'ESP',
+            entitlement: a.issuingOrgType === 'ESP' ? 'Startup Pro' : 'Institutional Badge',
+            mutualVisibilityConsent: a.mutualVisibilityConsent !== false,
+            verificationChecklist: {
+              institutionalAffiliationVerified: true,
+              foundersIdentityVerified: true,
+              governanceAndComplianceCleared: true,
+              resolutionApproved: true,
+            },
+            notes: a.notes || '',
+            history: a.revokedAt ? [
+              { action: 'Endorsement Issued', timestamp: a.acceptedAt || a.createdAt, actor: a.issuingOrgName },
+              { action: 'Endorsement Revoked', timestamp: a.revokedAt, actor: a.revokedBySide || 'System', note: a.revocationReason || 'Revoked' }
+            ] : [
+              { action: 'Endorsement Issued', timestamp: a.acceptedAt || a.createdAt, actor: a.issuingOrgName, note: 'Formal affiliation active.' }
+            ]
+          }));
+          setEndorsements(mapped);
+          return;
+        }
+      }
+    } catch (err) {
+      console.warn('[ESPEndorsementsManager] Failed to load affiliations from MongoDB:', err);
+    } finally {
+      setIsLoading(false);
+    }
     setEndorsements(getStoredESPEndorsements());
+  };
+
+  useEffect(() => {
+    loadAuthoritativeAffiliations();
   }, []);
 
   const activeCount = endorsements.filter((e) => e.status === 'active').length;
   const expiringCount = endorsements.filter((e) => e.status === 'expiring_soon').length;
-  const pendingCount = endorsements.filter((e) => e.status === 'pending').length;
+  const pendingCount = endorsements.filter((e) => e.status === 'pending').length + pendingLinks.length;
   const revokedCount = endorsements.filter((e) => e.status === 'revoked' || e.status === 'expired').length;
 
   const filteredEndorsements = endorsements.filter((e) => {
@@ -110,99 +181,132 @@ export const ESPEndorsementsManager: React.FC = () => {
     );
   });
 
-  const handleCompleteEndorsement = (e: React.FormEvent) => {
+  const handleCompleteEndorsement = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!legalDeclaration) {
       showToast('Please confirm the legal accreditation declaration.', 'error');
       return;
     }
 
-    const entitlementCalc = evaluateEndorsementEntitlement(relationshipType, 'active');
+    if (capacity?.isAtCapacity) {
+      showToast('ESP Capacity limit of 250 active startups reached. Overflow is blocked in V1.', 'error');
+      return;
+    }
 
-    const newEndorsement: ESPEndorsement = {
-      id: `end_${Date.now()}`,
-      startupId: `st_${Date.now()}`,
-      startupName: selectedStartupName,
-      startupLogo: '/images/profile_avatar.webp',
-      relationshipType,
-      status: 'active',
-      programName,
-      cohortName,
-      startDate,
-      endDate,
-      issuedAt: new Date().toISOString().split('T')[0],
-      expiresAt: endDate,
-      endorsedBy: `${actorName} (${user?.roleTitle || 'Director'})`,
-      startupProEntitlementGranted: entitlementCalc.eligibleForStartupPro && grantEntitlement,
-      entitlement: entitlementCalc.tier,
-      verificationChecklist: {
-        institutionalAffiliationVerified: true,
-        foundersIdentityVerified: chkIdentityVerified,
-        governanceAndComplianceCleared: chkDpiitChecked,
-        resolutionApproved: chkBoardApproval,
-      },
-      notes,
-      history: [
-        {
-          action: 'Endorsement Issued',
-          timestamp: new Date().toLocaleDateString(),
-          actor: actorName,
-          note: `Conferred official ${relationshipType} affiliation for ${programName}.`,
-        },
-      ],
-    };
+    const activeId = entityContextService.getActiveEntityId() || 'esp_demo_entity';
 
-    const updated = [newEndorsement, ...endorsements];
-    setEndorsements(updated);
-    saveStoredESPEndorsements(updated);
+    try {
+      const res = await fetch('/api/affiliates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CREATE_LINK',
+          issuingEntityId: activeId,
+          intendedStartupName: selectedStartupName,
+          programName: programName || 'Incubation Program',
+          cohort: cohortName || 'Current Cohort',
+          notes,
+          createdByUserId: user?.id || 'esp_admin',
+        }),
+      });
 
-    logAuditEvent(
-      'Endorsement Created',
-      'Endorsement',
-      actorName,
-      actorRole,
-      `Issued Verified ESP Endorsement to ${selectedStartupName} (${relationshipType}). Startup Pro entitlement granted.`
-    );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showToast(data.message || 'Failed to issue endorsement link', 'error');
+        return;
+      }
 
-    showToast(`Issued Verified ESP Endorsement to ${selectedStartupName}!`, 'success');
-    setIsEndorseModalOpen(false);
-    setCurrentStep(1);
+      const link = data.data.link;
+      const linkUrl = typeof window !== 'undefined'
+        ? `${window.location.origin}/affiliate/redeem?code=${link.code}`
+        : `/affiliate/redeem?code=${link.code}`;
+
+      setGeneratedLink({
+        code: link.code,
+        expiresAt: link.expiresAt,
+        linkUrl,
+        intendedStartupName: selectedStartupName,
+      });
+
+      logAuditEvent(
+        'Endorsement Created',
+        'Endorsement',
+        actorName,
+        actorRole,
+        `Generated 7-day single-use affiliation invitation for ${selectedStartupName} (${relationshipType}). Code: ${link.code}`
+      );
+
+      showToast(`Accreditation approved! 7-day single-use link generated for ${selectedStartupName}`, 'success');
+      setIsEndorseModalOpen(false);
+      setCurrentStep(1);
+      setSelectedStartupName('');
+      loadAuthoritativeAffiliations();
+    } catch (err: any) {
+      showToast(err.message || 'Error creating endorsement', 'error');
+    }
   };
 
-  const handleConfirmRevoke = (e: React.FormEvent) => {
+  const handleConfirmRevoke = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedForRevoke) return;
+    const activeId = entityContextService.getActiveEntityId() || 'esp_demo_entity';
 
-    const updated = endorsements.map((e) =>
-      e.id === selectedForRevoke.id
-        ? {
-            ...e,
-            status: 'revoked' as const,
-            history: [
-              ...(e.history || []),
-              {
-                action: 'Endorsement Revoked',
-                timestamp: new Date().toLocaleDateString(),
-                actor: actorName,
-                note: revokeReason,
-              },
-            ],
-          }
-        : e
-    );
-    setEndorsements(updated);
-    saveStoredESPEndorsements(updated);
+    try {
+      const res = await fetch('/api/affiliates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'REVOKE',
+          affiliationId: selectedForRevoke.id,
+          revokingEntityId: activeId,
+          revokingUserId: user?.id || 'esp_admin',
+          reason: revokeReason || 'Administrative revocation',
+        }),
+      });
 
-    logAuditEvent(
-      'Endorsement Revoked',
-      'Endorsement',
-      actorName,
-      actorRole,
-      `Revoked endorsement for ${selectedForRevoke.startupName}. Reason: ${revokeReason}`
-    );
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showToast(data.message || 'Failed to revoke affiliation', 'error');
+        return;
+      }
 
-    showToast(`Revoked endorsement for ${selectedForRevoke.startupName}. Entitlements suspended.`, 'info');
-    setSelectedForRevoke(null);
+      logAuditEvent(
+        'Endorsement Revoked',
+        'Endorsement',
+        actorName,
+        actorRole,
+        `Revoked endorsement for ${selectedForRevoke.startupName}. Reason: ${revokeReason}`
+      );
+
+      showToast(`Revoked endorsement for ${selectedForRevoke.startupName}. Entitlements suspended.`, 'info');
+      setSelectedForRevoke(null);
+      setRevokeReason('');
+      loadAuthoritativeAffiliations();
+    } catch (err: any) {
+      showToast(err.message || 'Error revoking affiliation', 'error');
+    }
+  };
+
+  const handleToggleVisibility = async (affId: string, currentConsent: boolean) => {
+    try {
+      const res = await fetch('/api/affiliates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'UPDATE_VISIBILITY',
+          affiliationId: affId,
+          mutualVisibilityConsent: !currentConsent,
+          userId: user?.id || 'esp_admin',
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message, 'success');
+        loadAuthoritativeAffiliations();
+      }
+    } catch (err) {
+      showToast('Failed to update public visibility consent', 'error');
+    }
   };
 
   const handleConfirmExtend = (e: React.FormEvent) => {
@@ -299,24 +403,69 @@ export const ESPEndorsementsManager: React.FC = () => {
     setSelectedForEdit(null);
   };
 
-  const handleSendInvite = (e: React.FormEvent) => {
+  const handleSendInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    logAuditEvent(
-      'Member Invited',
-      'Members',
-      actorName,
-      actorRole,
-      `Sent onboarding invite to ${inviteEmail} for startup ${inviteStartupName}`
-    );
-    showToast(`Sent onboarding invite to ${inviteEmail} for ${inviteStartupName}!`, 'success');
-    setInviteEmail('');
-    setInviteStartupName('');
-    setIsInviteModalOpen(false);
+    if (capacity?.isAtCapacity) {
+      showToast('ESP Capacity limit of 250 active startups reached. Overflow is blocked in V1.', 'error');
+      return;
+    }
+
+    const activeId = entityContextService.getActiveEntityId() || 'esp_demo_entity';
+
+    try {
+      const res = await fetch('/api/affiliates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'CREATE_LINK',
+          issuingEntityId: activeId,
+          intendedStartupName: inviteStartupName,
+          intendedFounderEmail: inviteEmail,
+          programName: 'Incubation & Acceleration Program',
+          cohort: 'Current Cohort',
+          createdByUserId: user?.id || 'esp_admin',
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        showToast(data.message || 'Failed to generate affiliate invitation link', 'error');
+        return;
+      }
+
+      const link = data.data.link;
+      const linkUrl = typeof window !== 'undefined'
+        ? `${window.location.origin}/affiliate/redeem?code=${link.code}`
+        : `/affiliate/redeem?code=${link.code}`;
+
+      setGeneratedLink({
+        code: link.code,
+        expiresAt: link.expiresAt,
+        linkUrl,
+        intendedStartupName: inviteStartupName,
+      });
+
+      logAuditEvent(
+        'Member Invited',
+        'Members',
+        actorName,
+        actorRole,
+        `Generated 7-day single-use invite for ${inviteStartupName} (${inviteEmail}). Code: ${link.code}`
+      );
+
+      showToast(`Generated 7-day single-use invite for ${inviteStartupName}!`, 'success');
+      setInviteEmail('');
+      setInviteStartupName('');
+      setIsInviteModalOpen(false);
+      loadAuthoritativeAffiliations();
+    } catch (err: any) {
+      showToast(err.message || 'Network error generating affiliate link', 'error');
+    }
   };
 
   return (
     <div className="space-y-6 animate-fade-slide">
-      {/* 0. Header with Actions */}
+      {/* 0. Header with Actions & Capacity Banner */}
       <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-2">
@@ -335,7 +484,9 @@ export const ESPEndorsementsManager: React.FC = () => {
         <div className="flex items-center gap-2 self-start sm:self-auto">
           <button
             onClick={() => setIsInviteModalOpen(true)}
-            className="px-3.5 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#262A29] bg-white dark:bg-[#202422] hover:border-[#D9FF3F] text-xs font-bold text-[#101212] dark:text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-subtle"
+            disabled={Boolean(capacity?.isAtCapacity)}
+            className="px-3.5 py-2 rounded-xl border border-[#E5E7EB] dark:border-[#262A29] bg-white dark:bg-[#202422] hover:border-[#D9FF3F] text-xs font-bold text-[#101212] dark:text-white transition-all flex items-center gap-1.5 cursor-pointer shadow-subtle disabled:opacity-50 disabled:cursor-not-allowed"
+            title={capacity?.isAtCapacity ? 'ESP capacity limit of 250 active startups reached.' : undefined}
           >
             <Send className="w-3.5 h-3.5" />
             <span>Invite External Startup</span>
@@ -346,7 +497,9 @@ export const ESPEndorsementsManager: React.FC = () => {
               setCurrentStep(1);
               setIsEndorseModalOpen(true);
             }}
-            className="px-4 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
+            disabled={Boolean(capacity?.isAtCapacity)}
+            className="px-4 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold transition-all flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+            title={capacity?.isAtCapacity ? 'ESP capacity limit of 250 active startups reached.' : undefined}
           >
             <Sparkles className="w-3.5 h-3.5" />
             <span>+ Endorse Startup</span>
@@ -354,8 +507,38 @@ export const ESPEndorsementsManager: React.FC = () => {
         </div>
       </div>
 
-      {/* 1. Metrics Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 1. Metrics Strip & Capacity Bar */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
+        {/* Capacity Metric (V1 ESP Limit: 250 startups) */}
+        <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] uppercase font-bold text-[#565B59] dark:text-[#B6B8B7] block">
+              ESP Capacity Cap
+            </span>
+            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
+              (capacity?.used ?? activeCount) >= 250
+                ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400'
+                : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
+            }`}>
+              {(capacity?.used ?? activeCount) >= 250 ? 'Cap Reached' : 'Active Cap'}
+            </span>
+          </div>
+          <p className="text-2xl font-bold font-sora text-[#101212] dark:text-white">
+            {capacity?.used ?? activeCount} <span className="text-xs text-[#565B59] dark:text-[#B6B8B7] font-normal">/ 250</span>
+          </p>
+          <div className="w-full bg-gray-100 dark:bg-[#202422] h-1.5 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all duration-500 ${
+                (capacity?.used ?? activeCount) >= 250 ? 'bg-rose-500' : 'bg-[#D9FF3F]'
+              }`}
+              style={{ width: `${Math.min(100, (((capacity?.used ?? activeCount) / 250) * 100))}%` }}
+            />
+          </div>
+          <p className="text-[10px] text-[#565B59] dark:text-[#B6B8B7]">
+            {Math.max(0, 250 - (capacity?.used ?? activeCount))} slots remaining (V1 Cap)
+          </p>
+        </div>
+
         <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-1.5">
           <span className="text-[10px] uppercase font-bold text-[#565B59] dark:text-[#B6B8B7] block">
             Active Endorsements
@@ -382,13 +565,13 @@ export const ESPEndorsementsManager: React.FC = () => {
 
         <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-1.5">
           <span className="text-[10px] uppercase font-bold text-[#565B59] dark:text-[#B6B8B7] block">
-            Pending Approval
+            Pending Links & Review
           </span>
           <p className="text-2xl font-bold font-sora text-cyan-500">
             {pendingCount}
           </p>
           <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
-            Under academic review
+            {pendingLinks.length > 0 ? `${pendingLinks.length} active 7-day invites` : 'Under academic review'}
           </p>
         </div>
 
@@ -637,6 +820,19 @@ export const ESPEndorsementsManager: React.FC = () => {
                           <XCircle className="w-3.5 h-3.5" />
                         </button>
                       )}
+
+                      {/* 5b. Public Showcase Visibility Toggle */}
+                      <button
+                        onClick={() => handleToggleVisibility(e.id, Boolean((e as any).mutualVisibilityConsent))}
+                        className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
+                          (e as any).mutualVisibilityConsent !== false
+                            ? 'border-emerald-500/30 text-emerald-600 dark:text-emerald-400 bg-emerald-500/10'
+                            : 'border-gray-200 dark:border-[#262A29] text-gray-400'
+                        }`}
+                        title={(e as any).mutualVisibilityConsent !== false ? 'Public Showcase: Visible on startup profile (Click to hide)' : 'Public Showcase: Hidden (Click to show on startup profile)'}
+                      >
+                        <Globe className="w-3.5 h-3.5" />
+                      </button>
 
                       {/* 6. View History */}
                       <button
@@ -1415,6 +1611,93 @@ export const ESPEndorsementsManager: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Single-Use Link & Code Modal */}
+      {generatedLink && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-lg bg-white dark:bg-[#181B1A] border border-[#D9FF3F]/40 rounded-2xl p-6 shadow-2xl space-y-4 animate-scale-up">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-[#262A29]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center">
+                  <Sparkles className="w-5 h-5 text-emerald-600 dark:text-[#D9FF3F]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#101212] dark:text-white font-heading">
+                    Single-Use Affiliation Invitation Created
+                  </h3>
+                  <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                    Valid for 7 days (expires {new Date(generatedLink.expiresAt).toLocaleDateString()})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setGeneratedLink(null)}
+                className="p-1 rounded-lg text-[#565B59] hover:text-[#101212] dark:hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] space-y-3">
+              <div>
+                <span className="text-[10px] uppercase font-bold text-[#565B59] dark:text-[#B6B8B7] block mb-1">
+                  Redemption Code (Single-Use Token)
+                </span>
+                <div className="flex items-center justify-between p-3 rounded-xl bg-white dark:bg-[#181B1A] border border-dashed border-[#D9FF3F] font-mono font-bold text-sm text-[#101212] dark:text-[#D9FF3F]">
+                  <span>{generatedLink.code}</span>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedLink.code);
+                      showToast('Redemption code copied to clipboard!', 'success');
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] text-xs font-sans font-bold flex items-center gap-1 cursor-pointer"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy</span>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <span className="text-[10px] uppercase font-bold text-[#565B59] dark:text-[#B6B8B7] block mb-1">
+                  Direct Invitation Link
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    readOnly
+                    value={generatedLink.linkUrl}
+                    className="w-full px-3 py-2 rounded-xl bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29] text-xs font-mono text-[#565B59] dark:text-[#B6B8B7]"
+                  />
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText(generatedLink.linkUrl);
+                      showToast('Direct invitation link copied!', 'success');
+                    }}
+                    className="px-3 py-2 rounded-xl bg-[#D9FF3F] text-[#101212] hover:bg-[#C7F020] text-xs font-bold whitespace-nowrap cursor-pointer flex items-center gap-1"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                    <span>Copy Link</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] leading-relaxed pt-1">
+                🔒 <strong>Strict Recipient Binding & 7-Day Expiry:</strong> This token expires in exactly 7 days. Only an authorized founder of {generatedLink.intendedStartupName || 'the intended venture'} can redeem it. Upon redemption, the venture is granted <strong>Startup Pro</strong> with zero direct fees.
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setGeneratedLink(null)}
+                className="px-5 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

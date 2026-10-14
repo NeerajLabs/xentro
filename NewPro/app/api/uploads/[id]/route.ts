@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getMongoClient } from '@/lib/mongodb';
+import { getDatabase } from '@/lib/mongodb';
 import fs from 'fs';
 import path from 'path';
 
@@ -17,8 +17,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
 
   // 1. Fetch from MongoDB Atlas media_uploads collection
   try {
-    const client = await getMongoClient();
-    const db = client.db('xentro_db');
+    const db = await getDatabase();
     const mediaCol = db.collection('media_uploads');
 
     const doc = await mediaCol.findOne({

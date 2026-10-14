@@ -1433,6 +1433,63 @@ export const StartupProfileView: React.FC<StartupProfileViewProps> = ({
             </div>
           </div>
 
+          {/* Institutional Affiliation & Endorsement Showcase */}
+          {((dbStartupProfile?.affiliatedOrgs && dbStartupProfile.affiliatedOrgs.length > 0) || startup.companyInfo.incubatorAffiliation) && (
+            <div className="bg-white dark:bg-[#181B1A] rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] p-6 shadow-subtle space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-bold text-[#101212] dark:text-white uppercase tracking-wider flex items-center gap-2">
+                  <Award className="w-4 h-4 text-emerald-500" />
+                  <span>Institutional Affiliations & Endorsements</span>
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                  Verified Ecosystem Relationship
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {(dbStartupProfile?.affiliatedOrgs && dbStartupProfile.affiliatedOrgs.length > 0) ? (
+                  dbStartupProfile.affiliatedOrgs.map((aff: any, idx: number) => (
+                    <div
+                      key={aff.affiliationId || idx}
+                      className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-2"
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] uppercase font-bold text-[#565B59] dark:text-[#B6B8B7]">
+                            {aff.orgType === 'ESP' ? 'Ecosystem Enabling Partner (ESP)' : 'Academic / Research Institution'}
+                          </span>
+                          <h4 className="text-sm font-bold text-[#101212] dark:text-white">
+                            {aff.orgName}
+                          </h4>
+                        </div>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F]">
+                          {aff.orgType === 'ESP' ? 'Startup Pro Sponsoring' : 'Affiliated'}
+                        </span>
+                      </div>
+
+                      <div className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                        <p><strong className="text-[#101212] dark:text-white">Program:</strong> {aff.programName} ({aff.cohort || 'Portfolio'})</p>
+                        {aff.since && <p className="text-[10px] pt-0.5">Active since {new Date(aff.since).toLocaleDateString()}</p>}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-1 sm:col-span-2">
+                    <span className="text-[10px] uppercase font-bold text-[#565B59] dark:text-[#B6B8B7]">
+                      Incubator / Accelerator Partner
+                    </span>
+                    <h4 className="text-sm font-bold text-[#101212] dark:text-white">
+                      {startup.companyInfo.incubatorAffiliation}
+                    </h4>
+                    <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                      Formally affiliated ecosystem venture with institutional endorsement badge.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Startup Overview */}
           <div className="bg-white dark:bg-[#181B1A] rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] p-6 shadow-subtle space-y-4">
             <h3 className="text-sm font-bold text-[#101212] dark:text-white uppercase tracking-wider flex items-center gap-2">

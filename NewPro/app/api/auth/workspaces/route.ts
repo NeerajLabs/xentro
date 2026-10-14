@@ -1,37 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getMongoClient } from '@/lib/mongodb';
+import { getDatabase } from '@/lib/mongodb';
+import {
+  requireAuthenticatedUser,
+  issueEntityWorkspaceGrant,
+  revokeEntitySession,
+  logSecurityAuditEvent,
+} from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   try {
-    const userId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    const email = req.headers.get('x-user-email') || req.nextUrl.searchParams.get('email') || '';
-
-    if (!userId && !email) {
-      return NextResponse.json(
-        { success: false, message: 'Authentication required to retrieve eligible personas' },
-        { status: 401 }
-      );
+    const authResult = await requireAuthenticatedUser(req);
+    if ('error' in authResult) {
+      return authResult.error;
     }
+    const user = authResult.user;
 
-    const client = await getMongoClient();
-    const db = client.db('xentro_db');
-    const usersCol = db.collection('users');
+    const db = await getDatabase();
     const membershipsCol = db.collection('memberships');
     const entitiesCol = db.collection('entities');
 
-    const query: any[] = [];
-    if (userId) query.push({ id: userId }, { _id: userId }, { xentroId: userId });
-    if (email) query.push({ email: { $regex: `^${email.trim()}$`, $options: 'i' } });
-
-    const user = await usersCol.findOne({ $or: query });
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
-    }
-
-    const personalRoleRaw = (user.accountType || user.primaryRole || user.baseRole || 'Explorer').trim();
+    const personalRoleRaw = (user.accountType || 'Explorer').trim();
     const normalizedPersonalRole =
       personalRoleRaw.toLowerCase().includes('mentor')
         ? 'Mentor'
@@ -42,43 +33,41 @@ export async function GET(req: NextRequest) {
     const personalDestination =
       normalizedPersonalRole === 'Explorer'
         ? 'feed'
-        : normalizedPersonalRole === 'Mentor'
-        ? 'dashboard'
         : 'dashboard';
 
     const personalAccount = {
       userId: user.id,
-      name: user.fullName || user.name || 'Personal Account',
+      name: user.fullName || 'Personal Account',
       email: user.email,
       role: normalizedPersonalRole,
       accountType: normalizedPersonalRole,
       destination: personalDestination,
-      avatar: user.personalProfile?.avatarUrl || user.personalProfile?.photoUrl || user.avatar || null,
       isPersonal: true,
     };
 
     // Query authoritative memberships from MongoDB
+    // Reject PENDING, SUSPENDED, REVOKED memberships
     const userMemberships = await membershipsCol
       .find({
-        $or: [
-          { userId: user.id },
-          { userId: String(user._id) },
-          { userEmail: user.email },
-        ],
+        $or: [{ userId: user.id }, { userEmail: user.email.toLowerCase() }],
         status: { $in: ['ACTIVE', 'APPROVED', 'Active'] },
       })
       .toArray();
 
-    const entityIds = userMemberships.map((m) => m.entityId);
+    // For APPROVED status, verify acceptance
+    const validMemberships = userMemberships.filter((m) => {
+      const status = String(m.status || '').toUpperCase().trim();
+      if (status === 'ACTIVE' || status === 'ACTIVE') return true;
+      if (status === 'APPROVED') {
+        return m.isAccepted === true || m.accepted === true || Boolean(m.acceptedAt);
+      }
+      return false;
+    });
+
+    const entityIds = validMemberships.map((m) => m.entityId);
     const entitiesDocs = await entitiesCol
       .find({
-        $or: [
-          { id: { $in: entityIds } },
-          { createdByUserId: user.id },
-          { currentOwnerUserId: user.id },
-          { primaryOwnerId: user.id },
-          { officialEmail: user.email },
-        ],
+        id: { $in: entityIds },
         status: { $nin: ['ORPHANED_DELETED', 'DELETED', 'ARCHIVED'] },
         isActive: { $ne: false },
         is_deleted: { $ne: true },
@@ -92,9 +81,9 @@ export async function GET(req: NextRequest) {
     const eligibleEntities: any[] = [];
     const addedEntityIds = new Set<string>();
 
-    for (const mem of userMemberships) {
+    for (const mem of validMemberships) {
       const ent = entityMap.get(mem.entityId);
-      if (!ent) continue; // Skip deleted/suspended entities
+      if (!ent) continue; // Skip deleted/suspended organizations
 
       const entType = (ent.entityType || mem.entityType || 'STARTUP').toUpperCase();
 
@@ -103,7 +92,6 @@ export async function GET(req: NextRequest) {
         continue;
       }
 
-      // Format canonical entity type
       let canonicalType: 'Startup' | 'Investor Organization' | 'ESP' | 'Institution' = 'Startup';
       if (entType.includes('INVESTOR') || entType.includes('VC')) {
         canonicalType = 'Investor Organization';
@@ -119,48 +107,12 @@ export async function GET(req: NextRequest) {
         name: ent.name || mem.entityName,
         entityType: canonicalType,
         rawEntityType: entType,
-        role: mem.role || (canonicalType === 'Startup' ? 'Founder' : 'Managing Partner'),
+        role: mem.role || 'Member',
         membershipStatus: mem.status || 'ACTIVE',
         logo: ent.logo || ent.avatar || ent.icon || null,
         sector: ent.details?.sector || ent.industry || '',
         stage: ent.details?.stage || ent.stage || '',
-        permissions: mem.permissions || ['OWNER', 'ADMIN', 'MANAGE_TEAM'],
-        dashboardUrl: canonicalType === 'Startup' ? '/?tab=dashboard' : `/${canonicalType.toLowerCase().replace(/\s+/g, '-')}/dashboard`,
-        profileUrl: '/?tab=profile',
-      });
-    }
-
-    // Also include any entities directly created/owned by this user that didn't have an explicit membership record yet
-    for (const ent of entitiesDocs) {
-      if (addedEntityIds.has(ent.id)) continue;
-      const isOwner = ent.createdByUserId === user.id || ent.primaryOwnerId === user.id || ent.currentOwnerUserId === user.id;
-      if (!isOwner) continue;
-
-      const entType = (ent.entityType || 'STARTUP').toUpperCase();
-      if (normalizedPersonalRole === 'Mentor' && (entType === 'INVESTOR_ORG' || entType === 'INVESTOR')) {
-        continue;
-      }
-      let canonicalType: 'Startup' | 'Investor Organization' | 'ESP' | 'Institution' = 'Startup';
-      if (entType.includes('INVESTOR') || entType.includes('VC')) {
-        canonicalType = 'Investor Organization';
-      } else if (entType.includes('ESP') || entType.includes('INCUBATOR')) {
-        canonicalType = 'ESP';
-      } else if (entType.includes('INSTITUT')) {
-        canonicalType = 'Institution';
-      }
-
-      addedEntityIds.add(ent.id);
-      eligibleEntities.push({
-        entityId: ent.id,
-        name: ent.name,
-        entityType: canonicalType,
-        rawEntityType: entType,
-        role: canonicalType === 'Startup' ? 'Founder' : 'Managing Partner',
-        membershipStatus: 'ACTIVE',
-        logo: ent.logo || ent.avatar || ent.icon || null,
-        sector: ent.details?.sector || ent.industry || '',
-        stage: ent.details?.stage || ent.stage || '',
-        permissions: ['OWNER', 'ADMIN', 'MANAGE_TEAM'],
+        permissions: Array.isArray(mem.permissions) ? mem.permissions : ['VIEW_ONLY'],
         dashboardUrl: canonicalType === 'Startup' ? '/?tab=dashboard' : `/${canonicalType.toLowerCase().replace(/\s+/g, '-')}/dashboard`,
         profileUrl: '/?tab=profile',
       });
@@ -178,7 +130,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: any) {
     return NextResponse.json(
-      { success: false, message: err?.message || 'Database error retrieving eligible personas' },
+      { success: false, message: 'Database error retrieving eligible workspaces.' },
       { status: 500 }
     );
   }
@@ -186,153 +138,59 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const authResult = await requireAuthenticatedUser(req);
+    if ('error' in authResult) {
+      return authResult.error;
+    }
+    const user = authResult.user;
+
     const body = await req.json();
-    const userId = req.headers.get('x-user-id') || body.userId || '';
-    const userEmail = req.headers.get('x-user-email') || body.userEmail || '';
-    const targetContext = String(body.targetContext || (body.targetEntityId ? 'ENTITY' : 'PERSONAL')).toUpperCase();
+    const targetContext = String(body.targetContext || (body.targetEntityId ? 'ENTITY_WORKSPACE' : 'PERSONAL')).toUpperCase();
     const targetEntityId = body.targetEntityId ? String(body.targetEntityId).trim() : null;
-
-    if (!userId && !userEmail) {
-      return NextResponse.json(
-        { success: false, message: 'Authentication required to switch persona' },
-        { status: 401 }
-      );
-    }
-
-    const client = await getMongoClient();
-    const db = client.db('xentro_db');
-    const usersCol = db.collection('users');
-    const membershipsCol = db.collection('memberships');
-    const entitiesCol = db.collection('entities');
-    const auditCol = db.collection('audit_logs');
-
-    const query: any[] = [];
-    if (userId) query.push({ id: userId }, { _id: userId }, { xentroId: userId });
-    if (userEmail) query.push({ email: { $regex: `^${userEmail.trim()}$`, $options: 'i' } });
-
-    const user = await usersCol.findOne({ $or: query });
-    if (!user) {
-      return NextResponse.json({ success: false, message: 'User not found' }, { status: 404 });
-    }
-
-    if (user.isActive === false || user.status === 'SUSPENDED') {
-      return NextResponse.json(
-        { success: false, message: 'Personal account is suspended' },
-        { status: 403 }
-      );
-    }
-
-    const personalRoleRaw = (user.accountType || user.primaryRole || user.baseRole || 'Explorer').trim();
-    const normalizedPersonalRole =
-      personalRoleRaw.toLowerCase().includes('mentor')
-        ? 'Mentor'
-        : personalRoleRaw.toLowerCase().includes('investor')
-        ? 'Individual Investor'
-        : 'Explorer';
-
-    const nowIso = new Date().toISOString();
 
     // =========================================================================
     // CASE A: Switch back to Personal Account
     // =========================================================================
     if (targetContext === 'PERSONAL' || !targetEntityId) {
-      const personalDestination =
-        normalizedPersonalRole === 'Explorer'
-          ? 'feed'
-          : normalizedPersonalRole === 'Mentor'
-          ? 'dashboard'
-          : 'dashboard';
+      const activeSessionId = body.sessionId || null;
+      if (activeSessionId) {
+        await revokeEntitySession(activeSessionId, 'USER_EXIT_TO_PERSONAL');
+      }
 
-      // Audit log entry
-      try {
-        await auditCol.insertOne({
-          id: `AUD-${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-          eventType: 'PERSONA_SWITCH',
-          userId: user.id,
-          userEmail: user.email,
-          switchedTo: {
-            contextType: 'PERSONAL',
-            role: normalizedPersonalRole,
-            destination: personalDestination,
-          },
-          timestamp: nowIso,
-        });
-      } catch (_) {}
+      await logSecurityAuditEvent({
+        actorId: user.id,
+        action: 'EXIT_TO_PERSONAL_ACCOUNT',
+        outcome: 'ALLOWED',
+        metadata: { userId: user.id, revokedSessionId: activeSessionId },
+      });
 
       return NextResponse.json({
         success: true,
-        message: `Switched to Personal Account: ${user.fullName || 'Personal'} (${normalizedPersonalRole})`,
+        message: `Returned to Personal Account (${user.fullName || user.email})`,
         data: {
           contextType: 'PERSONAL',
-          personalRole: normalizedPersonalRole,
-          destinationTab: personalDestination,
           user: {
             id: user.id,
             name: user.fullName,
             email: user.email,
-            role: normalizedPersonalRole,
+            accountType: user.accountType,
           },
         },
       });
     }
 
     // =========================================================================
-    // CASE B: Switch to Authorized Entity Workspace
+    // CASE B: Switch to Authorized Entity Workspace (ENTITY_WORKSPACE)
     // =========================================================================
-    // Check 1 & 2: Authoritative membership record in MongoDB
-    let membership = await membershipsCol.findOne({
-      $or: [
-        { userId: user.id },
-        { userId: String(user._id) },
-        { userEmail: user.email },
-      ],
-      entityId: targetEntityId,
-    });
+    const db = await getDatabase();
+    const membershipsCol = db.collection('memberships');
+    const entitiesCol = db.collection('entities');
 
-    const entity = await entitiesCol.findOne({
-      id: targetEntityId,
-    });
-
+    const entity = await entitiesCol.findOne({ id: targetEntityId });
     if (!entity) {
       return NextResponse.json(
-        { success: false, message: 'Entity account not found' },
+        { success: false, message: 'Organization not found.' },
         { status: 404 }
-      );
-    }
-
-    const isEntityOwner =
-      entity.createdByUserId === user.id ||
-      entity.primaryOwnerId === user.id ||
-      entity.currentOwnerUserId === user.id;
-
-    if (!membership && !isEntityOwner) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Access denied. You do not hold an authorized membership in organization "${targetEntityId}".`,
-        },
-        { status: 403 }
-      );
-    }
-
-    // Check 3: Membership status must not be suspended/revoked
-    const memStatus = String(membership?.status || (isEntityOwner ? 'ACTIVE' : '')).toUpperCase();
-    if (['SUSPENDED', 'REVOKED', 'EXPIRED', 'PENDING', 'PENDING_ADMIN_VERIFICATION', 'INVITED'].includes(memStatus)) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Your membership in organization "${targetEntityId}" is ${memStatus.toLowerCase()}. Active accepted membership is required for workspace access.`,
-        },
-        { status: 403 }
-      );
-    }
-    if (!['ACTIVE', 'APPROVED'].includes(memStatus) && !isEntityOwner) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: `Active membership in organization "${targetEntityId}" is required. Access denied.`,
-        },
-        { status: 403 }
       );
     }
 
@@ -344,31 +202,75 @@ export async function POST(req: NextRequest) {
       entity.isActive === false
     ) {
       return NextResponse.json(
-        { success: false, message: 'This organization account is deactivated or deleted' },
+        { success: false, message: 'This organization account is deactivated or deleted.' },
         { status: 403 }
       );
     }
 
-    const entType = (entity.entityType || membership?.entityType || 'STARTUP').toUpperCase();
+    // Query canonical membership in MongoDB
+    const membership = await membershipsCol.findOne({
+      entityId: targetEntityId,
+      $or: [{ userId: user.id }, { userEmail: user.email.toLowerCase() }],
+    });
 
-    // Check 6: Personal Account Eligibility — Mentor accounts must not access Investor Organizations
-    if (normalizedPersonalRole === 'Mentor' && (entType === 'INVESTOR_ORG' || entType === 'INVESTOR')) {
+    if (!membership) {
       return NextResponse.json(
         {
           success: false,
-          message: 'Mentor accounts are strictly prohibited from accessing Investor Organizations.',
+          message: `Access denied. You do not hold an active membership in organization "${targetEntityId}".`,
         },
         { status: 403 }
       );
     }
 
-    // Check 7 & 8: Assigned organizational RBAC permissions and dashboard
-    const permissions: string[] = isEntityOwner
-      ? ['OWNER', 'ADMIN', 'MANAGE_TEAM']
-      : Array.isArray(membership?.permissions)
-      ? membership.permissions
-      : ['VIEW_ONLY'];
-    const assignedRole = membership?.role || (isEntityOwner ? (entType.includes('INVESTOR') ? 'Managing Partner' : 'Founder') : 'Member');
+    const memStatus = String(membership.status || '').toUpperCase().trim();
+    if (['SUSPENDED', 'REVOKED'].includes(memStatus)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Your membership in organization "${targetEntityId}" is ${memStatus.toLowerCase()}. Workspace access denied.`,
+          code: 'MEMBERSHIP_SUSPENDED',
+        },
+        { status: 403 }
+      );
+    }
+
+    if (['PENDING', 'INVITED', 'PENDING_ACCEPTANCE', 'PENDING_APPROVAL'].includes(memStatus)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `Your invitation to organization "${targetEntityId}" has not been accepted yet. Workspace access denied.`,
+          code: 'MEMBERSHIP_PENDING',
+        },
+        { status: 403 }
+      );
+    }
+
+    if (memStatus === 'APPROVED') {
+      const isAccepted = membership.isAccepted === true || membership.accepted === true || Boolean(membership.acceptedAt);
+      if (!isAccepted) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Invitation approved by administrator but pending member acceptance. Workspace access denied.`,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    const entType = (entity.entityType || membership.entityType || 'STARTUP').toUpperCase();
+
+    // Rule: Mentor accounts must not access Investor Organizations
+    if (user.accountType.toLowerCase().includes('mentor') && (entType === 'INVESTOR_ORG' || entType === 'INVESTOR')) {
+      return NextResponse.json(
+        { success: false, message: 'Mentor accounts are strictly prohibited from accessing Investor Organizations.' },
+        { status: 403 }
+      );
+    }
+
+    // Issue ENTITY_WORKSPACE grant
+    const grant = await issueEntityWorkspaceGrant(user.id, targetEntityId, membership, user.email);
 
     let canonicalType: 'Startup' | 'Investor Organization' | 'ESP' | 'Institution' = 'Startup';
     if (entType.includes('INVESTOR') || entType.includes('VC')) {
@@ -384,50 +286,41 @@ export async function POST(req: NextRequest) {
         ? '/?tab=dashboard'
         : `/${canonicalType.toLowerCase().replace(/\s+/g, '-')}/dashboard`;
 
-    // Audit log entry for authoritative tracking
-    try {
-      await auditCol.insertOne({
-        id: `AUD-${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        eventType: 'PERSONA_SWITCH',
-        userId: user.id,
-        userEmail: user.email,
-        switchedTo: {
-          contextType: 'ENTITY',
-          entityId: entity.id,
-          entityName: entity.name,
-          entityType: canonicalType,
-          role: assignedRole,
-          permissions,
-        },
-        timestamp: nowIso,
-      });
-    } catch (_) {}
+    await logSecurityAuditEvent({
+      entityId: targetEntityId,
+      actorId: user.id,
+      action: 'ENTER_ENTITY_WORKSPACE',
+      outcome: 'ALLOWED',
+      metadata: {
+        sessionId: grant.sessionId,
+        role: membership.role || 'Member',
+      },
+    });
 
     return NextResponse.json({
       success: true,
       message: `Switched to ${entity.name} (${canonicalType}) workspace`,
       data: {
-        contextType: 'ENTITY',
+        contextType: 'ENTITY_WORKSPACE',
+        token: grant.token,
+        sessionId: grant.sessionId,
+        expiresAt: grant.expiresAt,
         entity: {
           id: entity.id,
           name: entity.name,
           entityType: canonicalType,
           rawEntityType: entType,
-          role: assignedRole,
-          permissions,
-          status: membership?.status || 'ACTIVE',
-          logo: entity.logo || entity.avatar || entity.icon || null,
-          sector: entity.details?.sector || entity.industry || '',
-          stage: entity.details?.stage || entity.stage || '',
-          officialEmail: entity.officialEmail,
+          role: membership.role || 'Member',
+          permissions: Array.isArray(membership.permissions) ? membership.permissions : ['VIEW_ONLY'],
           dashboardUrl: dashboardDestination,
           profileUrl: '/?tab=profile',
+          isHead: false,
         },
       },
     });
   } catch (err: any) {
     return NextResponse.json(
-      { success: false, message: err?.message || 'Database error during persona switch' },
+      { success: false, message: 'Error establishing workspace session.' },
       { status: 500 }
     );
   }

@@ -15,7 +15,7 @@ async function forwardUpdate(req: NextRequest, ticketId: string) {
 
   const backendBase = getBackendBaseUrl();
   const authHdr = req.headers.get('authorization')?.replace('Bearer ', '').trim();
-  const cookieToken =
+  const cookieToken = req.cookies.get('xentro_admin_token')?.value || '';
   const token = authHdr || cookieToken;
   if (!token) {
     return NextResponse.json(

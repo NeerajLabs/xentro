@@ -5,6 +5,7 @@ import {
   verifyJwtToken,
   requireAuthenticatedUser,
   requireActiveEntityMembership,
+  requireEntityMasterContext,
   logSecurityAuditEvent,
 } from '@/lib/serverAuth';
 
@@ -60,12 +61,21 @@ export async function GET(
         }
 
         if (!isAuthorizedMember && verifiedUserId) {
-          approvedGrant = await requestsCol.findOne({
+          const grantDoc = await requestsCol.findOne({
             entityId,
             requesterId: verifiedUserId,
-            status: 'Approved',
+            status: { $in: ['Approved', 'APPROVED'] },
           });
+          if (grantDoc && !grantDoc.isRevoked && grantDoc.status !== 'REVOKED') {
+            const nowIso = new Date().toISOString();
+            const expiry = grantDoc.expiryDate || grantDoc.validUntil;
+            const isExpired = expiry && String(expiry).toLowerCase() !== 'never' && String(expiry) < nowIso;
+            if (!isExpired) {
+              approvedGrant = grantDoc;
+            }
+          }
         }
+
       }
     }
 
@@ -226,28 +236,69 @@ export async function POST(
       );
     }
 
-    // 2. APPROVE_REQUEST: Transitional Fail-Closed Enforcement (SEC-03)
-    // Under Xentro V1 policy: Only Startup Entity Head operating through Entity Master Access
-    // may approve external DD Locker access. Since Entity Master Login is deferred to Phase 2,
-    // Phase 1 strictly fails closed to protect confidential deal and cap-table data.
+    // 2. APPROVE_REQUEST: Strictly requires verified ENTITY_MASTER session context (SEC-03)
     if (action === 'APPROVE_REQUEST') {
-      await logSecurityAuditEvent('DENIED_DD_APPROVAL_ATTEMPT', 'WARNING', {
-        userId: user.id,
-        userEmail: user.email,
+      const masterCheck = await requireEntityMasterContext(req, entityId);
+      if ('error' in masterCheck) {
+        return masterCheck.error;
+      }
+
+      const requestId = body.requestId;
+      if (!requestId) {
+        return NextResponse.json({ success: false, message: 'Request ID is required' }, { status: 422 });
+      }
+
+      const accessCol = db.collection('diligence_active_access');
+      const reqDoc = await requestsCol.findOne({ entityId, id: requestId });
+      if (!reqDoc) {
+        return NextResponse.json({ success: false, message: 'Diligence access request not found' }, { status: 404 });
+      }
+
+      const expiryDays = Number(body.expiryDays) || 30;
+      const expiryDate = new Date(Date.now() + expiryDays * 24 * 60 * 60 * 1000).toISOString();
+
+      await requestsCol.updateOne(
+        { entityId, id: requestId },
+        { $set: { status: 'Approved', updatedAt: nowIso, approvedBy: masterCheck.user.id } }
+      );
+
+      const grantRecord = {
+        id: `grant_${Date.now()}`,
         entityId,
-        requestId: body.requestId,
-        policyReason: 'Entity Master Access required for external DD Locker approval. Transitional fail-closed.',
+        requestId,
+        userId: reqDoc.requesterId,
+        userEmail: reqDoc.requesterEmail,
+        userName: reqDoc.userName,
+        organization: reqDoc.organization,
+        userType: reqDoc.userType,
+        avatar: reqDoc.avatar,
+        grantedFolders: Array.isArray(body.grantedFolders) ? body.grantedFolders : reqDoc.requestedFolders || ['Corporate'],
+        grantedDate: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+        expiryDate,
+        status: 'Active',
+        createdAt: nowIso,
+      };
+
+      await accessCol.updateOne(
+        { entityId, userId: reqDoc.requesterId },
+        { $set: grantRecord },
+        { upsert: true }
+      );
+
+      await auditCol.insertOne({
+        id: `audit_dd_${Date.now()}`,
+        entityId,
+        actorId: masterCheck.user.id,
+        action: 'DD_APPROVE_ACCESS',
+        details: { actionLabel: 'Approved DD Access under Entity Master', requestId, grantedFolders: grantRecord.grantedFolders },
+        timestamp: nowIso,
       });
 
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            'External DD Locker access approval requires verified Entity Master Access. Approval is transitional fail-closed in Phase 1 to protect confidential assets. Existing pending requests are safely preserved.',
-          code: 'MASTER_ACCESS_REQUIRED',
-        },
-        { status: 403 }
-      );
+      return NextResponse.json({
+        success: true,
+        message: 'Diligence access approved under verified Entity Master authority.',
+        data: grantRecord,
+      });
     }
 
     // 3. REQUEST_ACCESS: Authenticated user requests access to DD Locker

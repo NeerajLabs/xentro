@@ -158,6 +158,173 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const cameraStreamRef = useRef<MediaStream | null>(null);
 
+  // Authoritative MongoDB Affiliation & Pending Links State
+  const [pendingAffiliateLinks, setPendingAffiliateLinks] = useState<any[]>([]);
+  const [isRedeemModalOpen, setIsRedeemModalOpen] = useState(false);
+  const [redeemCodeInput, setRedeemCodeInput] = useState('');
+  const [redeemVisibilityConsent, setRedeemVisibilityConsent] = useState(true);
+  const [isRedeeming, setIsRedeeming] = useState(false);
+
+  const loadAuthoritativeAffiliations = async () => {
+    const eid = entityContextService.getActiveEntityId() || 'st_1';
+    try {
+      const res = await fetch(`/api/affiliates?startupId=${encodeURIComponent(eid)}`);
+      const json = await res.json();
+      if (json?.success && json?.data) {
+        if (Array.isArray(json.data.links)) {
+          const now = new Date();
+          const validPending = json.data.links.filter(
+            (l: any) => l.status === 'PENDING' && !l.isRedeemed && new Date(l.expiresAt) > now
+          );
+          setPendingAffiliateLinks(validPending);
+        }
+        if (Array.isArray(json.data.affiliations) && json.data.affiliations.length > 0) {
+          const activeAffs = json.data.affiliations.filter((a: any) => a.status === 'Active');
+          if (activeAffs.length > 0) {
+            const mapped: StartupESPEndorsementItem[] = activeAffs.map((a: any) => ({
+              id: a.id,
+              espId: a.issuingEntityId,
+              espName: a.issuingOrgName,
+              relationshipType: a.relationshipType || (a.programName?.includes('Incubat') ? 'Incubated' : 'Accelerated'),
+              program: a.programName || 'Incubation Program',
+              status: 'Active',
+              startDate: a.acceptedAt ? a.acceptedAt.split('T')[0] : a.createdAt.split('T')[0],
+              endDate: '31 Mar 2027',
+              entitlementGranted: a.issuingOrgType === 'ESP',
+              verifiedChecklist: {
+                institutionalAffiliationVerified: true,
+                dpiitCompliant: true,
+                boardResolutionCleared: true,
+              },
+            }));
+            setEndorsements(mapped);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[StartupOverview] Error loading authoritative affiliations:', err);
+    }
+  };
+
+  const handleAcceptAffiliation = async (link: any) => {
+    const eid = entityContextService.getActiveEntityId() || 'st_1';
+    let userId = 'user_startup';
+    try {
+      const p = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
+      if (p) userId = JSON.parse(p).id || userId;
+    } catch {}
+
+    try {
+      const res = await fetch('/api/affiliates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'ACCEPT',
+          code: link.code,
+          startupEntityId: eid,
+          userId,
+          mutualVisibilityConsent: true,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        showToast(json.message || 'Failed to accept affiliation', 'error');
+        return;
+      }
+
+      showToast(json.message || 'Affiliation accepted! Startup Pro tier unlocked.', 'success');
+      loadAuthoritativeAffiliations();
+      loadDomainTelemetry();
+      window.dispatchEvent(new CustomEvent('xentro-startup-endorsements-changed'));
+    } catch (err: any) {
+      showToast(err.message || 'Error accepting affiliation', 'error');
+    }
+  };
+
+  const handleDeclineAffiliation = async (link: any) => {
+    const eid = entityContextService.getActiveEntityId() || 'st_1';
+    let userId = 'user_startup';
+    try {
+      const p = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
+      if (p) userId = JSON.parse(p).id || userId;
+    } catch {}
+
+    try {
+      const res = await fetch('/api/affiliates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'DECLINE',
+          code: link.code,
+          startupEntityId: eid,
+          userId,
+          reason: 'Declined by founder',
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        showToast(json.message || 'Failed to decline affiliation', 'error');
+        return;
+      }
+
+      showToast('Affiliation offer declined.', 'info');
+      loadAuthoritativeAffiliations();
+      loadDomainTelemetry();
+      window.dispatchEvent(new CustomEvent('xentro-startup-endorsements-changed'));
+    } catch (err: any) {
+      showToast(err.message || 'Error declining affiliation', 'error');
+    }
+  };
+
+  const handleRedeemManualCode = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!redeemCodeInput.trim()) {
+      showToast('Please enter an affiliation invitation code.', 'error');
+      return;
+    }
+
+    const eid = entityContextService.getActiveEntityId() || 'st_1';
+    let userId = 'user_startup';
+    try {
+      const p = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
+      if (p) userId = JSON.parse(p).id || userId;
+    } catch {}
+
+    setIsRedeeming(true);
+    try {
+      const res = await fetch('/api/affiliates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'ACCEPT',
+          code: redeemCodeInput.trim().toUpperCase(),
+          startupEntityId: eid,
+          userId,
+          mutualVisibilityConsent: redeemVisibilityConsent,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        showToast(json.message || 'Failed to redeem invitation code.', 'error');
+        return;
+      }
+
+      showToast(json.message || 'Affiliation redeemed! Startup Pro suite activated.', 'success');
+      setRedeemCodeInput('');
+      setIsRedeemModalOpen(false);
+      loadAuthoritativeAffiliations();
+      loadDomainTelemetry();
+      window.dispatchEvent(new CustomEvent('xentro-startup-endorsements-changed'));
+    } catch (err: any) {
+      showToast(err.message || 'Error redeeming invitation code.', 'error');
+    } finally {
+      setIsRedeeming(false);
+    }
+  };
+
   const loadDomainTelemetry = () => {
     setMembers(getStartupEntityMembers());
     setInvitations(getStartupInvitations());
@@ -166,6 +333,7 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
     setEntitlements(resolveStartupEntitlements());
     setSubscription(getStartupSubscription());
     setFailedPaymentSim(getFailedPaymentSimulation());
+    loadAuthoritativeAffiliations();
   };
 
   // Load and listen to identity and domain updates
@@ -767,8 +935,8 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
         </div>
       )}
 
-      {/* Inbound ESP Endorsement Banner */}
-      {endorsements.filter((e) => e.status === 'Pending').length > 0 && (
+      {/* Inbound Institutional Affiliation / Endorsement Banner */}
+      {(pendingAffiliateLinks.length > 0 || endorsements.filter((e) => e.status === 'Pending').length > 0) && (
         <div className="p-4 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-[#181B1A] to-[#D9FF3F]/10 border border-emerald-500/30 shadow-subtle flex flex-col md:flex-row md:items-center justify-between gap-4 animate-fade-slide">
           <div className="flex items-start gap-3.5">
             <div className="w-12 h-12 rounded-xl bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center font-bold text-lg shrink-0 border border-[#D9FF3F]/30">
@@ -777,17 +945,19 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
             <div className="space-y-1">
               <div className="flex items-center gap-2 flex-wrap">
                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/30">
-                  Inbound Institutional Endorsement
+                  Inbound Institutional Invitation
                 </span>
                 <span className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                  Received {endorsements.find((e) => e.status === 'Pending')?.startDate || 'Recently'}
+                  {pendingAffiliateLinks[0]?.expiresAt
+                    ? `Expires ${new Date(pendingAffiliateLinks[0].expiresAt).toLocaleDateString()}`
+                    : 'Valid for 7 days'}
                 </span>
               </div>
               <h4 className="text-sm sm:text-base font-bold text-[#101212] dark:text-white font-sora">
-                {endorsements.find((e) => e.status === 'Pending')?.espName} has offered to sponsor and endorse your startup
+                {pendingAffiliateLinks[0]?.issuingOrgName || endorsements.find((e) => e.status === 'Pending')?.espName || 'Partner Institution'} has offered official affiliation
               </h4>
               <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] max-w-2xl leading-relaxed">
-                Scope: <strong className="text-[#101212] dark:text-white font-semibold">{endorsements.find((e) => e.status === 'Pending')?.relationshipType || 'Incubated'} ({endorsements.find((e) => e.status === 'Pending')?.program})</strong>. Accepting this endorsement unlocks full <strong>Startup Pro</strong> platform access with <strong>zero direct fees</strong> and displays an institutional badge on your public profile.
+                Program: <strong className="text-[#101212] dark:text-white font-semibold">{pendingAffiliateLinks[0]?.programName || endorsements.find((e) => e.status === 'Pending')?.program || 'Incubation Track'} ({pendingAffiliateLinks[0]?.cohort || 'Cohort 2026'})</strong>. Accepting this endorsement unlocks full <strong>Startup Pro</strong> platform access with <strong>zero direct fees</strong> and displays an institutional badge on your public profile.
               </p>
             </div>
           </div>
@@ -795,25 +965,33 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
           <div className="flex items-center gap-2 self-start md:self-auto shrink-0">
             <button
               onClick={() => {
-                const pending = endorsements.find((e) => e.status === 'Pending');
-                if (pending) {
-                  acceptESPEndorsement(pending.id);
-                  loadDomainTelemetry();
-                  showToast(`Endorsement from ${pending.espName} accepted! Startup Pro features unlocked.`, 'success');
+                if (pendingAffiliateLinks.length > 0) {
+                  handleAcceptAffiliation(pendingAffiliateLinks[0]);
+                } else {
+                  const pending = endorsements.find((e) => e.status === 'Pending');
+                  if (pending) {
+                    acceptESPEndorsement(pending.id);
+                    loadDomainTelemetry();
+                    showToast(`Endorsement from ${pending.espName} accepted! Startup Pro features unlocked.`, 'success');
+                  }
                 }
               }}
               className="px-4 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] font-bold text-xs transition-all shadow-2xs active:scale-95 cursor-pointer flex items-center gap-1.5"
             >
               <Check className="w-3.5 h-3.5 stroke-[2.5]" />
-              <span>Accept Endorsement</span>
+              <span>Accept Affiliation</span>
             </button>
             <button
               onClick={() => {
-                const pending = endorsements.find((e) => e.status === 'Pending');
-                if (pending) {
-                  declineESPEndorsement(pending.id, 'Founder declined sponsorship offer');
-                  loadDomainTelemetry();
-                  showToast('Endorsement offer declined.', 'info');
+                if (pendingAffiliateLinks.length > 0) {
+                  handleDeclineAffiliation(pendingAffiliateLinks[0]);
+                } else {
+                  const pending = endorsements.find((e) => e.status === 'Pending');
+                  if (pending) {
+                    declineESPEndorsement(pending.id, 'Founder declined sponsorship offer');
+                    loadDomainTelemetry();
+                    showToast('Endorsement offer declined.', 'info');
+                  }
                 }
               }}
               className="px-3 py-2 rounded-xl bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-semibold text-[#565B59] dark:text-[#B6B8B7] transition-all cursor-pointer"
@@ -830,6 +1008,29 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
           </div>
         </div>
       )}
+
+      {/* Redeem Affiliation Code Quick Trigger Banner */}
+      <div className="p-3.5 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-[#D9FF3F]/15 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center shrink-0">
+            <Award className="w-5 h-5 text-emerald-600 dark:text-[#D9FF3F]" />
+          </div>
+          <div>
+            <h4 className="text-xs font-bold text-[#101212] dark:text-white">
+              Have an ESP or Institution Affiliation Invite Code?
+            </h4>
+            <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+              Enter your single-use 7-day token (<code className="font-mono text-emerald-600 dark:text-[#D9FF3F]">XENTRO-XXXX-XXXX</code>) to link your institution and unlock Startup Pro.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={() => setIsRedeemModalOpen(true)}
+          className="px-4 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] font-bold text-xs shadow-xs active:scale-95 transition-all cursor-pointer whitespace-nowrap self-start sm:self-auto"
+        >
+          Redeem Invite Code
+        </button>
+      </div>
 
       {/* Operational Telemetry Matrix (Section 10) */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-2.5 sm:gap-3">
@@ -1950,6 +2151,84 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
                 </>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Manual Affiliation Code Redemption Modal */}
+      {isRedeemModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-2xl p-6 shadow-2xl space-y-4 animate-scale-up">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-[#262A29]">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center">
+                  <Award className="w-5 h-5 text-emerald-600 dark:text-[#D9FF3F]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#101212] dark:text-white font-heading">
+                    Redeem Affiliation Code
+                  </h3>
+                  <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                    Activate institutional endorsement & Startup Pro
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsRedeemModalOpen(false)}
+                className="p-1 rounded-lg text-[#565B59] hover:text-[#101212] dark:hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleRedeemManualCode} className="space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-[#101212] dark:text-white">
+                  Redemption Code (Token)
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. XENTRO-ABCD-1234"
+                  value={redeemCodeInput}
+                  onChange={(e) => setRedeemCodeInput(e.target.value.toUpperCase())}
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs font-mono tracking-wider text-[#101212] dark:text-[#D9FF3F] uppercase focus:outline-hidden focus:border-[#D9FF3F]"
+                />
+              </div>
+
+              <label className="flex items-start gap-2 text-xs text-[#565B59] dark:text-[#B6B8B7] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={redeemVisibilityConsent}
+                  onChange={(e) => setRedeemVisibilityConsent(e.target.checked)}
+                  className="w-4 h-4 accent-[#D9FF3F] shrink-0 mt-0.5"
+                />
+                <span>
+                  Consent to display institutional incubator affiliation badge on public venture profile.
+                </span>
+              </label>
+
+              <div className="p-3 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] text-[11px] text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
+                ℹ️ <strong>Single-Use 7-Day Validity:</strong> This token can only be redeemed by an authorized founder of the targeted venture. Upon redemption, qualifying ESP affiliations will automatically unlock the <strong>Startup Pro</strong> platform suite with zero surcharge.
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsRedeemModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-gray-200 dark:border-[#262A29] text-xs font-bold text-[#565B59] dark:text-[#B6B8B7] cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isRedeeming}
+                  className="px-5 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold shadow-2xs active:scale-95 cursor-pointer disabled:opacity-50"
+                >
+                  {isRedeeming ? 'Redeeming...' : 'Redeem & Unlock Pro'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

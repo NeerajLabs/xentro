@@ -11,10 +11,14 @@ from common.permissions import IsXentroAuthenticated
 def check_startup_finance_access(user_id: str, startup_id: str) -> bool:
     """
     Validates whether the user is authorized to access confidential financial metrics.
-    Authorized actors:
-    1. Governing Startup Entity Head / Owner
-    2. Active member holding Founder, Admin, or Finance role
-    3. External investor with Approved DD Locker access grant for 'Financial' folder
+    Authorized actors under finalized Xentro V1 policy:
+    1. Governing Startup Entity Head / Founder (Authorized)
+    2. Startup Finance role (Authorized within scope)
+    3. Startup Admin WITH explicitly granted resource-scoped `MANAGE_FINANCE` capability (Authorized)
+    4. Startup Admin WITHOUT `MANAGE_FINANCE` capability (DENIED)
+    5. Startup Viewer (DENIED)
+    6. Suspended / Revoked / Unaccepted memberships (DENIED)
+    7. External investor with valid, non-expired, non-revoked DD Locker grant for 'Financial' folder (Authorized)
     """
     if not user_id or not startup_id:
         return False
@@ -26,44 +30,75 @@ def check_startup_finance_access(user_id: str, startup_id: str) -> bool:
         startup_doc = startups_col.find_one({"entityId": startup_id})
         if not startup_doc:
             return False
-        if startup_doc.get("createdByUserId") == user_id or startup_doc.get("currentOwnerUserId") == user_id:
-            return True
+        is_head = (
+            startup_doc.get("createdByUserId") == user_id
+            or startup_doc.get("currentOwnerUserId") == user_id
+        )
     else:
-        if (
+        is_head = (
             entity.get("currentOwnerUserId") == user_id
             or entity.get("primaryOwnerId") == user_id
             or entity.get("createdByUserId") == user_id
-        ):
-            return True
+        )
+
+    if is_head:
+        return True
 
     # Check active membership
     mem_col = get_collection("memberships")
     membership = mem_col.find_one({
         "entityId": startup_id,
         "userId": user_id,
-        "status": {"$in": ["ACTIVE", "APPROVED", "Active"]}
     })
     if membership:
-        role = str(membership.get("role", "")).upper()
-        perms = [str(p).upper() for p in membership.get("permissions", [])]
-        if "OWNER" in perms or "ADMIN" in perms or "FINANCE" in perms or "MANAGE_FINANCE" in perms:
-            return True
-        if any(keyword in role for keyword in ["FOUNDER", "FINANCE", "OWNER", "LEAD"]):
-            return True
+        status = str(membership.get("status", "")).upper().strip()
+        # Only canonically active / approved memberships are eligible
+        if status in ["ACTIVE", "APPROVED"]:
+            role = str(membership.get("role", "")).upper().strip()
+            perms = [str(p).upper().strip() for p in membership.get("permissions", [])]
 
-    # Check approved diligence grant
+            # 1. Founder / Head authority
+            if role in ["FOUNDER", "HEAD", "OWNER"] or "OWNER" in perms:
+                return True
+
+            # 2. Finance role
+            if role in ["FINANCE", "FINANCE LEAD"] or "FINANCE" in perms:
+                return True
+
+            # 3. Startup Admin: ONLY authorized if explicitly granted MANAGE_FINANCE capability
+            if "MANAGE_FINANCE" in perms:
+                return True
+
+            # Startup Admin without MANAGE_FINANCE and Startup Viewer are strictly DENIED
+
+    # Check approved diligence grant for external investors
     dd_req_col = get_collection("diligence_access_requests")
     grant = dd_req_col.find_one({
         "entityId": startup_id,
         "requesterId": user_id,
-        "status": "Approved"
+        "status": {"$in": ["Approved", "APPROVED"]},
     })
     if grant:
-        folders = [str(f).upper() for f in grant.get("grantedFolders", [])]
+        # Check revocation
+        if grant.get("isRevoked") is True or str(grant.get("status", "")).upper() == "REVOKED":
+            return False
+
+        # Check expiration
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        expiry = grant.get("expiryDate") or grant.get("validUntil")
+        if expiry and str(expiry).lower() not in ["never", "none", ""]:
+            try:
+                if str(expiry) < now_iso:
+                    return False
+            except Exception:
+                pass
+
+        folders = [str(f).upper().strip() for f in grant.get("grantedFolders", [])]
         if "FINANCIAL" in folders or "ALL" in folders:
             return True
 
     return False
+
 
 class StartupFinanceMetricsView(APIView):
     permission_classes = [IsXentroAuthenticated]

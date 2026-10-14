@@ -49,6 +49,11 @@ export async function POST(req: NextRequest) {
     });
 
     if (existingCreatedEntity) {
+      // Reconcile user record if activeCreatedEntityId was unset during past partial failure
+      await usersCol.updateOne(
+        { $or: [{ id: user.id }, { _id: user.id }], activeCreatedEntityId: { $ne: existingCreatedEntity.id } } as any,
+        { $set: { activeCreatedEntityId: existingCreatedEntity.id }, $unset: { entityCreationPendingAt: '' } }
+      );
       return NextResponse.json(
         {
           success: false,
@@ -60,18 +65,34 @@ export async function POST(req: NextRequest) {
     }
 
     // Atomic reservation on user document to prevent concurrent duplicate entity creation
+    // Includes a 5-minute stale timeout to safely recover from crashed/interrupted requests
+    const now = new Date();
+    const staleThreshold = new Date(now.getTime() - 5 * 60 * 1000).toISOString();
+
     const reservation = await usersCol.findOneAndUpdate(
       {
         $or: [{ id: user.id }, { _id: user.id }],
-        $or: [
-          { activeCreatedEntityId: { $exists: false } },
-          { activeCreatedEntityId: null },
-          { activeCreatedEntityId: '' },
+        $and: [
+          {
+            $or: [
+              { activeCreatedEntityId: { $exists: false } },
+              { activeCreatedEntityId: null },
+              { activeCreatedEntityId: '' },
+            ],
+          },
+          {
+            $or: [
+              { entityCreationPendingAt: { $exists: false } },
+              { entityCreationPendingAt: null },
+              { entityCreationPendingAt: '' },
+              { entityCreationPendingAt: { $lt: staleThreshold } },
+            ],
+          },
         ],
-      },
+      } as any,
       {
         $set: {
-          entityCreationPendingAt: new Date().toISOString(),
+          entityCreationPendingAt: now.toISOString(),
         },
       },
       { returnDocument: 'after' }
@@ -87,6 +108,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
+
     const entityTypeRaw = String(body.entityType || body.type || 'STARTUP').toUpperCase();
     const entityName = String(body.name || body.entityName || '').trim();
     const officialEmail = String(body.officialEmail || body.email || '').trim().toLowerCase();
@@ -94,7 +116,7 @@ export async function POST(req: NextRequest) {
     if (!entityName) {
       // Clear reservation on validation failure
       await usersCol.updateOne(
-        { $or: [{ id: user.id }, { _id: user.id }] },
+        { $or: [{ id: user.id }, { _id: user.id }] } as any,
         { $unset: { entityCreationPendingAt: '' } }
       );
       return NextResponse.json({ success: false, message: 'Entity name is required' }, { status: 422 });
@@ -120,7 +142,7 @@ export async function POST(req: NextRequest) {
         const otpRec = await otpCol.findOne(otpQuery);
         if (!otpRec) {
           await usersCol.updateOne(
-            { $or: [{ id: user.id }, { _id: user.id }] },
+            { $or: [{ id: user.id }, { _id: user.id }] } as any,
             { $unset: { entityCreationPendingAt: '' } }
           );
           return NextResponse.json(
@@ -143,7 +165,7 @@ export async function POST(req: NextRequest) {
         const otpRec = await otpCol.findOne(otpQuery);
         if (!otpRec) {
           await usersCol.updateOne(
-            { $or: [{ id: user.id }, { _id: user.id }] },
+            { $or: [{ id: user.id }, { _id: user.id }] } as any,
             { $unset: { entityCreationPendingAt: '' } }
           );
           return NextResponse.json(
@@ -174,7 +196,7 @@ export async function POST(req: NextRequest) {
         const otpRec = await otpCol.findOne(otpQuery);
         if (!otpRec) {
           await usersCol.updateOne(
-            { $or: [{ id: user.id }, { _id: user.id }] },
+            { $or: [{ id: user.id }, { _id: user.id }] } as any,
             { $unset: { entityCreationPendingAt: '' } }
           );
           return NextResponse.json(
@@ -197,7 +219,7 @@ export async function POST(req: NextRequest) {
         const otpRec = await otpCol.findOne(otpQuery);
         if (!otpRec) {
           await usersCol.updateOne(
-            { $or: [{ id: user.id }, { _id: user.id }] },
+            { $or: [{ id: user.id }, { _id: user.id }] } as any,
             { $unset: { entityCreationPendingAt: '' } }
           );
           return NextResponse.json(
@@ -597,7 +619,7 @@ export async function POST(req: NextRequest) {
 
     // Commit active created entity ID on user record
     await usersCol.updateOne(
-      { $or: [{ id: user.id }, { _id: user.id }] },
+      { $or: [{ id: user.id }, { _id: user.id }] } as any,
       {
         $set: { activeCreatedEntityId: entityId },
         $unset: { entityCreationPendingAt: '' },
@@ -631,11 +653,34 @@ export async function POST(req: NextRequest) {
       { status: 201 }
     );
   } catch (err: any) {
+    // Failure recovery: if an exception occurred before entity was inserted, clear the reservation
+    try {
+      const db = await getDatabase();
+      const entitiesCol = db.collection('entities');
+      const authRes = await requireAuthenticatedUser(req).catch(() => null);
+      const userId = authRes && 'user' in authRes ? authRes.user.id : null;
+      if (userId) {
+        const existing = await entitiesCol.findOne({
+          createdByUserId: userId,
+          status: { $nin: ['DELETED', 'ORPHANED_DELETED', 'ARCHIVED'] },
+          is_deleted: { $ne: true },
+        });
+        if (!existing) {
+          // Safe to clear reservation because no entity exists for user
+          await db.collection('users').updateOne(
+            { $or: [{ id: userId }, { _id: userId }] } as any,
+            { $unset: { entityCreationPendingAt: '' } }
+          );
+        }
+      }
+    } catch (_) {}
+
     return NextResponse.json(
       { success: false, message: err?.message || 'Database error creating entity account' },
       { status: 500 }
     );
   }
+
 }
 
 export async function GET(req: NextRequest) {

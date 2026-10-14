@@ -25,13 +25,41 @@ export async function GET(req: NextRequest) {
     }
 
     const affiliations = await affCol.find(filter).sort({ createdAt: -1 }).toArray();
-    const links = await linksCol.find(filter).sort({ createdAt: -1 }).toArray();
+
+    // For startup queries, also include pending unredeemed links targeted at this startup
+    let linksFilter = { ...filter };
+    if (startupId) {
+      linksFilter = {
+        $or: [
+          { startupEntityId: startupId },
+          { intendedStartupId: startupId },
+          { redeemedByStartupId: startupId },
+        ],
+      } as any;
+    }
+    const links = await linksCol.find(linksFilter).sort({ createdAt: -1 }).toArray();
+
+    // Calculate capacity metrics for issuing organization (ESP 250 limit)
+    let capacity = null;
+    if (issuingId) {
+      const distinctActiveStartups = await affCol.distinct('startupEntityId', {
+        issuingEntityId: issuingId,
+        status: 'Active',
+      });
+      capacity = {
+        used: distinctActiveStartups.length,
+        max: 250,
+        remaining: Math.max(0, 250 - distinctActiveStartups.length),
+        isAtCapacity: distinctActiveStartups.length >= 250,
+      };
+    }
 
     return NextResponse.json({
       success: true,
       data: {
         affiliations,
         links,
+        capacity,
       },
     });
   } catch (error: any) {
@@ -51,6 +79,7 @@ export async function POST(req: NextRequest) {
     const entitiesCol = db.collection('entities');
     const auditCol = db.collection('audit_logs');
     const memCol = db.collection('memberships');
+    const notifsCol = db.collection('notifications');
 
     const now = new Date().toISOString();
 
@@ -62,10 +91,12 @@ export async function POST(req: NextRequest) {
         issuingEntityId,
         intendedStartupName,
         intendedStartupId,
+        intendedFounderEmail,
         programName,
         cohort,
         assignedMentor,
         createdByUserId,
+        notes,
       } = body;
 
       if (!issuingEntityId) {
@@ -77,16 +108,20 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: 'Issuing organization not found.' }, { status: 404 });
       }
 
-      // Check ESP Capacity (max 250 distinct affiliated startups)
-      const orgType = (issuingOrg.entityType || '').toUpperCase();
+      // Check ESP Capacity (max 250 distinct active affiliated startups in V1)
+      const rawOrgType = (issuingOrg.entityType || '').toUpperCase();
+      const orgType = rawOrgType === 'ESP' ? 'ESP' : 'Institution';
       if (orgType === 'ESP') {
-        const distinctStartups = await affCol.distinct('startupEntityId', {
+        const distinctActiveStartups = await affCol.distinct('startupEntityId', {
           issuingEntityId,
           status: 'Active',
         });
-        if (distinctStartups.length >= 250) {
+        if (distinctActiveStartups.length >= 250) {
           return NextResponse.json(
-            { success: false, message: 'ESP capacity limit reached (250 distinct startup accounts).' },
+            {
+              success: false,
+              message: 'ESP capacity limit reached (maximum 250 distinct affiliated startups in V1). Overflow is blocked.',
+            },
             { status: 400 }
           );
         }
@@ -95,39 +130,81 @@ export async function POST(req: NextRequest) {
       const linkId = `aff_link_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const redemptionCode = `XENTRO-${Math.random().toString(36).substring(2, 6).toUpperCase()}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
 
+      // Approved V1 Default: 7-day invitation expiry
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
       const linkDoc = {
         id: linkId,
         code: redemptionCode,
         issuingEntityId,
         issuingOrgName: issuingOrg.name || 'Incubation Program',
-        issuingOrgType: orgType === 'ESP' ? 'ESP' : 'Institution',
-        intendedStartupName: intendedStartupName || '',
-        intendedStartupId: intendedStartupId || '',
-        programName: programName || 'Acceleration Cohort',
-        cohort: cohort || '2025/2026',
-        assignedMentor: assignedMentor || '',
+        issuingOrgType: orgType,
+        intendedStartupName: (intendedStartupName || '').trim(),
+        intendedStartupId: (intendedStartupId || '').trim(),
+        intendedFounderEmail: (intendedFounderEmail || '').trim().toLowerCase(),
+        programName: (programName || 'Incubation / Acceleration Program').trim(),
+        cohort: (cohort || 'Current Cohort').trim(),
+        assignedMentor: (assignedMentor || '').trim(),
+        notes: (notes || '').trim(),
         createdByUserId: createdByUserId || '',
         status: 'PENDING',
         isRedeemed: false,
         redeemedAt: null,
         redeemedByStartupId: null,
+        redeemedByUserId: null,
         createdAt: now,
-        expiresAt: new Date(Date.now() + 60 * 24 * 60 * 60 * 1000).toISOString(), // 60 days
+        expiresAt,
       };
 
       await linksCol.insertOne(linkDoc);
 
+      // Audit Log
       await auditCol.insertOne({
         action: 'AFFILIATE_LINK_CREATED',
         linkId,
         issuingEntityId,
+        issuingOrgType: orgType,
+        intendedStartupId: linkDoc.intendedStartupId,
+        expiresAt,
         performedBy: createdByUserId || 'ESP_ADMIN',
         timestamp: now,
       });
 
+      // Dispatch in-app notification to intended startup owner if known
+      if (linkDoc.intendedStartupId) {
+        try {
+          const targetStartup = await entitiesCol.findOne({ id: linkDoc.intendedStartupId });
+          const targetOwnerId = targetStartup?.primaryOwnerId || targetStartup?.currentOwnerUserId || targetStartup?.createdByUserId;
+          if (targetOwnerId) {
+            await notifsCol.insertOne({
+              id: `notif_aff_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              userId: targetOwnerId,
+              type: 'AFFILIATION_OFFER',
+              category: 'affiliation',
+              title: `${issuingOrg.name} sent you an Affiliation Invitation`,
+              description: `Formal affiliation offer for ${linkDoc.programName} (${linkDoc.cohort}). Valid for 7 days.`,
+              time: 'Just now',
+              actorName: issuingOrg.name,
+              actorId: issuingEntityId,
+              linkId,
+              code: redemptionCode,
+              actionRequired: true,
+              actionType: 'affiliation_invite',
+              targetTab: 'dashboard',
+              unread: true,
+              read: false,
+              createdAt: now,
+              updatedAt: now,
+            });
+          }
+        } catch (notifErr) {
+          console.warn('[Affiliates] Failed to dispatch startup notification:', notifErr);
+        }
+      }
+
       return NextResponse.json({
         success: true,
-        message: 'Single-use affiliate link generated successfully.',
+        message: 'Targeted single-use affiliate link generated successfully (valid for 7 days).',
         data: { link: linkDoc },
       });
     }
@@ -136,7 +213,7 @@ export async function POST(req: NextRequest) {
     // ACTION 2: ACCEPT (Startup redeems single-use link)
     // -------------------------------------------------------------
     if (action === 'ACCEPT') {
-      const { code, startupEntityId, userId } = body;
+      const { code, startupEntityId, userId, mutualVisibilityConsent } = body;
 
       if (!code || !startupEntityId || !userId) {
         return NextResponse.json(
@@ -145,26 +222,39 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // Check Startup RBAC: Only Owner/Founder can accept affiliation commitments
+      // 1. Verify Startup entity exists
+      const startup = await entitiesCol.findOne({ id: startupEntityId });
+      if (!startup) {
+        return NextResponse.json({ success: false, message: 'Startup entity not found.' }, { status: 404 });
+      }
+
+      // 2. Authorize actor: Only Startup Owner / Founder has authority to accept affiliations
+      const isHead = (
+        startup.primaryOwnerId === userId ||
+        startup.currentOwnerUserId === userId ||
+        startup.createdByUserId === userId
+      );
+
       const membership = await memCol.findOne({
         entityId: startupEntityId,
         userId,
         status: { $in: ['ACTIVE', 'APPROVED', 'Active'] },
       });
 
-      const userRole = membership?.role || 'VIEWER';
+      const userRole = membership?.role || (isHead ? 'OWNER' : 'VIEWER');
       const rbacCheck = evaluateStartupCapability(userRole, 'affiliate', 'acceptAffiliation');
-      if (!rbacCheck.allowed) {
+
+      if (!isHead && !rbacCheck.allowed) {
         return NextResponse.json(
           {
             success: false,
-            message: 'Only the Startup Owner / Founder has authorization to accept institutional affiliations.',
+            message: 'Access denied: Only the Startup Owner / Founder is authorized to accept institutional affiliations.',
           },
           { status: 403 }
         );
       }
 
-      // Look up and validate single-use link
+      // 3. Look up single-use link and validate constraints
       const link = await linksCol.findOne({ code: code.trim().toUpperCase() });
       if (!link) {
         return NextResponse.json({ success: false, message: 'Invalid affiliate code.' }, { status: 404 });
@@ -172,31 +262,72 @@ export async function POST(req: NextRequest) {
 
       if (link.isRedeemed || link.status === 'REDEEMED') {
         return NextResponse.json(
-          { success: false, message: 'This single-use affiliate code has already been redeemed.' },
+          { success: false, message: 'This single-use affiliate invitation has already been redeemed.' },
+          { status: 400 }
+        );
+      }
+
+      if (link.status === 'DECLINED') {
+        return NextResponse.json(
+          { success: false, message: 'This affiliate invitation was previously declined.' },
           { status: 400 }
         );
       }
 
       if (new Date(link.expiresAt) < new Date()) {
-        return NextResponse.json({ success: false, message: 'This affiliate code has expired.' }, { status: 400 });
+        return NextResponse.json(
+          { success: false, message: 'This affiliate invitation has expired (7-day validity window exceeded).' },
+          { status: 400 }
+        );
       }
 
-      // Validate intended startup if explicitly designated
+      // 4. Strict Recipient Binding Check
       if (link.intendedStartupId && link.intendedStartupId !== startupEntityId) {
         return NextResponse.json(
-          { success: false, message: 'This invitation was designated for a different venture.' },
+          {
+            success: false,
+            message: 'This invitation is designated exclusively for another startup venture.',
+          },
           { status: 403 }
         );
       }
 
-      const startup = await entitiesCol.findOne({ id: startupEntityId });
-      if (!startup) {
-        return NextResponse.json({ success: false, message: 'Startup entity not found.' }, { status: 404 });
+      // 5. Prevent duplicate active affiliation between the exact same pair
+      const existingAff = await affCol.findOne({
+        startupEntityId,
+        issuingEntityId: link.issuingEntityId,
+        status: 'Active',
+      });
+      if (existingAff) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: `Your venture is already actively affiliated with ${link.issuingOrgName}.`,
+          },
+          { status: 409 }
+        );
       }
 
-      // Mark link redeemed (Single-use policy)
-      await linksCol.updateOne(
-        { id: link.id },
+      // 6. Check issuing ESP capacity limit (max 250 distinct active startups)
+      if (link.issuingOrgType === 'ESP') {
+        const distinctActive = await affCol.distinct('startupEntityId', {
+          issuingEntityId: link.issuingEntityId,
+          status: 'Active',
+        });
+        if (distinctActive.length >= 250 && !distinctActive.includes(startupEntityId)) {
+          return NextResponse.json(
+            {
+              success: false,
+              message: 'The issuing ESP has reached its maximum capacity of 250 affiliated startups.',
+            },
+            { status: 400 }
+          );
+        }
+      }
+
+      // 7. Atomic Lock: Mark link redeemed (prevents concurrency double-spend)
+      const lockResult = await linksCol.updateOne(
+        { id: link.id, isRedeemed: { $ne: true }, status: 'PENDING' },
         {
           $set: {
             isRedeemed: true,
@@ -204,11 +335,19 @@ export async function POST(req: NextRequest) {
             redeemedAt: now,
             redeemedByStartupId: startupEntityId,
             redeemedByUserId: userId,
+            updatedAt: now,
           },
         }
       );
 
-      // Create Active Affiliation Record
+      if (lockResult.modifiedCount === 0) {
+        return NextResponse.json(
+          { success: false, message: 'This invitation was already redeemed in a concurrent session.' },
+          { status: 409 }
+        );
+      }
+
+      // 8. Create Active Affiliation Record
       const affId = `aff_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
       const affDoc = {
         id: affId,
@@ -216,58 +355,172 @@ export async function POST(req: NextRequest) {
         startupName: startup.name || 'Startup',
         issuingEntityId: link.issuingEntityId,
         issuingOrgName: link.issuingOrgName,
-        issuingOrgType: link.issuingOrgType,
+        issuingOrgType: link.issuingOrgType, // 'ESP' | 'Institution'
         programName: link.programName,
         cohort: link.cohort,
         assignedMentor: link.assignedMentor,
+        mutualVisibilityConsent: mutualVisibilityConsent !== false,
         status: 'Active',
         acceptedAt: now,
         acceptedByUserId: userId,
         linkId: link.id,
+        createdAt: now,
+        updatedAt: now,
       };
 
       await affCol.insertOne(affDoc);
 
-      // Grant Affiliation-based Startup Pro Entitlement
-      const entitlementId = `ent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-      const entitlementDoc = {
-        id: entitlementId,
-        startupEntityId,
-        tier: 'Startup Pro',
-        source: `${link.issuingOrgType} Affiliation`,
-        sponsoringEntityId: link.issuingEntityId,
-        sponsoringEntityName: link.issuingOrgName,
-        affiliationId: affId,
-        status: 'Active',
-        grantedAt: now,
-        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year sponsored
-      };
+      // 9. Startup Pro Entitlement (ESP ONLY — Institutions do not automatically grant Pro in V1)
+      let entitlementDoc: any = null;
+      if (link.issuingOrgType === 'ESP') {
+        const entitlementId = `ent_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        entitlementDoc = {
+          id: entitlementId,
+          startupEntityId,
+          tier: 'Startup Pro',
+          source: 'ESP Affiliation',
+          sponsoringEntityId: link.issuingEntityId,
+          sponsoringEntityName: link.issuingOrgName,
+          affiliationId: affId,
+          status: 'Active',
+          grantedAt: now,
+          expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year sponsored
+        };
+        await entitlementsCol.insertOne(entitlementDoc);
+      }
 
-      await entitlementsCol.insertOne(entitlementDoc);
+      // 10. Sync to Startup entity metadata for profile rendering
+      await entitiesCol.updateOne(
+        { id: startupEntityId },
+        {
+          $set: {
+            incubatorAffiliation: link.issuingOrgName,
+            updatedAt: now,
+          },
+          $addToSet: {
+            affiliatedOrgs: {
+              affiliationId: affId,
+              orgId: link.issuingEntityId,
+              orgName: link.issuingOrgName,
+              orgType: link.issuingOrgType,
+              programName: link.programName,
+              cohort: link.cohort,
+              since: now,
+            },
+          },
+        }
+      );
 
-      // Audit Log
+      // 11. Audit Log
       await auditCol.insertOne({
-        action: 'AFFILIATION_ACCEPTED_PRO_GRANTED',
+        action: 'AFFILIATION_ACCEPTED',
         affiliationId: affId,
         startupEntityId,
         issuingEntityId: link.issuingEntityId,
-        entitlementId,
+        issuingOrgType: link.issuingOrgType,
+        grantedPro: Boolean(entitlementDoc),
         acceptedBy: userId,
         timestamp: now,
       });
 
+      // 12. Notify Issuing ESP / Institution Head
+      try {
+        const issuingOrg = await entitiesCol.findOne({ id: link.issuingEntityId });
+        const issuingHeadId = issuingOrg?.primaryOwnerId || issuingOrg?.currentOwnerUserId || issuingOrg?.createdByUserId;
+        if (issuingHeadId) {
+          await notifsCol.insertOne({
+            id: `notif_aff_acc_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            userId: issuingHeadId,
+            type: 'AFFILIATION_ACCEPTED',
+            category: 'affiliation',
+            title: `${startup.name} accepted your Affiliation Invitation`,
+            description: `Official affiliation established for ${link.programName} (${link.cohort}).`,
+            time: 'Just now',
+            actorName: startup.name,
+            actorId: startupEntityId,
+            affiliationId: affId,
+            unread: true,
+            read: false,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      } catch (e) {
+        console.warn('[Affiliates] Failed to dispatch issuing org notification:', e);
+      }
+
+      const message = link.issuingOrgType === 'ESP'
+        ? `Affiliation established with ${link.issuingOrgName}! Startup Pro suite activated.`
+        : `Affiliation established with ${link.issuingOrgName}!`;
+
       return NextResponse.json({
         success: true,
-        message: `Affiliation accepted with ${link.issuingOrgName}! Startup Pro suite activated.`,
+        message,
         data: { affiliation: affDoc, entitlement: entitlementDoc },
       });
     }
 
     // -------------------------------------------------------------
-    // ACTION 3: REVOKE (Revoke affiliation & invalidate entitlement)
+    // ACTION 3: DECLINE (Startup rejects pending affiliate link)
+    // -------------------------------------------------------------
+    if (action === 'DECLINE') {
+      const { code, startupEntityId, userId, reason } = body;
+
+      if (!code || !startupEntityId || !userId) {
+        return NextResponse.json(
+          { success: false, message: 'Code, startup entity ID and user ID are required.' },
+          { status: 400 }
+        );
+      }
+
+      const link = await linksCol.findOne({ code: code.trim().toUpperCase() });
+      if (!link) {
+        return NextResponse.json({ success: false, message: 'Affiliate invitation not found.' }, { status: 404 });
+      }
+
+      if (link.isRedeemed || link.status !== 'PENDING') {
+        return NextResponse.json(
+          { success: false, message: `Invitation cannot be declined (current state: ${link.status}).` },
+          { status: 400 }
+        );
+      }
+
+      await linksCol.updateOne(
+        { id: link.id },
+        {
+          $set: {
+            status: 'DECLINED',
+            declinedAt: now,
+            declinedByStartupId: startupEntityId,
+            declinedByUserId: userId,
+            declineReason: reason || 'Declined by founder',
+            updatedAt: now,
+          },
+        }
+      );
+
+      // Audit Log
+      await auditCol.insertOne({
+        action: 'AFFILIATION_INVITATION_DECLINED',
+        linkId: link.id,
+        startupEntityId,
+        issuingEntityId: link.issuingEntityId,
+        declinedBy: userId,
+        reason: reason || 'Declined by founder',
+        timestamp: now,
+      });
+
+      return NextResponse.json({
+        success: true,
+        message: 'Affiliation invitation has been declined.',
+      });
+    }
+
+    // -------------------------------------------------------------
+    // ACTION 4: REVOKE (Revoke active relationship by EITHER party)
     // -------------------------------------------------------------
     if (action === 'REVOKE') {
-      const { affiliationId, revokingUserId, reason } = body;
+      const { affiliationId, revokingEntityId, revokingUserId, reason } = body;
 
       if (!affiliationId) {
         return NextResponse.json({ success: false, message: 'Affiliation ID required.' }, { status: 400 });
@@ -278,45 +531,137 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, message: 'Affiliation record not found.' }, { status: 404 });
       }
 
-      // Mark affiliation revoked
+      if (aff.status === 'Revoked') {
+        return NextResponse.json({ success: false, message: 'This affiliation is already revoked.' }, { status: 400 });
+      }
+
+      // Authorization: Must be initiated by either the Issuing Organization or the Affiliated Startup
+      const isIssuing = revokingEntityId && revokingEntityId === aff.issuingEntityId;
+      const isStartup = revokingEntityId && revokingEntityId === aff.startupEntityId;
+
+      if (revokingEntityId && !isIssuing && !isStartup) {
+        return NextResponse.json(
+          { success: false, message: 'Access denied: You are not a party to this affiliation.' },
+          { status: 403 }
+        );
+      }
+
+      const revokingSide = isStartup ? 'Startup' : 'Issuing Organization';
+
+      // 1. Mark affiliation revoked
       await affCol.updateOne(
         { id: affiliationId },
         {
           $set: {
             status: 'Revoked',
             revokedAt: now,
-            revokedByUserId: revokingUserId || 'ADMIN',
-            revocationReason: reason || 'Administrative revocation',
+            revokedByUserId: revokingUserId || 'AUTHORIZED_PARTY',
+            revokedByEntityId: revokingEntityId || null,
+            revokedBySide: revokingSide,
+            revocationReason: reason || 'Affiliation revoked by mutual consent or unilateral request',
+            updatedAt: now,
           },
         }
       );
 
-      // Invalidate linked entitlement
+      // 2. Invalidate linked Startup Pro entitlement if sponsored by this affiliation
       await entitlementsCol.updateMany(
         { affiliationId, status: 'Active' },
         {
           $set: {
             status: 'Revoked',
             revokedAt: now,
-            revocationReason: reason || 'Affiliation revoked',
+            revocationReason: `Sponsored affiliation revoked by ${revokingSide}`,
+            updatedAt: now,
           },
         }
       );
 
-      // Audit Log
+      // 3. Clean up from startup entity's active affiliatedOrgs list
+      try {
+        await entitiesCol.updateOne(
+          { id: aff.startupEntityId },
+          {
+            $pull: { affiliatedOrgs: { affiliationId } } as any,
+          }
+        );
+      } catch (err) {
+        console.warn('[Affiliates] Failed to update startup entity affiliatedOrgs:', err);
+      }
+
+      // 4. Audit Log
       await auditCol.insertOne({
         action: 'AFFILIATION_REVOKED',
         affiliationId,
         startupEntityId: aff.startupEntityId,
         issuingEntityId: aff.issuingEntityId,
-        revokedBy: revokingUserId || 'ADMIN',
+        revokedBy: revokingUserId || 'AUTHORIZED_PARTY',
+        revokedByEntityId: revokingEntityId || null,
+        revokedBySide: revokingSide,
         reason: reason || 'Revocation',
         timestamp: now,
       });
 
+      // 5. Notify the other party
+      try {
+        const targetNotifyEntityId = isStartup ? aff.issuingEntityId : aff.startupEntityId;
+        const targetEntity = await entitiesCol.findOne({ id: targetNotifyEntityId });
+        const targetHeadId = targetEntity?.primaryOwnerId || targetEntity?.currentOwnerUserId || targetEntity?.createdByUserId;
+        if (targetHeadId) {
+          await notifsCol.insertOne({
+            id: `notif_aff_rev_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            userId: targetHeadId,
+            type: 'AFFILIATION_REVOKED',
+            category: 'affiliation',
+            title: `Affiliation with ${isStartup ? aff.startupName : aff.issuingOrgName} Revoked`,
+            description: `The active affiliation has been terminated by the ${revokingSide}. Reason: ${reason || 'Revocation'}.`,
+            time: 'Just now',
+            unread: true,
+            read: false,
+            createdAt: now,
+            updatedAt: now,
+          });
+        }
+      } catch (e) {
+        console.warn('[Affiliates] Failed to dispatch revocation notification:', e);
+      }
+
       return NextResponse.json({
         success: true,
-        message: 'Affiliation revoked and linked entitlement invalidated.',
+        message: 'Affiliation revoked and linked entitlements invalidated.',
+      });
+    }
+
+    // -------------------------------------------------------------
+    // ACTION 5: UPDATE_VISIBILITY (Toggle mutual public visibility consent)
+    // -------------------------------------------------------------
+    if (action === 'UPDATE_VISIBILITY') {
+      const { affiliationId, mutualVisibilityConsent, userId } = body;
+
+      if (!affiliationId) {
+        return NextResponse.json({ success: false, message: 'Affiliation ID required.' }, { status: 400 });
+      }
+
+      const aff = await affCol.findOne({ id: affiliationId });
+      if (!aff) {
+        return NextResponse.json({ success: false, message: 'Affiliation record not found.' }, { status: 404 });
+      }
+
+      await affCol.updateOne(
+        { id: affiliationId },
+        {
+          $set: {
+            mutualVisibilityConsent: Boolean(mutualVisibilityConsent),
+            visibilityUpdatedAt: now,
+            visibilityUpdatedBy: userId || 'USER',
+            updatedAt: now,
+          },
+        }
+      );
+
+      return NextResponse.json({
+        success: true,
+        message: `Public visibility consent updated to ${Boolean(mutualVisibilityConsent)}.`,
       });
     }
 
@@ -326,3 +671,4 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, message: error.message }, { status: 500 });
   }
 }
+
