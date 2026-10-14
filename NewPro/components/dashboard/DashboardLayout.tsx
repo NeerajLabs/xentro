@@ -125,32 +125,17 @@ export const DashboardLayout: React.FC = () => {
     }
   }, [userProfile.role]);
 
+  const hasSyncedProfileRef = React.useRef(false);
+
+  // Resilient background sync from MongoDB Atlas once on initial mount
   React.useEffect(() => {
-    const handleNavigateTab = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (customEvent.detail?.tab) {
-        handleSelectNavTab(customEvent.detail.tab);
-      }
-    };
+    if (hasSyncedProfileRef.current) return;
+    hasSyncedProfileRef.current = true;
 
-    const handleOpenSignup = () => {
-      setIsSignupOpen(true);
-    };
-
-    const handleRoleChanged = (e: Event) => {
-      const customEvent = e as CustomEvent;
-      if (customEvent.detail?.profile) {
-        setUserProfile(customEvent.detail.profile);
-      } else {
-        setUserProfile(getUserProfile());
-      }
-    };
-
-    // Resilient background sync from MongoDB Atlas on refresh
     const syncProfileFromDatabase = async () => {
       try {
         const current = getUserProfile();
-        const userRaw = localStorage.getItem('xentro_current_user');
+        const userRaw = typeof window !== 'undefined' ? localStorage.getItem('xentro_current_user') : null;
         const userObj = userRaw ? JSON.parse(userRaw) : null;
         const targetId = current?.id || userObj?.id || '';
         const targetEmail = current?.email || userObj?.email || '';
@@ -187,15 +172,40 @@ export const DashboardLayout: React.FC = () => {
               };
               localStorage.setItem('xentro_user_profile', JSON.stringify(merged));
               setUserProfile(merged);
-              window.dispatchEvent(
-                new CustomEvent('xentro-role-changed', { detail: { role: merged.role, profile: merged } })
-              );
+              // Only notify other components if the role actually changed
+              if (merged.role !== current.role) {
+                window.dispatchEvent(
+                  new CustomEvent('xentro-role-changed', { detail: { role: merged.role, profile: merged } })
+                );
+              }
             }
           }
         }
       } catch (_) {}
     };
     syncProfileFromDatabase();
+  }, []);
+
+  React.useEffect(() => {
+    const handleNavigateTab = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.tab) {
+        handleSelectNavTab(customEvent.detail.tab);
+      }
+    };
+
+    const handleOpenSignup = () => {
+      setIsSignupOpen(true);
+    };
+
+    const handleRoleChanged = (e: Event) => {
+      const customEvent = e as CustomEvent;
+      if (customEvent.detail?.profile) {
+        setUserProfile(customEvent.detail.profile);
+      } else {
+        setUserProfile(getUserProfile());
+      }
+    };
 
     const handleOpenProfileEvent = (e: Event) => {
       const customEvent = e as CustomEvent<{
@@ -218,7 +228,7 @@ export const DashboardLayout: React.FC = () => {
       window.removeEventListener('xentro-role-changed', handleRoleChanged);
       window.removeEventListener('xentro-open-profile', handleOpenProfileEvent);
     };
-  }, [userProfile.role, activeEntity]);
+  }, []);
 
   const showHeader = activeNavTab === 'feed';
 
