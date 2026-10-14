@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
+import {
+  extractAuthToken,
+  verifyJwtToken,
+  requireAuthenticatedUser,
+  requireActiveEntityMembership,
+} from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -289,14 +295,25 @@ export async function PUT(
     }
 
     const body = await req.json();
-    const userId = req.headers.get('x-user-id') || body.userId || '';
-    const userEmail = req.headers.get('x-user-email') || body.userEmail || '';
 
-    if (!userId && !userEmail) {
-      return NextResponse.json(
-        { success: false, message: 'Authentication required to update startup profile' },
-        { status: 401 }
-      );
+    // Authenticate caller strictly using verified JWT session
+    const token = extractAuthToken(req);
+    let userId = '';
+    let userEmail = '';
+    if (token) {
+      const payload = verifyJwtToken(token);
+      if (payload?.sub) {
+        userId = payload.sub;
+        userEmail = payload.email || '';
+      }
+    }
+    if (!userId) {
+      const authRes = await requireAuthenticatedUser(req);
+      if ('error' in authRes) {
+        return authRes.error;
+      }
+      userId = authRes.user.id;
+      userEmail = authRes.user.email;
     }
 
     const db = await getDatabase();
@@ -341,16 +358,6 @@ export async function PUT(
     let isAuthorized = Boolean(isDirectOwner);
     let memberRole = isDirectOwner ? 'Owner / Founder' : '';
 
-    // If entity has no owner set yet, claim ownership
-    if (!isAuthorized && !entity.createdByUserId && !entity.primaryOwnerId && userId) {
-      isAuthorized = true;
-      memberRole = 'Owner / Founder';
-      await entitiesCol.updateOne(
-        { id: entityId },
-        { $set: { createdByUserId: userId, primaryOwnerId: userId, currentOwnerUserId: userId } }
-      );
-    }
-
     if (!isAuthorized) {
       const memQuery: any[] = [];
       if (userId) memQuery.push({ userId });
@@ -369,28 +376,30 @@ export async function PUT(
       }
     }
 
-    // Check if user has this entity linked or active in their profile
-    if (!isAuthorized && (userId || userEmail)) {
-      const u = await usersCol.findOne({
-        $or: [
-          ...(userId ? [{ id: userId }, { userId }] : []),
-          ...(userEmail ? [{ email: userEmail }] : []),
-        ],
-      });
-      if (u) {
-        const hasLinked = Array.isArray(u.linkedEntities) && u.linkedEntities.some((le: any) => le.id === entityId || le.entityId === entityId);
-        if (hasLinked || u.activeEntityId === entityId) {
-          isAuthorized = true;
-          memberRole = 'Owner / Founder';
-        }
-      }
-    }
-
     if (!isAuthorized) {
       return NextResponse.json(
         { success: false, message: 'Unauthorized: You do not have permission to edit this startup profile' },
         { status: 403 }
       );
+    }
+
+    // Publication Approval Rules: Publishing or setting visibility to Public requires Founder/Head or PUBLISH_PROFILE
+    if (body.visibility === 'Public' || body.visibility === 'PUBLISHED') {
+      const memRes = await requireActiveEntityMembership(userId, entityId);
+      if (!('error' in memRes)) {
+        const canPublish =
+          memRes.isHead ||
+          memRes.permissions.includes('PUBLISH_PROFILE') ||
+          memRes.permissions.includes('OWNER') ||
+          memRes.role.toLowerCase().includes('founder') ||
+          memRes.role.toLowerCase().includes('admin');
+        if (!canPublish) {
+          return NextResponse.json(
+            { success: false, message: 'Forbidden: Only Founder/Head or authorized Admin may publish startup profile.' },
+            { status: 403 }
+          );
+        }
+      }
     }
 
     const nowIso = new Date().toISOString();

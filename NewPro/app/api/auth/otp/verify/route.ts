@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
       query.purpose = purpose;
     }
 
-    const otpRecord = await otpCol.findOne(query);
+    const otpRecord = await otpCol.findOne(query, { sort: { createdAt: -1 } });
 
     if (!otpRecord) {
       return NextResponse.json(
@@ -93,8 +93,9 @@ export async function POST(req: NextRequest) {
     );
 
     // If personal signup, update user account state
+    const usersCol = db.collection('users');
+    let userDoc: any = null;
     if (!otpRecord.purpose || otpRecord.purpose === 'PERSONAL_SIGNUP') {
-      const usersCol = db.collection('users');
       await usersCol.updateOne(
         { email },
         {
@@ -107,7 +108,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    return NextResponse.json({
+    userDoc = await usersCol.findOne({ email });
+
+    // Generate authenticated JWT session token for client convenience
+    let accessToken: string | null = null;
+    if (userDoc) {
+      try {
+        const { signJwtToken } = await import('@/lib/serverAuth');
+        accessToken = signJwtToken({
+          sub: userDoc.id || userDoc._id.toString(),
+          email: userDoc.email,
+          name: userDoc.fullName || userDoc.name || '',
+          account_type: userDoc.accountType || 'Explorer',
+          active_roles: userDoc.activeRoles || ['Explorer'],
+          is_staff: Boolean(userDoc.is_staff),
+        });
+      } catch (_) {}
+    }
+
+    const response = NextResponse.json({
       success: true,
       status: 'verified',
       challengeId: otpRecord.challengeId || challengeId,
@@ -118,8 +137,26 @@ export async function POST(req: NextRequest) {
         verified: true,
         challengeId: otpRecord.challengeId || challengeId,
         purpose: otpRecord.purpose || purpose,
+        tokens: accessToken ? { accessToken } : undefined,
+        user: userDoc ? {
+          id: userDoc.id || userDoc._id.toString(),
+          email: userDoc.email,
+          fullName: userDoc.fullName || userDoc.name,
+          accountType: userDoc.accountType || 'Explorer',
+        } : undefined,
       },
     });
+
+    if (accessToken) {
+      response.cookies.set('xentro_session', accessToken, {
+        path: '/',
+        maxAge: 86400,
+        sameSite: 'lax',
+        httpOnly: true,
+      });
+    }
+
+    return response;
   } catch (err: any) {
     return NextResponse.json(
       { success: false, message: err?.message || 'Verification error' },

@@ -244,7 +244,11 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
       // Create separate Startup entity in MongoDB
       const entityRes = await fetch('/api/entities', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: entityContextService.getAuthHeaders({
+          'Content-Type': 'application/json',
+          'x-user-id': profile.id || currentUserProfile?.id || '',
+        }),
+        credentials: 'include',
         body: JSON.stringify({
           name: startupName.trim(),
           entityType: 'STARTUP',
@@ -381,11 +385,12 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
 
       const entityRes = await fetch('/api/entities', {
         method: 'POST',
-        headers: {
+        headers: entityContextService.getAuthHeaders({
           'Content-Type': 'application/json',
           'x-user-id': profile.id || currentUserProfile?.id || '',
           'x-user-email': profile.email || currentUserProfile?.email || targetEmail || '',
-        },
+        }),
+        credentials: 'include',
         body: JSON.stringify({
           name: orgName.trim(),
           entityType: 'INVESTOR_ORG',

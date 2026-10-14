@@ -41,9 +41,16 @@ export async function POST(req: NextRequest) {
     const usersCol = db.collection('users');
     const challengesCol = db.collection('entity_master_challenges');
 
-    // 1. Authoritative lookup: Official Email -> Entity
+    // 1. Authoritative lookup: Official / Registered Email -> Entity
     const entity = await entitiesCol.findOne({
-      officialEmail: { $regex: `^${officialEmail}$`, $options: 'i' },
+      $or: [
+        { officialEmail: { $regex: `^${officialEmail}$`, $options: 'i' } },
+        { email: { $regex: `^${officialEmail}$`, $options: 'i' } },
+        { contactEmail: { $regex: `^${officialEmail}$`, $options: 'i' } },
+        { ownerEmail: { $regex: `^${officialEmail}$`, $options: 'i' } },
+        { 'details.officialEmail': { $regex: `^${officialEmail}$`, $options: 'i' } },
+        { 'details.contactEmail': { $regex: `^${officialEmail}$`, $options: 'i' } },
+      ],
     });
 
     // Account Enumeration Defense:
@@ -121,7 +128,15 @@ export async function POST(req: NextRequest) {
       $or: [{ id: headUserId }, { _id: headUserId }],
     } as any);
 
-    if (!headUser || !headUser.email) {
+    const headPersonalEmail = String(
+      headUser?.email ||
+      headUser?.contactEmail ||
+      entity.ownerEmail ||
+      entity.officialEmail ||
+      officialEmail
+    ).trim().toLowerCase();
+
+    if (!headPersonalEmail) {
       return NextResponse.json(
         {
           success: false,
@@ -131,8 +146,6 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
-
-    const headPersonalEmail = String(headUser.email).trim().toLowerCase();
 
     // 6. Generate independent Dual-OTP verifiers
     // OTP 1: Entity Official Email
@@ -171,7 +184,9 @@ export async function POST(req: NextRequest) {
     const entityText = `Hello,\n\nA Master Login request was initiated for ${entity.name || 'your entity'}.\n\nEntity Official Verification Code (OTP 1): ${otp1}\n\nThis code expires in 10 minutes.\nIf you did not initiate this request, please contact platform security immediately.\n\nWarm regards,\nXENTRO Security`;
 
     const headSubject = `XENTRO: Entity Head Verification Code [${otp2}]`;
-    const headText = `Hello ${headUser.fullName || 'Entity Head'},\n\nA Master Login request was initiated for ${entity.name || 'your entity'}.\n\nGoverning Head Personal Verification Code (OTP 2): ${otp2}\n\nThis code expires in 10 minutes.\n\nWarm regards,\nXENTRO Security`;
+    const headText = `Hello ${headUser?.fullName || 'Entity Head'},\n\nA Master Login request was initiated for ${entity.name || 'your entity'}.\n\nGoverning Head Personal Verification Code (OTP 2): ${otp2}\n\nThis code expires in 10 minutes.\n\nWarm regards,\nXENTRO Security`;
+
+    console.log(`[EntityMasterChallenge] Entity: ${entity.name} (${entity.id}) | OTP1: ${otp1} -> ${officialEmail} | OTP2: ${otp2} -> ${headPersonalEmail}`);
 
     try {
       await Promise.allSettled([

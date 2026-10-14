@@ -63,6 +63,15 @@ export async function POST(req: NextRequest) {
       const isCooldown = existingChallenge.resendAvailableAt && new Date(existingChallenge.resendAvailableAt).getTime() > now;
 
       if (isUnexpired && isCooldown) {
+        if (body.isResend || body.force) {
+          sendZohoEmail({
+            to: email,
+            subject: `XENTRO: Verification Code ${existingChallenge.code}`,
+            text: `Your Xentro verification code is:\n\n${existingChallenge.code}\n\nThis verification code will expire in 10 minutes.\n\nWarm regards,\nXENTRO Platform Security`,
+          }).catch((err) => console.warn('[OTP Resend] Background dispatch warning:', err));
+          console.log(`[OTP Resend] Re-dispatched existing code ${existingChallenge.code} to ${email}`);
+        }
+
         const waitSeconds = Math.ceil((new Date(existingChallenge.resendAvailableAt).getTime() - now) / 1000);
         return NextResponse.json(
           {
@@ -136,6 +145,8 @@ export async function POST(req: NextRequest) {
     }
 
     const emailText = `Your Xentro 6-digit ${purposeLabel} code is:\n\n${code}\n\nThis verification code will expire in 10 minutes.\nIf you did not request this verification, please ignore this email.\n\nWarm regards,\nXENTRO Platform Security`;
+
+    console.log(`[OTP Dispatch] To: ${email} | Code: ${code} | Purpose: ${purpose} | ChallengeId: ${challengeId}`);
 
     // Dispatch email reliably without blocking the API response
     // We race with a 1500ms timeout so responsive users/mobile devices are never stuck on "Sending Code..."

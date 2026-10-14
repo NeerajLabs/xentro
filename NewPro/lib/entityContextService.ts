@@ -250,7 +250,11 @@ class EntityContextService {
     }
 
     if (typeof window !== 'undefined') {
-      const personalToken = localStorage.getItem('xentro_access_token');
+      const personalToken =
+        localStorage.getItem('xentro_access_token') ||
+        sessionStorage.getItem('xentro_access_token') ||
+        sessionStorage.getItem('xentro_tab_entity_token') ||
+        localStorage.getItem('xentro_token');
       if (personalToken) {
         headers['Authorization'] = `Bearer ${personalToken}`;
         headers['X-Xentro-Context'] = 'PERSONAL';
@@ -344,7 +348,8 @@ class EntityContextService {
 
     try {
       const res = await fetch(`/api/auth/workspaces?userId=${encodeURIComponent(userId)}`, {
-        credentials: 'omit',
+        headers: this.getAuthHeaders({ 'X-User-Id': userId }),
+        credentials: 'include',
       });
       if (!res.ok) {
         return {
@@ -431,10 +436,14 @@ class EntityContextService {
     try {
       const res = await fetch('/api/auth/workspaces', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: this.getAuthHeaders({
+          'Content-Type': 'application/json',
+          'X-User-Id': userId,
+        }),
+        credentials: 'include',
         body: JSON.stringify({
           userId,
-          targetContext: targetEntityId ? 'ENTITY' : 'PERSONAL',
+          targetContext: targetEntityId ? 'ENTITY_WORKSPACE' : 'PERSONAL',
           targetEntityId,
         }),
       });
@@ -444,7 +453,10 @@ class EntityContextService {
         throw new Error(body?.message || 'Persona switch rejected by authorization policy.');
       }
 
-      if (targetEntityId) {
+      if (targetEntityId && body.data) {
+        if (body.data.token && body.data.sessionId) {
+          this.setWorkspaceContext(body.data.token, body.data.sessionId, body.data.entity);
+        }
         this.setActiveEntityId(targetEntityId);
         const entity = this.getActiveEntity();
         return {
@@ -454,6 +466,7 @@ class EntityContextService {
           entity,
         };
       } else {
+        this.clearTabContext();
         this.setActiveEntityId(null);
         const destinationTab = body.data?.destinationTab || 'feed';
         return {

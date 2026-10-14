@@ -246,7 +246,7 @@ def verify_email_otp(email: str, entered_otp: str) -> dict:
         from integrations.mongodb import get_collection
         import datetime
         otp_col = get_collection("otp_codes")
-        record = otp_col.find_one({"email": email.lower()})
+        record = otp_col.find_one({"email": email.lower()}, sort=[("createdAt", -1)])
 
         if record:
             attempts = int(record.get("attempts", 0))

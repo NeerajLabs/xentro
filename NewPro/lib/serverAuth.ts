@@ -103,7 +103,16 @@ export function resolveAuthoritativeHead(entity: any): { headUserId: string | nu
     };
   }
 
-  const headUserId = currentOwner || primaryOwner || null;
+  const headUserId =
+    currentOwner ||
+    primaryOwner ||
+    (entity.headUserId || '').trim() ||
+    (entity.founderId || '').trim() ||
+    (entity.managingPartnerId || '').trim() ||
+    (entity.ownerId || '').trim() ||
+    (entity.userId || '').trim() ||
+    null;
+
   if (!headUserId) {
     return {
       headUserId: null,

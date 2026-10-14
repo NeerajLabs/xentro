@@ -1,9 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
 import { ROLE_PERMISSION_PRESETS } from '@/lib/investorOrganizationService';
+import {
+  extractAuthToken,
+  verifyJwtToken,
+  requireAuthenticatedUser,
+} from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+async function resolveCallerIdentity(req: NextRequest): Promise<{ userId: string | null; error?: NextResponse }> {
+  const token = extractAuthToken(req);
+  if (token) {
+    const payload = verifyJwtToken(token);
+    if (payload?.sub) {
+      return { userId: payload.sub };
+    }
+  }
+
+  const authRes = await requireAuthenticatedUser(req);
+  if ('error' in authRes) {
+    return { userId: null, error: authRes.error };
+  }
+  return { userId: authRes.user.id };
+}
 
 async function checkPortfolioPermission(
   db: any,
@@ -11,7 +32,7 @@ async function checkPortfolioPermission(
   userId: string,
   requiredPermission: string = 'viewPortfolio'
 ): Promise<{ allowed: boolean; role: string; membership: any }> {
-  if (!userId) return { allowed: true, role: 'Owner/Managing Partner', membership: null };
+  if (!userId) return { allowed: false, role: '', membership: null };
 
   const membershipsCol = db.collection('memberships');
   const membership = await membershipsCol.findOne({
@@ -20,15 +41,17 @@ async function checkPortfolioPermission(
     status: { $in: ['ACTIVE', 'APPROVED', 'Active'] },
   });
 
+  const entitiesCol = db.collection('entities');
+  const entity = await entitiesCol.findOne({
+    id: entityId,
+    $or: [{ createdByUserId: userId }, { currentOwnerUserId: userId }, { primaryOwnerId: userId }],
+  });
+
+  if (entity) {
+    return { allowed: true, role: 'Owner/Managing Partner', membership: { role: 'Owner/Managing Partner' } };
+  }
+
   if (!membership) {
-    const entitiesCol = db.collection('entities');
-    const entity = await entitiesCol.findOne({
-      id: entityId,
-      $or: [{ createdByUserId: userId }, { currentOwnerUserId: userId }, { primaryOwnerId: userId }],
-    });
-    if (entity) {
-      return { allowed: true, role: 'Owner/Managing Partner', membership: { role: 'Owner/Managing Partner' } };
-    }
     return { allowed: false, role: '', membership: null };
   }
 
@@ -81,14 +104,16 @@ export async function GET(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    const db = await getDatabase();
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
 
-    if (callerUserId) {
-      const auth = await checkPortfolioPermission(db, rawEntityId, callerUserId, 'viewPortfolio');
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: 'Forbidden: viewPortfolio permission required.' }, { status: 403 });
-      }
+    const db = await getDatabase();
+    const auth = await checkPortfolioPermission(db, rawEntityId, callerUserId, 'viewPortfolio');
+    if (!auth.allowed) {
+      return NextResponse.json({ success: false, message: 'Forbidden: viewPortfolio permission required.' }, { status: 403 });
     }
 
     const portCol = db.collection('investor_portfolio');
@@ -108,7 +133,6 @@ export async function GET(
       const checkNum = parseFinancialNumber(h.checkInvested || h.checkSize);
       totalInvestedRaw += checkNum;
 
-      // Calculate fair value from currentMultiple or currentValuation
       if (h.currentMultiple) {
         const mult = parseFloat(String(h.currentMultiple).replace(/[^0-9.]/g, '')) || 1.0;
         totalFairValueRaw += checkNum * mult;
@@ -132,6 +156,7 @@ export async function GET(
       data: cleanHoldings,
       metrics,
       count: cleanHoldings.length,
+      source: 'mongodb-atlas',
     });
   } catch (error: any) {
     console.error('Error fetching portfolio:', error);
@@ -152,14 +177,16 @@ export async function POST(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    const db = await getDatabase();
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
 
-    if (callerUserId) {
-      const auth = await checkPortfolioPermission(db, rawEntityId, callerUserId, 'editPortfolio');
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: 'Forbidden: editPortfolio permission required.' }, { status: 403 });
-      }
+    const db = await getDatabase();
+    const auth = await checkPortfolioPermission(db, rawEntityId, callerUserId, 'editPortfolio');
+    if (!auth.allowed) {
+      return NextResponse.json({ success: false, message: 'Forbidden: editPortfolio permission required.' }, { status: 403 });
     }
 
     const body = await req.json();
@@ -206,14 +233,16 @@ export async function PUT(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    const db = await getDatabase();
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
 
-    if (callerUserId) {
-      const auth = await checkPortfolioPermission(db, rawEntityId, callerUserId, 'editPortfolio');
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: 'Forbidden: editPortfolio permission required.' }, { status: 403 });
-      }
+    const db = await getDatabase();
+    const auth = await checkPortfolioPermission(db, rawEntityId, callerUserId, 'editPortfolio');
+    if (!auth.allowed) {
+      return NextResponse.json({ success: false, message: 'Forbidden: editPortfolio permission required.' }, { status: 403 });
     }
 
     const body = await req.json();

@@ -2,17 +2,39 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
 import { ROLE_PERMISSION_PRESETS } from '@/lib/investorOrganizationService';
 import { InvestorDeal } from '@/types/investor';
+import {
+  extractAuthToken,
+  verifyJwtToken,
+  requireAuthenticatedUser,
+} from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+async function resolveCallerIdentity(req: NextRequest): Promise<{ userId: string | null; error?: NextResponse }> {
+  const token = extractAuthToken(req);
+  if (token) {
+    const payload = verifyJwtToken(token);
+    if (payload?.sub) {
+      return { userId: payload.sub };
+    }
+  }
+
+  const authRes = await requireAuthenticatedUser(req);
+  if ('error' in authRes) {
+    return { userId: null, error: authRes.error };
+  }
+  return { userId: authRes.user.id };
+}
 
 async function checkDealPermission(
   db: any,
   entityId: string,
   userId: string,
-  requiredPermission: string = 'viewDealFlow'
-): Promise<{ allowed: boolean; role: string; membership: any }> {
-  if (!userId) return { allowed: true, role: 'Owner/Managing Partner', membership: null }; // default allow in open session, or strict if provided
+  requiredPermission: string = 'viewDealFlow',
+  dealDoc?: any
+): Promise<{ allowed: boolean; role: string; membership: any; isCommitteeMember: boolean }> {
+  if (!userId) return { allowed: false, role: '', membership: null, isCommitteeMember: false };
 
   const membershipsCol = db.collection('memberships');
   const membership = await membershipsCol.findOne({
@@ -21,25 +43,47 @@ async function checkDealPermission(
     status: { $in: ['ACTIVE', 'APPROVED', 'Active'] },
   });
 
+  const entitiesCol = db.collection('entities');
+  const entity = await entitiesCol.findOne({
+    id: entityId,
+    $or: [{ createdByUserId: userId }, { currentOwnerUserId: userId }, { primaryOwnerId: userId }],
+  });
+
+  const isHead = Boolean(entity);
+  if (isHead) {
+    return { allowed: true, role: 'Owner/Managing Partner', membership: { role: 'Owner/Managing Partner' }, isCommitteeMember: true };
+  }
+
   if (!membership) {
-    const entitiesCol = db.collection('entities');
-    const entity = await entitiesCol.findOne({
-      id: entityId,
-      $or: [{ createdByUserId: userId }, { currentOwnerUserId: userId }, { primaryOwnerId: userId }],
-    });
-    if (entity) {
-      return { allowed: true, role: 'Owner/Managing Partner', membership: { role: 'Owner/Managing Partner' } };
+    return { allowed: false, role: '', membership: null, isCommitteeMember: false };
+  }
+
+  // Check if caller is specifically appointed to the selection/decision committee for this deal
+  let isCommitteeMember = false;
+  if (dealDoc) {
+    const committee = Array.isArray(dealDoc.committeeMembers)
+      ? dealDoc.committeeMembers
+      : Array.isArray(dealDoc.decisionCommittee)
+      ? dealDoc.decisionCommittee
+      : [];
+    if (committee.includes(userId) || (membership.id && committee.includes(membership.id))) {
+      isCommitteeMember = true;
     }
-    return { allowed: false, role: '', membership: null };
   }
 
   const role = membership.role || 'Viewer';
   const presets = (ROLE_PERMISSION_PRESETS as any)[role];
-  if (presets && presets[requiredPermission]) {
-    return { allowed: true, role, membership };
+
+  // Committee members have decision authorization on their appointed resource
+  if (isCommitteeMember && requiredPermission === 'createInvestmentDecision') {
+    return { allowed: true, role, membership, isCommitteeMember: true };
   }
 
-  return { allowed: false, role, membership };
+  if (presets && presets[requiredPermission]) {
+    return { allowed: true, role, membership, isCommitteeMember };
+  }
+
+  return { allowed: false, role, membership, isCommitteeMember };
 }
 
 /**
@@ -55,26 +99,30 @@ export async function GET(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
+
     const db = await getDatabase();
     const dealsCol = db.collection('investor_deals');
 
+    const auth = await checkDealPermission(db, rawEntityId, callerUserId, 'viewDealFlow');
+    if (!auth.allowed) {
+      return NextResponse.json({ success: false, message: 'Forbidden: viewDealFlow permission required.' }, { status: 403 });
+    }
+
     let filter: any = { organizationId: rawEntityId };
 
-    if (callerUserId) {
-      const auth = await checkDealPermission(db, rawEntityId, callerUserId, 'viewDealFlow');
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: 'Forbidden: viewDealFlow permission required.' }, { status: 403 });
-      }
-
-      // Check assigned scoping mode
-      if (auth.membership?.dealAccessMode === 'assigned') {
-        filter.$or = [
-          { assignedMemberId: callerUserId },
-          { assignedMemberId: auth.membership.id },
-          { createdByUserId: callerUserId },
-        ];
-      }
+    // Check assigned scoping mode
+    if (auth.membership?.dealAccessMode === 'assigned') {
+      filter.$or = [
+        { assignedMemberId: callerUserId },
+        { assignedMemberId: auth.membership.id },
+        { createdByUserId: callerUserId },
+        { committeeMembers: callerUserId },
+      ];
     }
 
     const deals = await dealsCol.find(filter).sort({ updatedAt: -1 }).toArray();
@@ -88,6 +136,7 @@ export async function GET(
       success: true,
       data: cleanDeals,
       count: cleanDeals.length,
+      source: 'mongodb-atlas',
     });
   } catch (error: any) {
     console.error('Error fetching deals:', error);
@@ -108,14 +157,16 @@ export async function POST(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    const db = await getDatabase();
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
 
-    if (callerUserId) {
-      const auth = await checkDealPermission(db, rawEntityId, callerUserId, 'editDealFlow');
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: 'Forbidden: editDealFlow permission required.' }, { status: 403 });
-      }
+    const db = await getDatabase();
+    const auth = await checkDealPermission(db, rawEntityId, callerUserId, 'editDealFlow');
+    if (!auth.allowed) {
+      return NextResponse.json({ success: false, message: 'Forbidden: editDealFlow permission required.' }, { status: 403 });
     }
 
     const body = await req.json();
@@ -132,10 +183,11 @@ export async function POST(
       dealStage: dealData.dealStage || 'new',
       notes: dealData.notes || [],
       tags: dealData.tags || ['Inbound'],
+      committeeMembers: Array.isArray((dealData as any).committeeMembers) ? (dealData as any).committeeMembers : [],
       createdAt: nowIso,
       updatedAt: nowIso,
       lastActivityDate: 'Just now',
-      createdByUserId: callerUserId || undefined,
+      createdByUserId: callerUserId,
     };
     delete (newDeal as any)._id;
 
@@ -165,10 +217,15 @@ export async function PUT(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
+
     const db = await getDatabase();
     const body = await req.json();
-    const { dealId, updates, note, stage, termSheet, assignedMemberId, assignedMemberName } = body;
+    const { dealId, updates, note, stage, termSheet, assignedMemberId, assignedMemberName, committeeMembers } = body;
 
     const targetDealId = dealId || updates?.id;
     if (!targetDealId) {
@@ -181,15 +238,17 @@ export async function PUT(
       return NextResponse.json({ success: false, message: 'Deal not found in organization pipeline' }, { status: 404 });
     }
 
-    // RBAC: If creating/issuing term sheet or moving to invested/passed, requires createInvestmentDecision
+    // RBAC & Committee Gate:
+    // If issuing term sheet or moving to invested/passed, requires createInvestmentDecision OR committee appointment on this deal
     const isDecision = stage === 'invested' || stage === 'passed' || termSheet?.status === 'offered';
     const reqPerm = isDecision ? 'createInvestmentDecision' : 'editDealFlow';
 
-    if (callerUserId) {
-      const auth = await checkDealPermission(db, rawEntityId, callerUserId, reqPerm);
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: `Forbidden: ${reqPerm} permission required.` }, { status: 403 });
-      }
+    const auth = await checkDealPermission(db, rawEntityId, callerUserId, reqPerm, existing);
+    if (!auth.allowed) {
+      return NextResponse.json({
+        success: false,
+        message: `Forbidden: ${reqPerm} permission or Selection Committee appointment required for this deal decision.`,
+      }, { status: 403 });
     }
 
     const nowIso = new Date().toISOString();
@@ -202,6 +261,9 @@ export async function PUT(
     if (termSheet) updateFields.termSheet = termSheet;
     if (assignedMemberId !== undefined) updateFields.assignedMemberId = assignedMemberId;
     if (assignedMemberName !== undefined) updateFields.assignedMemberName = assignedMemberName;
+    if (committeeMembers && Array.isArray(committeeMembers)) {
+      updateFields.committeeMembers = committeeMembers;
+    }
 
     if (updates && typeof updates === 'object') {
       Object.assign(updateFields, updates);

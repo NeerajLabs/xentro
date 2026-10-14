@@ -1,16 +1,47 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
 import { ROLE_PERMISSION_PRESETS } from '@/lib/investorOrganizationService';
+import {
+  extractAuthToken,
+  verifyJwtToken,
+  requireAuthenticatedUser,
+} from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+async function resolveCallerIdentity(req: NextRequest): Promise<{ userId: string | null; error?: NextResponse }> {
+  const token = extractAuthToken(req);
+  if (token) {
+    const payload = verifyJwtToken(token);
+    if (payload?.sub) {
+      return { userId: payload.sub };
+    }
+  }
+
+  const authRes = await requireAuthenticatedUser(req);
+  if ('error' in authRes) {
+    return { userId: null, error: authRes.error };
+  }
+  return { userId: authRes.user.id };
+}
 
 async function checkBillingPermission(
   db: any,
   entityId: string,
   userId: string
 ): Promise<{ allowed: boolean; role: string }> {
-  if (!userId) return { allowed: true, role: 'Owner/Managing Partner' };
+  if (!userId) return { allowed: false, role: '' };
+
+  const entitiesCol = db.collection('entities');
+  const entity = await entitiesCol.findOne({
+    id: entityId,
+    $or: [{ createdByUserId: userId }, { currentOwnerUserId: userId }, { primaryOwnerId: userId }],
+  });
+
+  if (entity) {
+    return { allowed: true, role: 'Owner/Managing Partner' };
+  }
 
   const membershipsCol = db.collection('memberships');
   const membership = await membershipsCol.findOne({
@@ -20,14 +51,6 @@ async function checkBillingPermission(
   });
 
   if (!membership) {
-    const entitiesCol = db.collection('entities');
-    const entity = await entitiesCol.findOne({
-      id: entityId,
-      $or: [{ createdByUserId: userId }, { currentOwnerUserId: userId }, { primaryOwnerId: userId }],
-    });
-    if (entity) {
-      return { allowed: true, role: 'Owner/Managing Partner' };
-    }
     return { allowed: false, role: '' };
   }
 
@@ -53,14 +76,16 @@ export async function GET(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    const db = await getDatabase();
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
 
-    if (callerUserId) {
-      const auth = await checkBillingPermission(db, rawEntityId, callerUserId);
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: 'Forbidden: manageBilling permission required.' }, { status: 403 });
-      }
+    const db = await getDatabase();
+    const auth = await checkBillingPermission(db, rawEntityId, callerUserId);
+    if (!auth.allowed) {
+      return NextResponse.json({ success: false, message: 'Forbidden: manageBilling permission required.' }, { status: 403 });
     }
 
     const invOrgCol = db.collection('investment_organizations');
@@ -108,6 +133,7 @@ export async function GET(
         billingAccount,
         invoices,
       },
+      source: 'mongodb-atlas',
     });
   } catch (error: any) {
     console.error('Error fetching billing data:', error);
@@ -128,14 +154,16 @@ export async function PUT(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    const db = await getDatabase();
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
 
-    if (callerUserId) {
-      const auth = await checkBillingPermission(db, rawEntityId, callerUserId);
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: 'Forbidden: manageBilling permission required.' }, { status: 403 });
-      }
+    const db = await getDatabase();
+    const auth = await checkBillingPermission(db, rawEntityId, callerUserId);
+    if (!auth.allowed) {
+      return NextResponse.json({ success: false, message: 'Forbidden: manageBilling permission required.' }, { status: 403 });
     }
 
     const body = await req.json();

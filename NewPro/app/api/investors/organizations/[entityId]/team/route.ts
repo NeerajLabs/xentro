@@ -1,16 +1,52 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
 import { ROLE_PERMISSION_PRESETS } from '@/lib/investorOrganizationService';
+import {
+  extractAuthToken,
+  verifyJwtToken,
+  requireAuthenticatedUser,
+} from '@/lib/serverAuth';
+import {
+  PROHIBITED_INVITATION_ROLES,
+  normalizeCanonicalRole,
+  requiresHeadApprovalForRoleMutation,
+} from '@/lib/operationalRoles';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
+
+async function resolveCallerIdentity(req: NextRequest): Promise<{ userId: string | null; error?: NextResponse }> {
+  const token = extractAuthToken(req);
+  if (token) {
+    const payload = verifyJwtToken(token);
+    if (payload?.sub) {
+      return { userId: payload.sub };
+    }
+  }
+
+  const authRes = await requireAuthenticatedUser(req);
+  if ('error' in authRes) {
+    return { userId: null, error: authRes.error };
+  }
+  return { userId: authRes.user.id };
+}
 
 async function checkTeamPermission(
   db: any,
   entityId: string,
   userId: string
-): Promise<{ allowed: boolean; role: string }> {
-  if (!userId) return { allowed: true, role: 'Owner/Managing Partner' };
+): Promise<{ allowed: boolean; role: string; isHead: boolean }> {
+  if (!userId) return { allowed: false, role: '', isHead: false };
+
+  const entitiesCol = db.collection('entities');
+  const entity = await entitiesCol.findOne({
+    id: entityId,
+    $or: [{ createdByUserId: userId }, { currentOwnerUserId: userId }, { primaryOwnerId: userId }],
+  });
+
+  if (entity) {
+    return { allowed: true, role: 'Owner/Managing Partner', isHead: true };
+  }
 
   const membershipsCol = db.collection('memberships');
   const membership = await membershipsCol.findOne({
@@ -20,24 +56,16 @@ async function checkTeamPermission(
   });
 
   if (!membership) {
-    const entitiesCol = db.collection('entities');
-    const entity = await entitiesCol.findOne({
-      id: entityId,
-      $or: [{ createdByUserId: userId }, { currentOwnerUserId: userId }, { primaryOwnerId: userId }],
-    });
-    if (entity) {
-      return { allowed: true, role: 'Owner/Managing Partner' };
-    }
-    return { allowed: false, role: '' };
+    return { allowed: false, role: '', isHead: false };
   }
 
   const role = membership.role || 'Viewer';
   const presets = (ROLE_PERMISSION_PRESETS as any)[role];
   if (presets && presets.manageTeam) {
-    return { allowed: true, role };
+    return { allowed: true, role, isHead: false };
   }
 
-  return { allowed: false, role };
+  return { allowed: false, role, isHead: false };
 }
 
 /**
@@ -53,6 +81,11 @@ export async function GET(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+
     const db = await getDatabase();
     const membershipsCol = db.collection('memberships');
     const usersCol = db.collection('users');
@@ -64,7 +97,7 @@ export async function GET(
       status: { $in: ['ACTIVE', 'APPROVED', 'Active', 'PENDING_ADMIN_VERIFICATION'] },
     }).toArray();
 
-    // Enrich with user profiles if possible
+    // Enrich with user profiles
     const enrichedMembers = await Promise.all(
       memberships.map(async (m) => {
         let user = null;
@@ -118,6 +151,7 @@ export async function GET(
         invitations: cleanInvitations,
         count: enrichedMembers.length,
       },
+      source: 'mongodb-atlas',
     });
   } catch (error: any) {
     console.error('Error fetching organization team:', error);
@@ -127,7 +161,7 @@ export async function GET(
 
 /**
  * POST /api/investors/organizations/[entityId]/team
- * Invites a new team member with 9-role definition and scoping modes.
+ * Invites a new team member. Enforces Head approval for Admin roles.
  */
 export async function POST(
   req: NextRequest,
@@ -139,14 +173,16 @@ export async function POST(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    const db = await getDatabase();
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
 
-    if (callerUserId) {
-      const auth = await checkTeamPermission(db, rawEntityId, callerUserId);
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: 'Forbidden: manageTeam permission required.' }, { status: 403 });
-      }
+    const db = await getDatabase();
+    const auth = await checkTeamPermission(db, rawEntityId, callerUserId);
+    if (!auth.allowed) {
+      return NextResponse.json({ success: false, message: 'Forbidden: manageTeam permission required.' }, { status: 403 });
     }
 
     const body = await req.json();
@@ -154,6 +190,26 @@ export async function POST(
 
     if (!email || !email.trim()) {
       return NextResponse.json({ success: false, message: 'Valid email address is required.' }, { status: 400 });
+    }
+
+    const normalizedRole = normalizeCanonicalRole(role || 'Investment Team');
+    if (PROHIBITED_INVITATION_ROLES.has(normalizedRole.toUpperCase())) {
+      return NextResponse.json(
+        { success: false, message: 'Governing Head roles cannot be assigned through team invitations.' },
+        { status: 403 }
+      );
+    }
+
+    // Enforce Head approval for Admin role invitations
+    if (requiresHeadApprovalForRoleMutation(normalizedRole) && !auth.isHead) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Head approval required. Only the Managing Partner/Head may appoint or invite Administrator roles.',
+          code: 'HEAD_APPROVAL_REQUIRED_FOR_ADMIN',
+        },
+        { status: 403 }
+      );
     }
 
     const invCol = db.collection('invitations');
@@ -167,14 +223,14 @@ export async function POST(
       inviteeEmail: email.trim().toLowerCase(),
       email: email.trim().toLowerCase(),
       name: name?.trim() || undefined,
-      role: role || 'Associate',
-      title: title?.trim() || role || 'Associate',
+      role: normalizedRole,
+      title: title?.trim() || normalizedRole,
       dealAccessMode: dealAccessMode || 'all',
       portfolioAccessMode: portfolioAccessMode || 'all',
       status: 'INVITED',
       invitedAt: nowIso,
-      invitedBy: invitedBy || 'Managing Partner',
-      inviterId: callerUserId || undefined,
+      invitedBy: invitedBy || (auth.isHead ? 'Managing Partner' : 'Admin'),
+      inviterId: callerUserId,
     };
 
     await invCol.insertOne(inviteDoc);
@@ -193,7 +249,7 @@ export async function POST(
 
 /**
  * PUT /api/investors/organizations/[entityId]/team
- * Updates member role, visibility, or resource access mode.
+ * Updates member role or permissions. Enforces Head approval for Admin changes.
  */
 export async function PUT(
   req: NextRequest,
@@ -205,14 +261,16 @@ export async function PUT(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    const db = await getDatabase();
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
 
-    if (callerUserId) {
-      const auth = await checkTeamPermission(db, rawEntityId, callerUserId);
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: 'Forbidden: manageTeam permission required.' }, { status: 403 });
-      }
+    const db = await getDatabase();
+    const auth = await checkTeamPermission(db, rawEntityId, callerUserId);
+    if (!auth.allowed) {
+      return NextResponse.json({ success: false, message: 'Forbidden: manageTeam permission required.' }, { status: 403 });
     }
 
     const body = await req.json();
@@ -223,9 +281,29 @@ export async function PUT(
     }
 
     const membershipsCol = db.collection('memberships');
-    const updateFields: any = { updatedAt: new Date().toISOString() };
+    const existing = await membershipsCol.findOne({
+      entityId: rawEntityId,
+      $or: [{ id: memberId }, { userId: memberId }],
+    });
 
-    if (role) updateFields.role = role;
+    if (!existing) {
+      return NextResponse.json({ success: false, message: 'Member not found' }, { status: 404 });
+    }
+
+    const currentRole = existing.role || '';
+    if (role && requiresHeadApprovalForRoleMutation(currentRole, role) && !auth.isHead) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Head approval required. Only the Managing Partner/Head may appoint or modify Administrator roles.',
+          code: 'HEAD_APPROVAL_REQUIRED_FOR_ADMIN',
+        },
+        { status: 403 }
+      );
+    }
+
+    const updateFields: any = { updatedAt: new Date().toISOString() };
+    if (role) updateFields.role = normalizeCanonicalRole(role);
     if (isPublicTeam !== undefined) updateFields.isPublicTeam = isPublicTeam;
     if (canAccessWorkspace !== undefined) updateFields.canAccessWorkspace = canAccessWorkspace;
     if (dealAccessMode !== undefined) updateFields.dealAccessMode = dealAccessMode;
@@ -260,14 +338,16 @@ export async function DELETE(
       return NextResponse.json({ success: false, message: 'Entity ID is required' }, { status: 400 });
     }
 
-    const callerUserId = req.headers.get('x-user-id') || req.nextUrl.searchParams.get('userId') || '';
-    const db = await getDatabase();
+    const callerRes = await resolveCallerIdentity(req);
+    if (callerRes.error) {
+      return callerRes.error;
+    }
+    const callerUserId = callerRes.userId!;
 
-    if (callerUserId) {
-      const auth = await checkTeamPermission(db, rawEntityId, callerUserId);
-      if (!auth.allowed) {
-        return NextResponse.json({ success: false, message: 'Forbidden: manageTeam permission required.' }, { status: 403 });
-      }
+    const db = await getDatabase();
+    const auth = await checkTeamPermission(db, rawEntityId, callerUserId);
+    if (!auth.allowed) {
+      return NextResponse.json({ success: false, message: 'Forbidden: manageTeam permission required.' }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);
@@ -282,13 +362,33 @@ export async function DELETE(
 
     if (memberId) {
       const membershipsCol = db.collection('memberships');
-      // Protect owner from accidental deletion
-      const existing = await membershipsCol.findOne({ entityId: rawEntityId, $or: [{ id: memberId }, { userId: memberId }] });
-      if (existing?.role === 'Owner/Managing Partner' || existing?.isOwner) {
-        return NextResponse.json({ success: false, message: 'Cannot remove the Owner/Managing Partner.' }, { status: 400 });
+      const sessionsCol = db.collection('entity_sessions');
+
+      const existing = await membershipsCol.findOne({
+        entityId: rawEntityId,
+        $or: [{ id: memberId }, { userId: memberId }],
+      });
+
+      if (!existing) {
+        return NextResponse.json({ success: false, message: 'Member not found' }, { status: 404 });
+      }
+
+      if (existing.role === 'Owner/Managing Partner' || existing.isOwner) {
+        return NextResponse.json({ success: false, message: 'Cannot remove the Managing Partner/Head.' }, { status: 400 });
+      }
+
+      if (existing.role === 'Admin' && !auth.isHead) {
+        return NextResponse.json({ success: false, message: 'Head approval required to remove an Administrator.' }, { status: 403 });
       }
 
       await membershipsCol.deleteOne({ entityId: rawEntityId, $or: [{ id: memberId }, { userId: memberId }] });
+
+      // Terminate any active workspace sessions for this removed member
+      await sessionsCol.updateMany(
+        { entityId: rawEntityId, userId: existing.userId, status: 'ACTIVE' },
+        { $set: { status: 'REVOKED', revokedAt: new Date().toISOString(), revocationReason: 'MEMBER_REMOVED' } }
+      );
+
       return NextResponse.json({ success: true, message: 'Member removed from organization.' });
     }
 
