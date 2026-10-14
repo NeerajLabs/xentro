@@ -103,7 +103,7 @@ export const OpportunityApplyModal: React.FC<OpportunityApplyModalProps> = ({
     );
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!applicantName.trim()) {
@@ -131,7 +131,7 @@ export const OpportunityApplyModal: React.FC<OpportunityApplyModalProps> = ({
         allDocs.push(`Link: ${customDocLink.trim()}`);
       }
 
-      const created = opportunityService.applyToOpportunity(opportunity.id, {
+      const created = await opportunityService.applyToOpportunity(opportunity.id, {
         applicantId: profile.id,
         applicantName,
         applicantAvatar: profile.avatar,
@@ -147,9 +147,9 @@ export const OpportunityApplyModal: React.FC<OpportunityApplyModalProps> = ({
       showToast(`Application submitted successfully for ${opportunity.title}!`, 'success');
       if (onSuccess) onSuccess(created);
       onClose();
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to submit application', err);
-      showToast('Could not submit application. Please try again.', 'error');
+      showToast(err?.message || 'Could not submit application. Please try again.', 'error');
     } finally {
       setIsSubmitting(false);
     }

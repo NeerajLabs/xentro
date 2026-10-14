@@ -12,6 +12,7 @@ import {
 } from '@/lib/serverMessages';
 import { Post, PostComment } from '@/types';
 import { getBackendBaseUrl } from '@/lib/backendUrl';
+import { requireServerAuth, verifyCallerEntityAccess } from '@/lib/serverAuth';
 
 const BACKEND = getBackendBaseUrl();
 
@@ -278,10 +279,22 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const caller = await requireServerAuth(req);
+    if (!caller.authenticated || !caller.user) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    }
+
+    const callerUserId = caller.user.id || caller.user.userId || '';
+    const callerEmail = caller.user.email || '';
+    const callerNormSet = new Set<string>([
+      callerUserId.toLowerCase(),
+      callerEmail.toLowerCase(),
+    ].filter(Boolean));
+
     const body = await req.json();
     const action = body?.action;
     const token = req.cookies.get('xentro_session')?.value || req.headers.get('authorization')?.replace('Bearer ', '');
-    const userId = req.headers.get('x-user-id') || body?.userId || '';
+    const userId = callerUserId;
 
     if (action === 'create') {
       const post = body?.post as Post;
@@ -289,8 +302,45 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ success: false, error: 'Post content or media required' }, { status: 400 });
       }
 
+      // Check entities owned/membered by caller
+      try {
+        const client = await getMongoClient();
+        const db = client.db('xentro_db');
+        const ownedEntities = await db.collection('entities')
+          .find({
+            $or: [
+              { primaryOwnerId: callerUserId },
+              { createdByUserId: callerUserId },
+              { 'members.userId': callerUserId },
+            ],
+            status: { $nin: ['DELETED', 'ORPHANED_DELETED'] },
+          })
+          .project({ id: 1, entityId: 1 })
+          .toArray();
+
+        ownedEntities.forEach((ent: any) => {
+          if (ent.id) callerNormSet.add(ent.id.toLowerCase());
+          if (ent.entityId) callerNormSet.add(ent.entityId.toLowerCase());
+        });
+      } catch (e) {
+        console.warn('[Feed POST] Error resolving entities:', e);
+      }
+
+      let authorId = post.author?.id || callerUserId;
+      if (!callerNormSet.has(authorId.toLowerCase())) {
+        authorId = callerUserId;
+      }
+
+      post.author = {
+        ...post.author,
+        id: authorId,
+        name: post.author?.name || caller.user.fullName || caller.user.name || 'Member',
+        role: post.author?.role || caller.user.roleTitle || caller.user.role || 'Member',
+        avatar: post.author?.avatar || '/xentro-logo.png',
+        verified: Boolean(caller.user.is_verified || post.author?.verified),
+      };
+
       const updated = addServerPost(post);
-      const authorId = post.author?.id || userId || 'anon';
       const nowIso = new Date().toISOString();
 
       // 1. Direct MongoDB Atlas Persistence for resilient storage
@@ -484,11 +534,27 @@ export async function POST(req: NextRequest) {
       try {
         const client = await getMongoClient();
         const db = client.db('xentro_db');
-        await db.collection('feed_posts').updateOne(
-          { id: postId },
-          { $set: { is_deleted: true, deleted: true, status: 'DELETED' } }
-        );
-      } catch (_) {}
+        const feedCol = db.collection('feed_posts');
+
+        const existingPost = await feedCol.findOne({ id: postId });
+        if (existingPost) {
+          const postAuthorId = existingPost.authorId || existingPost.author?.id || '';
+          const isOwner = callerNormSet.has(postAuthorId.toLowerCase());
+          if (!isOwner && !caller.user.is_staff) {
+            return NextResponse.json(
+              { success: false, error: 'Forbidden: You can only delete your own posts' },
+              { status: 403 }
+            );
+          }
+
+          await feedCol.updateOne(
+            { id: postId },
+            { $set: { is_deleted: true, deleted: true, status: 'DELETED', updatedAt: new Date().toISOString() } }
+          );
+        }
+      } catch (err: any) {
+        console.warn('[Feed Delete] Warning:', err?.message);
+      }
 
       const updated = deleteServerPost(postId);
       return NextResponse.json({ success: true, posts: updated });

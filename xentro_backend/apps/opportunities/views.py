@@ -70,7 +70,10 @@ DEFAULT_OPPORTUNITIES = [
 ]
 
 class OpportunitiesListView(APIView):
-    permission_classes = [AllowAny]
+    def get_permissions(self):
+        if self.request.method == "POST":
+            return [IsXentroAdmin()]
+        return [AllowAny()]
 
     def get(self, request):
         opp_col = get_collection("opportunities")
@@ -101,27 +104,31 @@ class OpportunitiesListView(APIView):
         return api_success({"opportunities": clean, "total": len(clean)})
 
     def post(self, request):
-        data = request.data
-        title = data.get("title", "").strip()
-        category = data.get("category", "Grant")
-        description = data.get("description", "") or data.get("fullDescription", "")
-        deadline = data.get("deadline")
-        amount = data.get("amount", "")
-        publisher_org = data.get("publisherOrgName", "Xentro Admin")
+        user_id = getattr(request.user, "id", None)
+        if not user_id:
+            return api_error("Authentication required to publish opportunities.", status_code=401)
 
-        if not title:
-            return api_error("Title is required.")
+        data = request.data
+        title = str(data.get("title", "")).strip()
+        if not title or len(title) < 3:
+            return api_error("Title is required and must be at least 3 characters.", status_code=400)
+
+        category = str(data.get("category", "Grant")).strip()
+        description = str(data.get("description", "") or data.get("fullDescription", "")).strip()
+        deadline = str(data.get("deadline", "")).strip() or None
+        amount = str(data.get("amount", "")).strip()
+        publisher_org = str(data.get("publisherOrgName", "")).strip() or "Xentro Administration"
 
         opp_id = generate_xentro_id("opportunity")
         doc = {
             "id": opp_id,
-            "creatorId": getattr(request.user, "id", "admin"),
+            "creatorId": user_id,
             "title": title,
             "category": category,
             "subcategory": data.get("subcategory", "Open Opportunity"),
             "publisherOrgName": publisher_org,
-            "shortDescription": data.get("shortDescription") or description[:200],
-            "fullDescription": description,
+            "shortDescription": data.get("shortDescription") or (description[:200] if description else title),
+            "fullDescription": description or title,
             "deadline": deadline,
             "amount": amount,
             "equity": data.get("equity", "No Equity"),
@@ -129,7 +136,7 @@ class OpportunitiesListView(APIView):
             "location": data.get("location", "India"),
             "applyUrl": data.get("applyUrl", ""),
             "status": "OPEN",
-            "sourceType": data.get("sourceType", "admin"),
+            "sourceType": "admin",
             "applicationsCount": 0,
             "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
@@ -147,7 +154,7 @@ class ImportOpportunitiesCsvView(APIView):
       - Raw CSV text ('csvContent' or 'csvText')
       - JSON list of opportunity records ('opportunities')
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsXentroAdmin]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     def post(self, request):
@@ -292,6 +299,15 @@ class ApplyOpportunityView(APIView):
         proposal = request.data.get("proposal", "")
 
         app_col = get_collection("applications")
+
+        # Prevent duplicate submissions
+        existing_app = app_col.find_one({
+            "opportunityId": opp_id,
+            "applicantId": request.user.id
+        })
+        if existing_app:
+            return api_error("You have already submitted an application for this opportunity.", status_code=400)
+
         app_doc = {
             "id": generate_xentro_id("opportunity"),
             "opportunityId": opp_id,

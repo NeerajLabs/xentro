@@ -66,8 +66,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Validate 6-digit code
-    if (String(otpRecord.code).trim() !== code) {
+    // Validate 6-digit code against keyed HMAC hash or legacy code using constant-time comparison
+    const { verifyOtp } = await import('@/lib/serverAuth');
+    const isValid = verifyOtp(code, otpRecord.challengeId, otpRecord.codeHash, otpRecord.code);
+
+    if (!isValid) {
       await otpCol.updateOne({ _id: otpRecord._id }, { $inc: { attempts: 1 } });
       const remaining = 5 - ((otpRecord.attempts || 0) + 1);
       return NextResponse.json(
@@ -79,18 +82,35 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Mark OTP verified
+    // Mark OTP verified and atomically consumed in a single conditional operation to prevent TOCTOU replay
     const nowIso = now.toISOString();
-    await otpCol.updateOne(
-      { _id: otpRecord._id },
+    const consumeResult = await otpCol.updateOne(
+      {
+        _id: otpRecord._id,
+        consumed: { $ne: true },
+        attempts: { $lt: 5 },
+        expiresAt: { $gt: nowIso },
+      },
       {
         $set: {
           verified: true,
           verifiedAt: nowIso,
+          consumed: true,
+          consumedAt: nowIso,
           updatedAt: nowIso,
+        },
+        $unset: {
+          code: '', // Expunge legacy plaintext code upon consumption
         },
       }
     );
+
+    if (consumeResult.modifiedCount !== 1) {
+      return NextResponse.json(
+        { success: false, message: 'Verification code already consumed or expired. Please request a new code.' },
+        { status: 409 }
+      );
+    }
 
     // If personal signup, update user account state
     const usersCol = db.collection('users');

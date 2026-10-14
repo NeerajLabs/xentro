@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendBaseUrl } from '@/lib/backendUrl';
 import { getMongoClient } from '@/lib/mongodb';
+import { requireServerAuth } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -66,6 +67,45 @@ export async function GET(req: NextRequest) {
 
     const user = await usersCol.findOne({ $or: queryConditions });
     if (!user) {
+      // Check entities collection if query was an entityId
+      try {
+        const entitiesCol = db.collection('entities');
+        const entity = await entitiesCol.findOne({
+          $or: [
+            { id: userId },
+            { entityId: userId },
+            { slug: userId },
+          ],
+          status: { $nin: ['DELETED', 'ORPHANED_DELETED'] },
+        });
+        if (entity) {
+          return NextResponse.json({
+            success: true,
+            message: 'Entity profile retrieved successfully',
+            data: {
+              isEntity: true,
+              entity: {
+                id: entity.id || entity.entityId,
+                name: entity.name,
+                canonicalType: entity.canonicalType,
+                entityType: entity.entityType,
+                description: entity.description || entity.details?.description || '',
+                tagline: entity.tagline || entity.details?.tagline || '',
+                industry: entity.industry || entity.details?.industry || 'Technology',
+                stage: entity.stage || entity.details?.stage || 'Seed',
+                logo: entity.logo || '/xentro-logo.png',
+                coverImage: entity.coverImage || '',
+                location: entity.location || entity.details?.location || {},
+                verified: Boolean(entity.verificationStatus === 'VERIFIED'),
+                createdAt: entity.createdAt,
+              },
+            },
+            source: 'mongodb-atlas',
+          });
+        }
+      } catch (e) {
+        console.warn('[Profile GET] Entity fallback lookup error:', e);
+      }
       return NextResponse.json({ success: false, message: 'User profile not found in database' }, { status: 404 });
     }
 
@@ -122,15 +162,63 @@ export async function GET(req: NextRequest) {
       photoUrl: user.avatar || canonicalProfile?.avatarUrl || embeddedProfile.photoUrl || user.photoUrl,
     };
 
-    user.username = effectiveTag;
-    user.accountTag = effectiveTag;
-    user.personalProfile = personalProfile;
+    // Determine caller ownership for safe PII allowlisting
+    const caller = await requireServerAuth(req).catch(() => ({ authenticated: false, user: null }));
+    const callerUserId = caller.authenticated && caller.user ? (caller.user.id || caller.user.userId || '') : '';
+    const callerEmail = caller.authenticated && caller.user ? (caller.user.email || '') : '';
+    const isOwner = Boolean(
+      callerUserId &&
+      (user.id === callerUserId ||
+        String(user._id) === callerUserId ||
+        (user.email && callerEmail && user.email.toLowerCase() === callerEmail.toLowerCase()))
+    );
+    const isStaff = Boolean(caller.authenticated && caller.user?.is_staff);
+
+    // Explicit allowlisted public user projection: NEVER leaks raw MongoDB documents, password hashes, or internal secrets
+    const sanitizedUser: Record<string, any> = {
+      id: user.id || String(user._id),
+      fullName: user.fullName || user.name || personalProfile.fullName || 'Ecosystem Member',
+      name: user.fullName || user.name || personalProfile.fullName || 'Ecosystem Member',
+      username: effectiveTag,
+      accountTag: effectiveTag,
+      publicUsername: effectiveTag,
+      headline: personalProfile.headline,
+      bio: personalProfile.bio,
+      role: user.role || user.primaryRole || user.accountType || 'Explorer',
+      accountType: user.accountType || user.primaryRole || 'Explorer',
+      currentRole: personalProfile.currentRole,
+      currentOrganization: personalProfile.currentOrganization,
+      organization: personalProfile.currentOrganization || user.startupName || '',
+      location: personalProfile.location,
+      skills: personalProfile.skills,
+      industries: personalProfile.industries,
+      education: personalProfile.education,
+      professionalExperience: personalProfile.professionalExperience,
+      startupInterests: personalProfile.startupInterests,
+      linkedin: personalProfile.linkedin,
+      website: personalProfile.website,
+      otherLinks: personalProfile.otherLinks,
+      avatar: personalProfile.photoUrl || '/xentro-logo.png',
+      photoUrl: personalProfile.photoUrl || '/xentro-logo.png',
+      is_verified: Boolean(user.is_verified || user.verified || user.emailVerified),
+      verified: Boolean(user.is_verified || user.verified || user.emailVerified),
+      personalProfile,
+    };
+
+    // Private contact details and account status only included if caller is account owner or administrative staff
+    if (isOwner || isStaff) {
+      sanitizedUser.email = user.email || '';
+      sanitizedUser.phone = user.phone || user.phoneNumber || '';
+      sanitizedUser.accountStatus = user.accountStatus || 'ACTIVE';
+      sanitizedUser.activeRoles = user.activeRoles || ['Explorer'];
+      sanitizedUser.is_staff = Boolean(user.is_staff);
+    }
 
     return NextResponse.json({
       success: true,
       message: 'Profile retrieved successfully',
       data: {
-        user,
+        user: sanitizedUser,
         profile: personalProfile,
       },
       source: 'mongodb-atlas',
@@ -151,10 +239,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ success: false, message: 'Invalid JSON request payload' }, { status: 400 });
   }
 
+  const caller = await requireServerAuth(req);
+  if (!caller.authenticated || !caller.user) {
+    return NextResponse.json({ success: false, message: 'Authentication required' }, { status: 401 });
+  }
+
+  const callerUserId = caller.user.id || caller.user.userId || '';
+  const targetUserId = body.userId || body.id || callerUserId;
+
+  if (targetUserId.toLowerCase() !== callerUserId.toLowerCase() && !caller.user.is_staff) {
+    return NextResponse.json({ success: false, message: 'Forbidden: Cannot modify another users profile' }, { status: 403 });
+  }
+
   const token =
     req.cookies.get('xentro_session')?.value || req.headers.get('authorization')?.replace('Bearer ', '');
-  const userId = req.headers.get('x-user-id') || body.userId || body.id || '';
-  const email = req.headers.get('x-user-email') || body.email || '';
+  const userId = callerUserId;
+  const email = caller.user.email || body.email || '';
 
   // 1. Attempt backend proxy
   try {
@@ -162,7 +262,7 @@ export async function POST(req: NextRequest) {
       'Content-Type': 'application/json',
     };
     if (token) headers['Authorization'] = `Bearer ${token}`;
-    if (userId) headers['X-User-Id'] = userId;
+    headers['X-User-Id'] = userId;
 
     const backendUrl = getBackendBaseUrl();
     const controller = new AbortController();

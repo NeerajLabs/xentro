@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
 import { broadcast } from '@/lib/serverMessages';
+import { requireServerAuth, verifyCallerEntityAccess } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -160,170 +161,205 @@ async function resolveParticipantProfile(pId: string, db: any, convId?: string) 
 
 export async function GET(req: NextRequest) {
   try {
+    const caller = await requireServerAuth(req);
+    if (!caller.authenticated || !caller.user) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const conversationId = searchParams.get('conversationId')?.trim();
-    const userId = searchParams.get('userId')?.trim();
-    const entityId = searchParams.get('entityId')?.trim();
+    const requestedUserId = searchParams.get('userId')?.trim();
+    const requestedEntityId = searchParams.get('entityId')?.trim();
 
     const db = await getDatabase();
-    const messagesCol = db.collection('chat_messages');
+    const chatMessagesCol = db.collection('chat_messages');
+    const messagesCol = db.collection('messages');
     const convsCol = db.collection('conversations');
     const entitiesCol = db.collection('entities');
 
-    // 1. Fetch messages for a specific conversation
-    if (conversationId) {
-      const messages = await messagesCol
-        .find({ conversationId })
-        .sort({ createdAt: 1 })
-        .limit(200)
+    const callerUserId = caller.user.id || caller.user.userId || '';
+    const callerEmail = caller.user.email || '';
+    const callerNormSet = new Set<string>([
+      callerUserId.toLowerCase(),
+      callerEmail.toLowerCase(),
+    ].filter(Boolean));
+
+    // Resolve entities owned or membered by caller
+    let callerEntityIds: string[] = [];
+    try {
+      const ownedEntities = await entitiesCol
+        .find({
+          $or: [
+            { primaryOwnerId: callerUserId },
+            { createdByUserId: callerUserId },
+            { 'members.userId': callerUserId },
+          ],
+          status: { $nin: ['DELETED', 'ORPHANED_DELETED'] },
+        })
+        .project({ id: 1, entityId: 1 })
         .toArray();
 
-      return NextResponse.json({
-        success: true,
-        messages: messages.map((m: any) => {
-          const sName = (m.senderName && m.senderName !== 'Member' && m.senderName !== 'Partner')
-            ? m.senderName
-            : formatIdToName(m.senderId);
-          const sAvatar = (m.senderAvatar && !m.senderAvatar.includes('xentro-logo.png') && m.senderAvatar !== '/xentro-logo.png' && !m.senderAvatar.startsWith('blob:'))
-            ? m.senderAvatar
-            : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(sName)}`;
-          let msgCreatedAt = m.createdAt;
-          if (!msgCreatedAt) {
-            if (m._id && typeof m._id.getTimestamp === 'function') {
-              msgCreatedAt = m._id.getTimestamp().toISOString();
-            } else if (m.timestamp && !isNaN(new Date(m.timestamp).getTime())) {
-              msgCreatedAt = new Date(m.timestamp).toISOString();
-            } else {
-              msgCreatedAt = new Date().toISOString();
-            }
-          }
-          return {
-            id: m.id || String(m._id),
-            clientMessageId: m.clientMessageId || m.id,
-            conversationId: m.conversationId,
-            senderId: m.senderId,
-            senderName: sName,
-            senderAvatar: sAvatar,
-            senderRole: (m.senderRole && m.senderRole !== 'Member') ? m.senderRole : 'Explorer',
-            text: m.text || m.content || '',
-            content: m.text || m.content || '',
-            timestamp: m.timestamp || msgCreatedAt,
-            createdAt: msgCreatedAt,
-            readBy: Array.isArray(m.readBy) ? m.readBy : [m.senderId],
-            status: m.status || 'delivered',
-          };
-        }),
-        source: 'mongodb-atlas',
+      ownedEntities.forEach((ent: any) => {
+        if (ent.id) {
+          callerEntityIds.push(ent.id);
+          callerNormSet.add(ent.id.toLowerCase());
+        }
+        if (ent.entityId) {
+          callerEntityIds.push(ent.entityId);
+          callerNormSet.add(ent.entityId.toLowerCase());
+        }
       });
+    } catch (err) {
+      console.warn('[Messages GET] Error fetching owned entities:', err);
     }
 
-    // 2. Fetch conversations for a user (or entity)
-    if (userId || entityId) {
-      let targetIds: string[] = [];
-      if (userId) {
-        targetIds.push(userId);
-        targetIds.push(userId.toLowerCase());
-
-        // Fetch owned entities so startup messages are included for the owner
-        try {
-          const ownedEntities = await entitiesCol
-            .find({
-              $or: [
-                { primaryOwnerId: userId },
-                { createdByUserId: userId },
-                { 'members.userId': userId },
-              ],
-              status: { $nin: ['DELETED', 'ORPHANED_DELETED'] },
-            })
-            .project({ id: 1, entityId: 1 })
-            .toArray();
-
-          ownedEntities.forEach((ent: any) => {
-            if (ent.id) targetIds.push(ent.id);
-            if (ent.entityId) targetIds.push(ent.entityId);
-          });
-        } catch (err) {
-          console.warn('[Messages GET] Error fetching owned entities:', err);
+    // 1. Fetch messages for a specific conversation
+    if (conversationId) {
+      // Check if conversation exists and verify caller is a participant
+      const conv = await convsCol.findOne({ id: conversationId });
+      if (conv && Array.isArray(conv.participants)) {
+        const isParticipant = conv.participants.some((p: string) => callerNormSet.has(p.toLowerCase()));
+        if (!isParticipant) {
+          return NextResponse.json(
+            { success: false, error: 'Forbidden: You are not a participant in this conversation' },
+            { status: 403 }
+          );
         }
       }
 
-      if (entityId) {
-        targetIds.push(entityId);
-        targetIds.push(entityId.toLowerCase());
+      // Query both canonical 'messages' and 'chat_messages' to support zero message loss
+      const [atlasChatMsgs, atlasMsgs] = await Promise.all([
+        chatMessagesCol.find({ conversationId }).sort({ createdAt: 1 }).limit(200).toArray(),
+        messagesCol.find({ conversationId }).sort({ createdAt: 1 }).limit(200).toArray(),
+      ]);
+
+      const seenMsgKeys = new Set<string>();
+      const combinedMessages: any[] = [];
+
+      for (const m of [...atlasMsgs, ...atlasChatMsgs]) {
+        const msgKey = m.id || m.clientMessageId || String(m._id);
+        if (seenMsgKeys.has(msgKey)) continue;
+        seenMsgKeys.add(msgKey);
+
+        const sName = (m.senderName && m.senderName !== 'Member' && m.senderName !== 'Partner')
+          ? m.senderName
+          : formatIdToName(m.senderId);
+        const sAvatar = (m.senderAvatar && !m.senderAvatar.includes('xentro-logo.png') && m.senderAvatar !== '/xentro-logo.png' && !m.senderAvatar.startsWith('blob:'))
+          ? m.senderAvatar
+          : `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(sName)}`;
+        let msgCreatedAt = m.createdAt;
+        if (!msgCreatedAt) {
+          if (m._id && typeof m._id.getTimestamp === 'function') {
+            msgCreatedAt = m._id.getTimestamp().toISOString();
+          } else if (m.timestamp && !isNaN(new Date(m.timestamp).getTime())) {
+            msgCreatedAt = new Date(m.timestamp).toISOString();
+          } else {
+            msgCreatedAt = new Date().toISOString();
+          }
+        }
+
+        combinedMessages.push({
+          id: m.id || String(m._id),
+          clientMessageId: m.clientMessageId || m.id,
+          conversationId: m.conversationId,
+          senderId: m.senderId,
+          senderName: sName,
+          senderAvatar: sAvatar,
+          senderRole: (m.senderRole && m.senderRole !== 'Member') ? m.senderRole : 'Explorer',
+          text: m.text || m.content || '',
+          content: m.text || m.content || '',
+          timestamp: m.timestamp || msgCreatedAt,
+          createdAt: msgCreatedAt,
+          readBy: Array.isArray(m.readBy) ? m.readBy : [m.senderId],
+          status: m.status || 'delivered',
+        });
       }
 
-      targetIds = Array.from(new Set(targetIds.filter(Boolean)));
-
-      const conversations = await convsCol
-        .find({
-          participants: { $in: targetIds },
-        })
-        .sort({ updatedAt: -1 })
-        .limit(100)
-        .toArray();
-
-      const resolvedConvs = await Promise.all(
-        conversations.map(async (c: any) => {
-          let participants: string[] = Array.isArray(c.participants) ? [...c.participants] : [];
-          if (participants.length === 0 && c.id?.startsWith('conv_')) {
-            const parts = c.id.replace('conv_', '').split('_');
-            if (parts.length >= 2) {
-              participants = parts;
-            }
-          }
-
-          const otherParticipantId = participants.find(
-            (p: string) => !targetIds.some((t: string) => t.toLowerCase() === p.toLowerCase())
-          ) || participants[0] || '';
-
-          const usersMap: Record<string, any> = { ...(c.users || {}) };
-
-          // Ensure all participants have resolved profiles
-          for (const pId of participants) {
-            const existing = usersMap[pId];
-            if (!existing || !existing.name || existing.name === 'Member' || existing.name === 'Partner') {
-              usersMap[pId] = await resolveParticipantProfile(pId, db, c.id);
-            }
-          }
-
-          // If partner is not resolved yet
-          let partnerObj = usersMap[otherParticipantId] || c.partner || c.user;
-          if (!partnerObj || !partnerObj.name || partnerObj.name === 'Member' || partnerObj.name === 'Partner') {
-            partnerObj = await resolveParticipantProfile(otherParticipantId, db, c.id);
-            usersMap[otherParticipantId] = partnerObj;
-          }
-
-          if (partnerObj) {
-            if (!partnerObj.avatar || partnerObj.avatar.includes('xentro-logo.png') || partnerObj.avatar === '/xentro-logo.png') {
-              partnerObj.avatar = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(partnerObj.name || 'User')}`;
-            }
-          }
-
-          return {
-            id: c.id || String(c._id),
-            participants,
-            partner: partnerObj,
-            user: partnerObj,
-            users: usersMap,
-            lastMessage: c.lastMessage || '',
-            updatedAt: c.updatedAt || c.createdAt,
-            createdAt: c.createdAt,
-          };
-        })
-      );
+      combinedMessages.sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
       return NextResponse.json({
         success: true,
-        conversations: resolvedConvs,
+        messages: combinedMessages,
         source: 'mongodb-atlas',
       });
     }
 
-    // Default: Return recent messages
-    const recent = await messagesCol.find().sort({ createdAt: -1 }).limit(50).toArray();
+    // 2. Fetch conversations for user / entity
+    let targetIds: string[] = Array.from(callerNormSet);
+    if (requestedUserId) {
+      if (!callerNormSet.has(requestedUserId.toLowerCase())) {
+        return NextResponse.json({ success: false, error: 'Forbidden: Cannot access other users conversations' }, { status: 403 });
+      }
+    }
+    if (requestedEntityId) {
+      if (!callerNormSet.has(requestedEntityId.toLowerCase())) {
+        const hasAccess = await verifyCallerEntityAccess(callerUserId, requestedEntityId);
+        if (!hasAccess) {
+          return NextResponse.json({ success: false, error: 'Forbidden: Cannot access other entity conversations' }, { status: 403 });
+        }
+      }
+      targetIds = [requestedEntityId, requestedEntityId.toLowerCase()];
+    }
+
+    const conversations = await convsCol
+      .find({
+        participants: { $in: targetIds },
+      })
+      .sort({ updatedAt: -1 })
+      .limit(100)
+      .toArray();
+
+    const resolvedConvs = await Promise.all(
+      conversations.map(async (c: any) => {
+        let participants: string[] = Array.isArray(c.participants) ? [...c.participants] : [];
+        if (participants.length === 0 && c.id?.startsWith('conv_')) {
+          const parts = c.id.replace('conv_', '').split('_');
+          if (parts.length >= 2) {
+            participants = parts;
+          }
+        }
+
+        const otherParticipantId = participants.find(
+          (p: string) => !targetIds.some((t: string) => t.toLowerCase() === p.toLowerCase())
+        ) || participants[0] || '';
+
+        const usersMap: Record<string, any> = { ...(c.users || {}) };
+
+        for (const pId of participants) {
+          const existing = usersMap[pId];
+          if (!existing || !existing.name || existing.name === 'Member' || existing.name === 'Partner') {
+            usersMap[pId] = await resolveParticipantProfile(pId, db, c.id);
+          }
+        }
+
+        let partnerObj = usersMap[otherParticipantId] || c.partner || c.user;
+        if (!partnerObj || !partnerObj.name || partnerObj.name === 'Member' || partnerObj.name === 'Partner') {
+          partnerObj = await resolveParticipantProfile(otherParticipantId, db, c.id);
+          usersMap[otherParticipantId] = partnerObj;
+        }
+
+        if (partnerObj) {
+          if (!partnerObj.avatar || partnerObj.avatar.includes('xentro-logo.png') || partnerObj.avatar === '/xentro-logo.png') {
+            partnerObj.avatar = `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(partnerObj.name || 'User')}`;
+          }
+        }
+
+        return {
+          id: c.id || String(c._id),
+          participants,
+          partner: partnerObj,
+          user: partnerObj,
+          users: usersMap,
+          lastMessage: c.lastMessage || '',
+          updatedAt: c.updatedAt || c.createdAt,
+          createdAt: c.createdAt,
+        };
+      })
+    );
+
     return NextResponse.json({
       success: true,
-      messages: recent,
+      conversations: resolvedConvs,
       source: 'mongodb-atlas',
     });
   } catch (err: any) {
@@ -337,31 +373,89 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const caller = await requireServerAuth(req);
+    if (!caller.authenticated || !caller.user) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    }
+
+    const callerUserId = caller.user.id || caller.user.userId || '';
+    const callerEmail = caller.user.email || '';
+    const callerNormSet = new Set<string>([
+      callerUserId.toLowerCase(),
+      callerEmail.toLowerCase(),
+    ].filter(Boolean));
+
     const body = await req.json();
     const action = body?.action || 'send';
 
     const db = await getDatabase();
-    const messagesCol = db.collection('chat_messages');
+    const chatMessagesCol = db.collection('chat_messages');
+    const messagesCol = db.collection('messages');
     const convsCol = db.collection('conversations');
+    const entitiesCol = db.collection('entities');
+
+    // Fetch caller's owned/member entities
+    try {
+      const ownedEntities = await entitiesCol
+        .find({
+          $or: [
+            { primaryOwnerId: callerUserId },
+            { createdByUserId: callerUserId },
+            { 'members.userId': callerUserId },
+          ],
+          status: { $nin: ['DELETED', 'ORPHANED_DELETED'] },
+        })
+        .project({ id: 1, entityId: 1 })
+        .toArray();
+
+      ownedEntities.forEach((ent: any) => {
+        if (ent.id) callerNormSet.add(ent.id.toLowerCase());
+        if (ent.entityId) callerNormSet.add(ent.entityId.toLowerCase());
+      });
+    } catch (err) {
+      console.warn('[Messages POST] Error fetching caller entities:', err);
+    }
 
     const nowIso = new Date().toISOString();
 
     if (action === 'startConversation') {
       const partnerId = body?.partnerId;
-      const userId = body?.userId;
+      let userId = body?.userId;
       const partner = body?.partner || {};
       const currentUser = body?.currentUser || {};
       const initialMessage = body?.initialMessage;
 
-      if (!partnerId || !userId) {
+      if (!partnerId) {
         return NextResponse.json(
-          { success: false, error: 'partnerId and userId are required' },
+          { success: false, error: 'partnerId is required' },
           { status: 400 }
         );
       }
 
+      // Enforce caller identity - cannot spoof another user
+      if (!userId || !callerNormSet.has(userId.toLowerCase())) {
+        userId = callerUserId;
+      }
+
       const sortedPair = [userId.toLowerCase(), partnerId.toLowerCase()].sort();
       const convId = body?.conversationId || `conv_${sortedPair[0]}_${sortedPair[1]}`;
+
+      // Enforce bidirectional block list check
+      const blocksCol = db.collection('user_blocks');
+      const isBlocked = await blocksCol.findOne({
+        $or: [
+          { blockerId: userId, blockedId: partnerId },
+          { blockerId: partnerId, blockedId: userId },
+          { blockerId: callerUserId, blockedId: partnerId },
+          { blockerId: partnerId, blockedId: callerUserId },
+        ],
+      });
+      if (isBlocked) {
+        return NextResponse.json(
+          { success: false, error: 'Messaging unavailable due to user preferences.' },
+          { status: 403 }
+        );
+      }
 
       // Resolve profiles so names are never generic 'Member'
       const resolvedCurrentUser = (currentUser?.name && currentUser?.name !== 'Member' && currentUser?.name !== 'Partner')
@@ -423,8 +517,21 @@ export async function POST(req: NextRequest) {
           readBy: [userId],
           status: 'delivered',
         };
+
+        // Write to canonical messages first, then resilient sync to chat_messages
         await messagesCol.insertOne(msgDoc);
-        broadcast({ type: 'new_message', data: msgDoc });
+        try {
+          await chatMessagesCol.insertOne(msgDoc);
+        } catch (legErr) {
+          console.warn('[Messages POST] Warning inserting into legacy chat_messages:', legErr);
+        }
+
+        // Scoped SSE delivery only to conversation participants
+        broadcast({
+          type: 'new_message',
+          data: msgDoc,
+          recipientUserIds: [userId, partnerId],
+        });
       }
 
       return NextResponse.json({
@@ -437,7 +544,7 @@ export async function POST(req: NextRequest) {
       const rawMsg = (body?.message || body) as any;
       const conversationId = rawMsg?.conversationId || body?.conversationId;
       const text = rawMsg?.text || rawMsg?.content || '';
-      const senderId = rawMsg?.senderId || body?.senderId || 'anonymous';
+      let senderId = rawMsg?.senderId || body?.senderId;
       const rawSenderName = rawMsg?.senderName || body?.senderName || '';
       const rawSenderAvatar = rawMsg?.senderAvatar || body?.senderAvatar || '';
       const rawSenderRole = rawMsg?.senderRole || body?.senderRole || '';
@@ -448,6 +555,43 @@ export async function POST(req: NextRequest) {
           { success: false, error: 'text and conversationId are required' },
           { status: 400 }
         );
+      }
+
+      // Enforce caller identity - cannot spoof sender
+      if (!senderId || !callerNormSet.has(senderId.toLowerCase())) {
+        senderId = callerUserId;
+      }
+
+      // Verify conversation participation
+      const conv = await convsCol.findOne({ id: conversationId });
+      if (conv && Array.isArray(conv.participants)) {
+        const isParticipant = conv.participants.some((p: string) => callerNormSet.has(p.toLowerCase()));
+        if (!isParticipant) {
+          return NextResponse.json(
+            { success: false, error: 'Forbidden: You are not a participant in this conversation' },
+            { status: 403 }
+          );
+        }
+
+        // Enforce bidirectional block check between sender and other participants
+        const otherParticipantId = conv.participants.find((p: string) => !callerNormSet.has(p.toLowerCase()));
+        if (otherParticipantId) {
+          const blocksCol = db.collection('user_blocks');
+          const isBlocked = await blocksCol.findOne({
+            $or: [
+              { blockerId: senderId, blockedId: otherParticipantId },
+              { blockerId: otherParticipantId, blockedId: senderId },
+              { blockerId: callerUserId, blockedId: otherParticipantId },
+              { blockerId: otherParticipantId, blockedId: callerUserId },
+            ],
+          });
+          if (isBlocked) {
+            return NextResponse.json(
+              { success: false, error: 'Messaging unavailable due to user preferences.' },
+              { status: 403 }
+            );
+          }
+        }
       }
 
       const senderProfile = (rawSenderName && rawSenderName !== 'Member' && rawSenderName !== 'Partner')
@@ -478,14 +622,31 @@ export async function POST(req: NextRequest) {
         status: 'delivered',
       };
 
-      // 1. Insert message into MongoDB Atlas chat_messages
-      await messagesCol.updateOne(
-        { $or: [{ id }, { clientMessageId }] },
-        { $set: msgDoc },
-        { upsert: true }
-      );
+      // 1. Dual-collection persistence (canonical 'messages' and 'chat_messages')
+      // 1. Dual-collection persistence: canonical 'messages' is authoritative
+      try {
+        await messagesCol.updateOne(
+          { $or: [{ id }, { clientMessageId }] },
+          { $set: msgDoc },
+          { upsert: true }
+        );
+      } catch (canErr) {
+        console.error('[Messages POST] Error writing to canonical messages:', canErr);
+        throw canErr;
+      }
 
-      // 2. Update conversation last message and timestamp and users profile in MongoDB Atlas
+      // Resilient synchronization to legacy chat_messages (does not abort delivery if canonical succeeded)
+      try {
+        await chatMessagesCol.updateOne(
+          { $or: [{ id }, { clientMessageId }] },
+          { $set: msgDoc },
+          { upsert: true }
+        );
+      } catch (legErr) {
+        console.warn('[Messages POST] Warning synchronizing to legacy chat_messages:', legErr);
+      }
+
+      // 2. Update conversation
       const participantsToAdd = [senderId, recipientId].filter(Boolean);
       await convsCol.updateOne(
         { id: conversationId },
@@ -502,8 +663,17 @@ export async function POST(req: NextRequest) {
         { upsert: true }
       );
 
-      // 3. Broadcast real-time SSE event to all connected browsers
-      broadcast({ type: 'new_message', data: msgDoc });
+      // Determine participants for recipient-scoped SSE
+      const sseRecipients = conv && Array.isArray(conv.participants)
+        ? conv.participants
+        : participantsToAdd;
+
+      // 3. Broadcast real-time SSE event ONLY to authorized conversation participants
+      broadcast({
+        type: 'new_message',
+        data: msgDoc,
+        recipientUserIds: sseRecipients,
+      });
 
       return NextResponse.json({
         success: true,
@@ -512,20 +682,28 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'markRead') {
-      const userId = body?.userId as string;
       const conversationId = body?.conversationId as string;
 
-      if (!userId || !conversationId) {
+      if (!conversationId) {
         return NextResponse.json(
-          { success: false, error: 'userId and conversationId required' },
+          { success: false, error: 'conversationId required' },
           { status: 400 }
         );
       }
 
-      await messagesCol.updateMany(
-        { conversationId },
-        { $addToSet: { readBy: userId } }
-      );
+      // Enforce caller marks read for their own identity
+      const readUserId = callerUserId;
+
+      await Promise.all([
+        chatMessagesCol.updateMany(
+          { conversationId },
+          { $addToSet: { readBy: readUserId } }
+        ),
+        messagesCol.updateMany(
+          { conversationId },
+          { $addToSet: { readBy: readUserId } }
+        ),
+      ]);
 
       return NextResponse.json({ success: true });
     }

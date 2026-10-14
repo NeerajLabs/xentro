@@ -160,13 +160,26 @@ def dispatch_email_securely(to_email: str, subject: str, body: str) -> bool:
     logger.error(f"All email dispatch layers failed for {to_email}.")
     return False
 
+import secrets
+import hmac
+import hashlib
+
+def get_otp_secret() -> bytes:
+    sec = os.getenv("OTP_SECRET") or os.getenv("JWT_SECRET") or getattr(settings, "SECRET_KEY", "xentro-jwt-access-secret-2026-sha256-key")
+    return sec.encode("utf-8") if isinstance(sec, str) else sec
+
+def hash_otp_code(otp: str, email_or_challenge: str = "") -> str:
+    key = get_otp_secret()
+    payload = f"{str(otp).strip()}:{str(email_or_challenge).strip()}".encode("utf-8")
+    return hmac.new(key, payload, hashlib.sha256).hexdigest()
+
 def generate_6digit_otp() -> str:
-    return str(random.randint(100000, 999999))
+    return str(secrets.randbelow(900000) + 100000)
 
 def send_email_otp(email: str) -> dict:
     """
     Generates and sends a 6-digit OTP to the user's email.
-    Stores OTP in Redis with a 10-minute expiry and 60-second cooldown.
+    Stores cryptographically secure HMAC hash in Redis and MongoDB (ZERO plaintext code writes).
     """
     redis_client = get_redis_client()
     cooldown_key = f"otp:cooldown:{email.lower()}"
@@ -181,13 +194,14 @@ def send_email_otp(email: str) -> dict:
         }
 
     otp = generate_6digit_otp()
+    code_hash = hash_otp_code(otp, email.lower())
 
-    # Store OTP in Redis
-    redis_client.setex(otp_key, OTP_EXPIRY_SECONDS, otp)
+    # Store keyed HMAC in Redis (never plaintext)
+    redis_client.setex(otp_key, OTP_EXPIRY_SECONDS, code_hash)
     redis_client.setex(cooldown_key, RESEND_COOLDOWN_SECONDS, "1")
     redis_client.setex(attempts_key, OTP_EXPIRY_SECONDS, "0")
 
-    # Store OTP in MongoDB for durable persistence across reloads/workers
+    # Store keyed HMAC in MongoDB for durable persistence (never plaintext)
     try:
         from integrations.mongodb import get_collection
         import datetime
@@ -196,14 +210,20 @@ def send_email_otp(email: str) -> dict:
         otp_col = get_collection("otp_codes")
         otp_col.update_one(
             {"email": email.lower()},
-            {"$set": {
-                "email": email.lower(),
-                "code": str(otp).strip(),
-                "createdAt": now_dt.isoformat(),
-                "expiresAt": exp_dt.isoformat(),
-                "attempts": 0,
-                "verified": False
-            }},
+            {
+                "$set": {
+                    "email": email.lower(),
+                    "codeHash": code_hash,
+                    "createdAt": now_dt.isoformat(),
+                    "expiresAt": exp_dt.isoformat(),
+                    "attempts": 0,
+                    "verified": False,
+                    "consumed": False,
+                },
+                "$unset": {
+                    "code": ""  # Expunge any legacy plaintext code
+                }
+            },
             upsert=True
         )
     except Exception as dberr:
@@ -236,12 +256,14 @@ The XENTRO Security Team
         }
 
 def verify_email_otp(email: str, entered_otp: str) -> dict:
-    """Verifies the 6-digit OTP against MongoDB (durable store) and Redis."""
+    """
+    Verifies 6-digit OTP using constant-time HMAC comparison and atomic single-use consumption.
+    """
     entered_clean = str(entered_otp).strip()
     if not entered_clean:
         return {"success": False, "message": "Verification code is required."}
 
-    # 1. Primary verification against MongoDB durable store
+    # Primary verification against MongoDB durable store
     try:
         from integrations.mongodb import get_collection
         import datetime
@@ -256,6 +278,12 @@ def verify_email_otp(email: str, entered_otp: str) -> dict:
                     "message": "Too many failed attempts. This code has been invalidated. Please request a new one."
                 }
 
+            if record.get("consumed"):
+                return {
+                    "success": False,
+                    "message": "This verification code has already been consumed."
+                }
+
             expires_at_str = record.get("expiresAt")
             if expires_at_str:
                 exp_dt = datetime.datetime.fromisoformat(expires_at_str)
@@ -266,11 +294,30 @@ def verify_email_otp(email: str, entered_otp: str) -> dict:
                         "message": "Verification code has expired. Please request a new code."
                     }
 
-            stored_code = str(record.get("code", "")).strip()
-            if stored_code == entered_clean:
-                # Immediately purge consumed OTP to prevent replay attacks
-                otp_col.delete_one({"email": email.lower()})
-                # Also clean up Redis
+            entered_hash = hash_otp_code(entered_clean, email.lower())
+            stored_hash = str(record.get("codeHash", "")).strip()
+            legacy_code = str(record.get("code", "")).strip()
+
+            is_valid = False
+            if stored_hash:
+                is_valid = hmac.compare_digest(stored_hash, entered_hash)
+            elif legacy_code:
+                is_valid = hmac.compare_digest(legacy_code, entered_clean)
+
+            if is_valid:
+                now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+                # Conditional atomic update prevents concurrent double-verification TOCTOU race
+                res = otp_col.update_one(
+                    {"_id": record["_id"], "consumed": {"$ne": True}, "attempts": {"$lt": 5}},
+                    {"$set": {"consumed": True, "verified": True, "updatedAt": now_iso}, "$unset": {"code": ""}}
+                )
+                if res.modified_count != 1:
+                    return {
+                        "success": False,
+                        "message": "Verification code already consumed or expired."
+                    }
+
+                # Clean up Redis
                 try:
                     redis_client = get_redis_client()
                     redis_client.delete(f"otp:code:{email.lower()}")
@@ -283,14 +330,12 @@ def verify_email_otp(email: str, entered_otp: str) -> dict:
                     "message": "Email verified successfully."
                 }
             else:
-                otp_col.update_one(
-                    {"email": email.lower()},
-                    {"$inc": {"attempts": 1}}
-                )
-                remaining = max(0, 4 - attempts)
+                # Increment failed attempts
+                otp_col.update_one({"_id": record["_id"]}, {"$inc": {"attempts": 1}})
+                remaining = 5 - (attempts + 1)
                 return {
                     "success": False,
-                    "message": f"Invalid verification code. {remaining} attempts remaining."
+                    "message": f"Invalid verification code. {remaining if remaining > 0 else 0} attempts remaining."
                 }
     except Exception as dberr:
         logger.warning(f"MongoDB OTP lookup error: {dberr}")
@@ -318,7 +363,14 @@ def verify_email_otp(email: str, entered_otp: str) -> dict:
             "message": "Too many failed attempts. This code has been invalidated. Please request a new one."
         }
 
-    if stored_otp.strip() == entered_clean:
+    entered_hash = hash_otp_code(entered_clean, email.lower())
+    is_valid_redis = False
+    try:
+        is_valid_redis = hmac.compare_digest(stored_otp.strip(), entered_hash) or hmac.compare_digest(stored_otp.strip(), entered_clean)
+    except Exception:
+        is_valid_redis = False
+
+    if is_valid_redis:
         redis_client.delete(otp_key)
         redis_client.delete(attempts_key)
         return {

@@ -64,12 +64,23 @@ export async function POST(req: NextRequest) {
 
       if (isUnexpired && isCooldown) {
         if (body.isResend || body.force) {
+          const crypto = await import('node:crypto');
+          const { hashOtp } = await import('@/lib/serverAuth');
+          const resendCode = crypto.randomInt(100000, 1000000).toString();
+          const resendHash = hashOtp(resendCode, existingChallenge.challengeId);
+          await otpCol.updateOne(
+            { _id: existingChallenge._id },
+            {
+              $set: { codeHash: resendHash, updatedAt: nowIso },
+              $unset: { code: '' },
+            }
+          );
           sendZohoEmail({
             to: email,
-            subject: `XENTRO: Verification Code ${existingChallenge.code}`,
-            text: `Your Xentro verification code is:\n\n${existingChallenge.code}\n\nThis verification code will expire in 10 minutes.\n\nWarm regards,\nXENTRO Platform Security`,
+            subject: `XENTRO: Verification Code ${resendCode}`,
+            text: `Your Xentro verification code is:\n\n${resendCode}\n\nThis verification code will expire in 10 minutes.\n\nWarm regards,\nXENTRO Platform Security`,
           }).catch((err) => console.warn('[OTP Resend] Background dispatch warning:', err));
-          console.log(`[OTP Resend] Re-dispatched existing code ${existingChallenge.code} to ${email}`);
+          console.log(`[OTP Resend] Re-dispatched challenge ${existingChallenge.challengeId} to ${maskEmail(email)}`);
         }
 
         const waitSeconds = Math.ceil((new Date(existingChallenge.resendAvailableAt).getTime() - now) / 1000);
@@ -97,13 +108,16 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Generate 6-digit secure code and unique challenge reference
-    const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const challengeId = `chal_${now}_${Math.random().toString(36).substring(2, 9)}`;
+    // Generate 6-digit cryptographically secure code and unique challenge reference
+    const crypto = await import('node:crypto');
+    const { hashOtp } = await import('@/lib/serverAuth');
+    const code = crypto.randomInt(100000, 1000000).toString();
+    const challengeId = `chal_${now}_${crypto.randomBytes(4).toString('hex')}`;
+    const codeHash = hashOtp(code, challengeId);
     const expiresAt = new Date(now + 10 * 60 * 1000).toISOString();
     const resendAvailableAt = new Date(now + 60 * 1000).toISOString();
 
-    // Upsert challenge into MongoDB collection
+    // Upsert challenge into MongoDB collection: ZERO plaintext code storage
     await otpCol.updateOne(
       { email, purpose },
       {
@@ -111,7 +125,7 @@ export async function POST(req: NextRequest) {
           challengeId,
           email,
           purpose,
-          code,
+          codeHash,
           attempts: 0,
           maxAttempts: 5,
           verified: false,
@@ -120,6 +134,9 @@ export async function POST(req: NextRequest) {
           updatedAt: nowIso,
           expiresAt,
           resendAvailableAt,
+        },
+        $unset: {
+          code: '', // Expunge any legacy plaintext code field
         },
       },
       { upsert: true }
@@ -146,7 +163,8 @@ export async function POST(req: NextRequest) {
 
     const emailText = `Your Xentro 6-digit ${purposeLabel} code is:\n\n${code}\n\nThis verification code will expire in 10 minutes.\nIf you did not request this verification, please ignore this email.\n\nWarm regards,\nXENTRO Platform Security`;
 
-    console.log(`[OTP Dispatch] To: ${email} | Code: ${code} | Purpose: ${purpose} | ChallengeId: ${challengeId}`);
+    // Security compliance: Redact plaintext code from logs
+    console.log(`[OTP Dispatch] To: ${masked} | Purpose: ${purpose} | ChallengeId: ${challengeId}`);
 
     // Dispatch email reliably without blocking the API response
     // We race with a 1500ms timeout so responsive users/mobile devices are never stuck on "Sending Code..."

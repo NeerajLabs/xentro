@@ -11,6 +11,7 @@ import urllib.parse
 import re
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
+from common.permissions import IsXentroAuthenticated
 from integrations.mongodb import get_collection
 from common.response import api_success, api_error
 
@@ -30,10 +31,7 @@ def make_pair_key(id1, id2):
 def get_request_user_id(request):
     if request.user and getattr(request.user, "is_authenticated", False):
         return normalize_id(getattr(request.user, "id", None))
-    h = request.headers.get("X-User-Id")
-    if h:
-        return normalize_id(h)
-    return normalize_id(request.query_params.get("userId") or request.data.get("userId"))
+    return ""
 
 
 def check_connection_accepted(user_id, partner_id):
@@ -144,14 +142,14 @@ class ConversationsListView(APIView):
     GET /api/v1/messages/conversations/
     POST /api/v1/messages/conversations/
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsXentroAuthenticated]
 
     def get(self, request):
         user_id = get_request_user_id(request)
         entity_id = normalize_id(request.query_params.get("entityId") or request.data.get("entityId"))
 
         if not user_id and not entity_id:
-            return api_error("User or entity identification is required.", status_code=400)
+            return api_error("Authentication required.", status_code=401)
 
         conv_col = get_collection("conversations")
         users_col = get_collection("users")
@@ -454,11 +452,15 @@ class MessagesHistoryView(APIView):
     GET /api/v1/messages/conversations/<conversation_id>/
     POST /api/v1/messages/conversations/<conversation_id>/send/
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsXentroAuthenticated]
 
     def get(self, request, conversation_id):
         user_id = get_request_user_id(request)
         entity_id = normalize_id(request.query_params.get("entityId") or request.data.get("entityId"))
+
+        if not user_id and not entity_id:
+            return api_error("Authentication required.", status_code=401)
+
         entities_col = get_collection("entities")
 
         target_ids = []
@@ -507,7 +509,7 @@ class MessagesHistoryView(APIView):
 
         participants = conv.get("participants", [])
         norm_participants = [normalize_id(p).lower() for p in participants]
-        if (user_id or entity_id) and not any(t in norm_participants for t in target_norm_set):
+        if not any(t in norm_participants for t in target_norm_set):
             return api_error("Access denied to this conversation.", status_code=403)
 
         msg_col = get_collection("messages")
@@ -516,6 +518,13 @@ class MessagesHistoryView(APIView):
             sort=[("createdAt", 1)],
             limit=100
         ))
+        if not messages:
+            chat_msg_col = get_collection("chat_messages")
+            messages = list(chat_msg_col.find(
+                {"conversationId": {"$in": [conversation_id, conversation_id.lower(), conversation_id.upper()]}},
+                sort=[("createdAt", 1)],
+                limit=100
+            ))
         clean = []
         for m in messages:
             m.pop("_id", None)
@@ -613,7 +622,7 @@ class MessagesHistoryView(APIView):
 
         participants = conv.get("participants", [])
         norm_participants = [normalize_id(p).lower() for p in participants]
-        if (user_id or entity_id) and not any(t in norm_participants for t in target_norm_set):
+        if not any(t in norm_participants for t in target_norm_set):
             return api_error("Access denied to this conversation.", status_code=403)
 
         # STRICT GATING: Verify MongoDB connection is accepted before delivering message
@@ -623,8 +632,21 @@ class MessagesHistoryView(APIView):
                 other_id = normalize_id(p)
                 break
 
-        active_sender = normalize_id(request.data.get("senderId") or entity_id or user_id)
+        # Authoritative sender derived strictly from authenticated user or authorized entity
+        active_sender = entity_id if (entity_id and entity_id.lower() in target_norm_set) else user_id
         if other_id and active_sender:
+            blocks_col = get_collection("user_blocks")
+            is_blocked = blocks_col.find_one({
+                "$or": [
+                    {"blockerId": active_sender, "blockedId": other_id},
+                    {"blockerId": other_id, "blockedId": active_sender},
+                    {"blockerId": user_id, "blockedId": other_id},
+                    {"blockerId": other_id, "blockedId": user_id},
+                ]
+            })
+            if is_blocked:
+                return api_error("Messaging unavailable due to user preferences.", status_code=403)
+
             is_accepted, status, _ = check_connection_accepted(active_sender, other_id)
             if not is_accepted:
                 return api_error(

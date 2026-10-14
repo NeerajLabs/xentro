@@ -88,14 +88,14 @@ export const FullMessagesPage: React.FC<FullMessagesPageProps> = ({ onBackToFeed
       }
     };
 
-    // Dedicated fast active-thread polling while viewing FullMessagesPage
+    // Safe background heartbeat fallback (realtime delivery handled instantaneously by recipient-scoped SSE)
     const activePollTimer = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       const curId = messagingService.getActiveConversationId();
       if (curId) {
         messagingService.fetchConversationMessages(curId).catch(() => {});
       }
-    }, 1200);
+    }, 15000);
 
     window.addEventListener(CONVERSATIONS_UPDATED_EVENT, handleUpdated);
     window.addEventListener(AUTO_REPLY_CHANGED_EVENT, handleAutoReply);

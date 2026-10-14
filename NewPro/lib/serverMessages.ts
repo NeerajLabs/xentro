@@ -36,10 +36,16 @@ const INITIAL_POSTS: Post[] = [];
 
 type SSEListener = (data: string) => void;
 
+export interface ScopedSSEListener {
+  listener: SSEListener;
+  userIds: Set<string>;
+}
+
 interface GlobalStore {
   messages: SharedChatMessage[];
   connections: ServerConnectionRecord[];
   feed: Post[];
+  scopedListeners: Set<ScopedSSEListener>;
   listeners: Set<SSEListener>;
 }
 
@@ -150,8 +156,12 @@ function getStore(): GlobalStore {
       messages: loadInitialStore(),
       connections: loadInitialConnections(),
       feed: loadInitialFeed(),
+      scopedListeners: new Set<ScopedSSEListener>(),
       listeners: new Set<SSEListener>(),
     };
+  }
+  if (!globalThis.__xentro_realtime_store.scopedListeners) {
+    globalThis.__xentro_realtime_store.scopedListeners = new Set<ScopedSSEListener>();
   }
   if (!globalThis.__xentro_realtime_store.connections) {
     globalThis.__xentro_realtime_store.connections = loadInitialConnections();
@@ -174,16 +184,43 @@ export function getServerFeed(): Post[] {
   return getStore().feed;
 }
 
-export function broadcast(payload: { type: string; data?: any }): void {
+export function broadcast(payload: { type: string; data?: any; recipientUserIds?: string[] }): void {
   const store = getStore();
   const serialized = `data: ${JSON.stringify(payload)}\n\n`;
-  store.listeners.forEach((listener) => {
+  const targets = (payload.recipientUserIds && payload.recipientUserIds.length > 0)
+    ? new Set(payload.recipientUserIds.map((u) => (u || '').toLowerCase().trim()).filter(Boolean))
+    : null;
+
+  store.scopedListeners.forEach((scoped) => {
     try {
-      listener(serialized);
+      if (targets && targets.size > 0) {
+        let isAuthorized = false;
+        scoped.userIds.forEach((uid) => {
+          if (targets.has(uid)) {
+            isAuthorized = true;
+          }
+        });
+        if (!isAuthorized) {
+          return; // Strictly isolate: do not deliver private message/event to non-participants!
+        }
+      }
+      scoped.listener(serialized);
     } catch {
-      store.listeners.delete(listener);
+      store.scopedListeners.delete(scoped);
+      store.listeners.delete(scoped.listener);
     }
   });
+
+  // If payload has no targets (public broadcast like feed events), also deliver to legacy listeners
+  if (!targets || targets.size === 0) {
+    store.listeners.forEach((listener) => {
+      try {
+        listener(serialized);
+      } catch {
+        store.listeners.delete(listener);
+      }
+    });
+  }
 }
 
 export function addServerMessage(msg: SharedChatMessage): SharedChatMessage[] {
@@ -351,10 +388,15 @@ export function deleteServerPost(postId: string): Post[] {
   return store.feed;
 }
 
-export function registerSSEListener(listener: SSEListener): () => void {
+export function registerSSEListener(listener: SSEListener, authorizedUserIds: string[] = []): () => void {
   const store = getStore();
+  const idSet = new Set(authorizedUserIds.map((u) => (u || '').toLowerCase().trim()).filter(Boolean));
+  const scoped: ScopedSSEListener = { listener, userIds: idSet };
+  store.scopedListeners.add(scoped);
   store.listeners.add(listener);
+
   return () => {
+    store.scopedListeners.delete(scoped);
     store.listeners.delete(listener);
   };
 }

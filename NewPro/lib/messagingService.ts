@@ -198,17 +198,85 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
   }
 }
 
-// Global active SSE connection handle
+// Global active SSE connection handle and reconnect state
 let eventSource: EventSource | null = null;
+let sseReconnectTimer: any = null;
+let sseRetryCount = 0;
+const MAX_SSE_BACKOFF_MS = 30000;
+const BASE_SSE_BACKOFF_MS = 1000;
 
-function connectRealtimeStream() {
+export function disconnectRealtimeStream() {
+  if (sseReconnectTimer) {
+    clearTimeout(sseReconnectTimer);
+    sseReconnectTimer = null;
+  }
+  sseRetryCount = 0;
+  if (eventSource) {
+    try {
+      eventSource.close();
+    } catch (_) {}
+    eventSource = null;
+  }
+}
+
+function scheduleSseReconnect() {
   if (typeof window === 'undefined') return;
+  // If user is logged out, do not reconnect
+  const sessionToken = localStorage.getItem('xentro_session') || localStorage.getItem('token');
+  const user = localStorage.getItem('xentro_user_profile') || localStorage.getItem('user');
+  if (!sessionToken && !user) {
+    disconnectRealtimeStream();
+    return;
+  }
+
+  if (sseReconnectTimer) {
+    clearTimeout(sseReconnectTimer);
+  }
+
+  // Bounded exponential backoff with jitter
+  const backoff = Math.min(BASE_SSE_BACKOFF_MS * Math.pow(1.5, sseRetryCount), MAX_SSE_BACKOFF_MS);
+  const jitter = Math.random() * 500;
+  const delay = Math.floor(backoff + jitter);
+
+  sseReconnectTimer = setTimeout(() => {
+    sseReconnectTimer = null;
+    sseRetryCount++;
+    connectRealtimeStream();
+  }, delay);
+}
+
+export function connectRealtimeStream() {
+  if (typeof window === 'undefined') return;
+
+  // Prevent duplicate subscriptions
   if (eventSource && (eventSource.readyState === EventSource.OPEN || eventSource.readyState === EventSource.CONNECTING)) {
     return;
   }
 
+  // Clean up any stale handle
+  if (eventSource) {
+    try {
+      eventSource.close();
+    } catch (_) {}
+    eventSource = null;
+  }
+
   try {
     eventSource = new EventSource('/api/messages/stream');
+
+    eventSource.onopen = () => {
+      // Reset retry count on successful connection
+      sseRetryCount = 0;
+      if (sseReconnectTimer) {
+        clearTimeout(sseReconnectTimer);
+        sseReconnectTimer = null;
+      }
+      // Reconcile missed messages on reconnect
+      const activeId = messagingService.getActiveConversationId();
+      if (activeId) {
+        messagingService.fetchConversationMessages(activeId).catch(() => {});
+      }
+    };
 
     eventSource.onmessage = (event) => {
       try {
@@ -233,13 +301,23 @@ function connectRealtimeStream() {
 
     eventSource.onerror = () => {
       if (eventSource) {
-        eventSource.close();
+        try {
+          eventSource.close();
+        } catch (_) {}
         eventSource = null;
       }
+      // Schedule bounded reconnect instead of dying permanently
+      scheduleSseReconnect();
     };
   } catch (err) {
     console.debug('[SSE] Connection error', err);
+    scheduleSseReconnect();
   }
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('xentro-logout', disconnectRealtimeStream);
+  window.addEventListener('beforeunload', disconnectRealtimeStream);
 }
 
 /**
@@ -492,14 +570,12 @@ export const messagingService = {
       failed: false,
     };
 
-    // Reconcile: match by exact id, clientMessageId, or (senderId + conversationId + content + time proximity)
+    // Reconcile: match strictly by exact id or idempotency clientMessageId (NEVER by text comparison)
     const existingIndex = current.findIndex(
       (m) =>
         m.id === incoming.id ||
         (incoming.clientMessageId && (m.id === incoming.clientMessageId || m.clientMessageId === incoming.clientMessageId)) ||
-        (m.conversationId === incoming.conversationId &&
-         m.senderId === incoming.senderId &&
-         m.text.trim() === incoming.text.trim())
+        (m.clientMessageId && incoming.id && m.clientMessageId === incoming.id)
     );
 
     if (existingIndex >= 0) {
@@ -543,9 +619,7 @@ export const messagingService = {
         if (
           k === incoming.id ||
           (incoming.clientMessageId && (existing.id === incoming.clientMessageId || existing.clientMessageId === incoming.clientMessageId)) ||
-          (existing.conversationId === incoming.conversationId &&
-           existing.senderId === incoming.senderId &&
-           existing.text.trim() === incoming.text.trim())
+          (existing.clientMessageId && incoming.id && existing.clientMessageId === incoming.id)
         ) {
           foundKey = k;
           break;

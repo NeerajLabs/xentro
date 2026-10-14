@@ -222,6 +222,22 @@ export const DashboardLayout: React.FC = () => {
     window.addEventListener('xentro-open-signup', handleOpenSignup);
     window.addEventListener('xentro-role-changed', handleRoleChanged);
     window.addEventListener('xentro-open-profile', handleOpenProfileEvent);
+
+    // Deep-link direct profile view hydration
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        const viewProfileId = url.searchParams.get('viewProfile');
+        const profileType = (url.searchParams.get('profileType') || 'startup') as any;
+        if (viewProfileId) {
+          setSelectedProfile({
+            type: profileType,
+            id: viewProfileId,
+          });
+        }
+      } catch (_) {}
+    }
+
     return () => {
       window.removeEventListener('xentro-navigate-tab', handleNavigateTab);
       window.removeEventListener('xentro-open-signup', handleOpenSignup);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
 import { broadcast } from '@/lib/serverMessages';
 import { getBackendBaseUrl } from '@/lib/backendUrl';
+import { requireServerAuth, verifyCallerEntityAccess } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -33,10 +34,29 @@ function computePairKey(a: string, b: string): string {
 
 export async function GET(req: NextRequest) {
   try {
+    const caller = await requireServerAuth(req);
+    if (!caller.authenticated || !caller.user) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
-    const userId = searchParams.get('userId')?.trim() || '';
+    const requestedUserId = searchParams.get('userId')?.trim() || '';
     const entityId = searchParams.get('entityId')?.trim() || '';
     const status = searchParams.get('status')?.trim() || '';
+
+    const callerUserId = caller.user.id || caller.user.userId || '';
+    const userId = requestedUserId || callerUserId;
+
+    if (requestedUserId && requestedUserId.toLowerCase() !== callerUserId.toLowerCase() && !caller.user.is_staff) {
+      return NextResponse.json({ success: false, error: 'Forbidden: Cannot access other users connections' }, { status: 403 });
+    }
+
+    if (entityId) {
+      const hasAccess = await verifyCallerEntityAccess(callerUserId, entityId);
+      if (!hasAccess && !caller.user.is_staff) {
+        return NextResponse.json({ success: false, error: 'Forbidden: Cannot access entity connections' }, { status: 403 });
+      }
+    }
 
     const db = await getDatabase();
     const connectionsCol = db.collection('connections');
@@ -173,6 +193,46 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const caller = await requireServerAuth(req);
+    if (!caller.authenticated || !caller.user) {
+      return NextResponse.json({ success: false, error: 'Authentication required' }, { status: 401 });
+    }
+
+    const callerUserId = caller.user.id || caller.user.userId || '';
+    const callerEmail = caller.user.email || '';
+    const callerNormSet = new Set<string>([
+      callerUserId.toLowerCase(),
+      callerEmail.toLowerCase(),
+    ].filter(Boolean));
+
+    const db = await getDatabase();
+    const connectionsCol = db.collection('connections');
+    const notifsCol = db.collection('notifications');
+    const entitiesCol = db.collection('entities');
+    const blocksCol = db.collection('user_blocks');
+
+    // Fetch caller's owned or member entities
+    try {
+      const ownedEntities = await entitiesCol
+        .find({
+          $or: [
+            { primaryOwnerId: callerUserId },
+            { createdByUserId: callerUserId },
+            { 'members.userId': callerUserId },
+          ],
+          status: { $nin: ['DELETED', 'ORPHANED_DELETED'] },
+        })
+        .project({ id: 1, entityId: 1 })
+        .toArray();
+
+      ownedEntities.forEach((ent: any) => {
+        if (ent.id) callerNormSet.add(ent.id.toLowerCase());
+        if (ent.entityId) callerNormSet.add(ent.entityId.toLowerCase());
+      });
+    } catch (err) {
+      console.warn('[Connections POST] Error fetching caller entities:', err);
+    }
+
     const body = await req.json();
     const action = body?.action || 'request';
     const connection = body?.connection;
@@ -186,15 +246,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const db = await getDatabase();
-    const connectionsCol = db.collection('connections');
-    const notifsCol = db.collection('notifications');
-
     const nowIso = new Date().toISOString();
 
     if (action === 'request') {
-      const senderId = (connection?.senderId || userId).trim();
+      let senderId = (connection?.senderId || userId).trim();
       const recipientId = (connection?.recipientId || partnerId).trim();
+
+      if (!recipientId) {
+        return NextResponse.json({ success: false, error: 'Recipient is required' }, { status: 400 });
+      }
+
+      // Enforce caller identity - cannot spoof sender
+      if (!senderId || !callerNormSet.has(senderId.toLowerCase())) {
+        senderId = callerUserId;
+      }
+
+      // Prevent self-connection
+      if (senderId.toLowerCase() === recipientId.toLowerCase()) {
+        return NextResponse.json({ success: false, error: 'Cannot connect with yourself' }, { status: 400 });
+      }
+
+      // Check if blocked
+      const isBlocked = await blocksCol.findOne({
+        $or: [
+          { blockerId: recipientId, blockedId: senderId },
+          { blockerId: senderId, blockedId: recipientId },
+        ],
+      });
+      if (isBlocked) {
+        return NextResponse.json(
+          { success: false, error: 'Action blocked by user preferences' },
+          { status: 403 }
+        );
+      }
+
       const pair_key = computePairKey(senderId, recipientId);
       const connectionId =
         connection?.id ||
@@ -319,6 +404,16 @@ export async function POST(req: NextRequest) {
       }
 
       const filter = filterConditions.length > 0 ? { $or: filterConditions } : { id: connectionId };
+      const existingConn = await connectionsCol.findOne(filter);
+      if (!existingConn) {
+        return NextResponse.json({ success: false, error: 'Connection request not found' }, { status: 404 });
+      }
+
+      // Enforce caller authorization: only recipient can accept
+      const isRecipient = callerNormSet.has(existingConn.recipientId.toLowerCase());
+      if (!isRecipient && !caller.user.is_staff) {
+        return NextResponse.json({ success: false, error: 'Forbidden: Only the recipient can accept this connection' }, { status: 403 });
+      }
 
       await connectionsCol.updateOne(filter, {
         $set: { status: 'accepted', updatedAt: nowIso },
@@ -409,6 +504,16 @@ export async function POST(req: NextRequest) {
       }
 
       const filter = filterConditions.length > 0 ? { $or: filterConditions } : { id: connectionId };
+      const existingConn = await connectionsCol.findOne(filter);
+      if (!existingConn) {
+        return NextResponse.json({ success: false, error: 'Connection request not found' }, { status: 404 });
+      }
+
+      // Enforce caller authorization: only recipient can decline
+      const isRecipient = callerNormSet.has(existingConn.recipientId.toLowerCase());
+      if (!isRecipient && !caller.user.is_staff) {
+        return NextResponse.json({ success: false, error: 'Forbidden: Only the recipient can decline this connection' }, { status: 403 });
+      }
 
       await connectionsCol.updateOne(filter, {
         $set: { status: 'declined', updatedAt: nowIso },
@@ -461,8 +566,19 @@ export async function POST(req: NextRequest) {
       }
 
       const filter = filterConditions.length > 0 ? { $or: filterConditions } : { id: connectionId };
-
       const existing = await connectionsCol.findOne(filter);
+      if (!existing) {
+        return NextResponse.json({ success: false, error: 'Connection not found' }, { status: 404 });
+      }
+
+      // Enforce caller authorization: must be sender or recipient
+      const isParticipant =
+        callerNormSet.has(existing.senderId.toLowerCase()) ||
+        callerNormSet.has(existing.recipientId.toLowerCase());
+      if (!isParticipant && !caller.user.is_staff) {
+        return NextResponse.json({ success: false, error: 'Forbidden: You cannot cancel or remove this connection' }, { status: 403 });
+      }
+
       await connectionsCol.deleteOne(filter);
 
       // Clean up notification

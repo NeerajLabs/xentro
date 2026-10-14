@@ -9,6 +9,14 @@ export interface VerifiedAuthUser {
   accountType: string;
   isActive: boolean;
   activeRoles?: string[];
+  userId?: string;
+  name?: string;
+  role?: string;
+  roleTitle?: string;
+  avatar?: string;
+  organization?: string;
+  is_verified?: boolean;
+  is_staff?: boolean;
 }
 
 export interface EntityAuthorizationResult {
@@ -75,14 +83,70 @@ export function signJwtToken(payload: Record<string, any>, expiresInSec: number 
   return `${headerB64}.${payloadB64}.${signature}`;
 }
 
+const OTP_SECRET = process.env.OTP_SECRET || process.env.JWT_SECRET || 'xentro-jwt-access-secret-2026-sha256-key';
+
 /**
- * Hashes an OTP with a challenge ID using SHA-256 for secure verification.
+ * Hashes an OTP with challenge ID using a server-secret keyed HMAC-SHA256.
+ * Precludes rainbow table precomputation and offline brute force.
  */
 export function hashOtp(otp: string, challengeId: string): string {
   return crypto
-    .createHash('sha256')
+    .createHmac('sha256', OTP_SECRET)
     .update(`${otp.trim()}:${challengeId}`)
     .digest('hex');
+}
+
+/**
+ * Constant-time OTP verification supporting HMAC-SHA256 and legacy migration.
+ */
+export function verifyOtp(
+  enteredCode: string,
+  challengeId: string,
+  expectedHash?: string | null,
+  legacyCode?: string | null
+): boolean {
+  const cleanEntered = (enteredCode || '').trim();
+  if (!cleanEntered) return false;
+
+  // 1. Primary: Server-secret HMAC with constant-time comparison
+  if (expectedHash && challengeId) {
+    const computed = hashOtp(cleanEntered, challengeId);
+    try {
+      const compBuf = Buffer.from(computed, 'hex');
+      const expBuf = Buffer.from(expectedHash, 'hex');
+      if (compBuf.length === expBuf.length && crypto.timingSafeEqual(compBuf, expBuf)) {
+        return true;
+      }
+    } catch {
+      // hex decode error
+    }
+
+    // Fallback: Support transition from plain SHA-256 challenges
+    try {
+      const legacySha = crypto.createHash('sha256').update(`${cleanEntered}:${challengeId}`).digest('hex');
+      const legBuf = Buffer.from(legacySha, 'hex');
+      const expBuf = Buffer.from(expectedHash, 'hex');
+      if (legBuf.length === expBuf.length && crypto.timingSafeEqual(legBuf, expBuf)) {
+        return true;
+      }
+    } catch {
+      // hex decode error
+    }
+  }
+
+  // 2. Safe transition for legacy unconsumed challenges that only had plaintext code
+  if (legacyCode && typeof legacyCode === 'string') {
+    const legClean = legacyCode.trim();
+    if (legClean.length === cleanEntered.length) {
+      try {
+        return crypto.timingSafeEqual(Buffer.from(cleanEntered), Buffer.from(legClean));
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  return false;
 }
 
 
@@ -203,20 +267,44 @@ export function extractAuthToken(req: NextRequest): string | null {
     return sessionCookie.trim();
   }
 
+  const adminCookie = req.cookies.get('xentro_admin_auth')?.value;
+  if (adminCookie) {
+    return adminCookie.trim();
+  }
+
+  try {
+    const queryToken = req.nextUrl?.searchParams?.get('token');
+    if (queryToken && queryToken.trim()) {
+      return queryToken.trim();
+    }
+  } catch {
+    // continue
+  }
+
   return null;
 }
+
+
 
 /**
  * Server-side identity guard:
  * Cryptographically verifies token and resolves active user from MongoDB `users`.
  */
+export interface ServerAuthResult {
+  authenticated: boolean;
+  user: VerifiedAuthUser;
+  error?: NextResponse;
+}
+
 export async function requireAuthenticatedUser(
   req: NextRequest
-): Promise<{ user: VerifiedAuthUser } | { error: NextResponse }> {
+): Promise<ServerAuthResult> {
   const token = extractAuthToken(req);
 
   if (!token) {
     return {
+      authenticated: false,
+      user: null as any,
       error: NextResponse.json(
         { success: false, message: 'Authentication required. Missing session credentials.' },
         { status: 401 }
@@ -227,6 +315,8 @@ export async function requireAuthenticatedUser(
   const payload = verifyJwtToken(token);
   if (!payload || !payload.sub) {
     return {
+      authenticated: false,
+      user: null as any,
       error: NextResponse.json(
         { success: false, message: 'Invalid or expired session credentials. Please sign in again.' },
         { status: 401 }
@@ -247,6 +337,8 @@ export async function requireAuthenticatedUser(
 
     if (!userDoc) {
       return {
+        authenticated: false,
+        user: null as any,
         error: NextResponse.json(
           { success: false, message: 'Authenticated user account not found.' },
           { status: 401 }
@@ -256,6 +348,8 @@ export async function requireAuthenticatedUser(
 
     if (userDoc.isActive === false || userDoc.status === 'SUSPENDED') {
       return {
+        authenticated: false,
+        user: null as any,
         error: NextResponse.json(
           { success: false, message: 'Your account has been suspended. Please contact platform support.' },
           { status: 403 }
@@ -265,16 +359,26 @@ export async function requireAuthenticatedUser(
 
     const verifiedUser: VerifiedAuthUser = {
       id: userDoc.id || String(userDoc._id),
+      userId: userDoc.id || String(userDoc._id),
       email: userDoc.email || payload.email || '',
       fullName: userDoc.fullName || userDoc.name || 'Member',
+      name: userDoc.fullName || userDoc.name || 'Member',
       accountType: userDoc.accountType || userDoc.primaryRole || 'Explorer',
+      role: userDoc.primaryRole || userDoc.role || userDoc.accountType || 'Explorer',
+      roleTitle: userDoc.roleTitle || userDoc.primaryRole || userDoc.accountType || 'Member',
+      avatar: userDoc.avatar || userDoc.photoUrl || '',
+      organization: userDoc.organization || userDoc.startupName || '',
       isActive: userDoc.isActive !== false,
+      is_verified: Boolean(userDoc.is_verified || userDoc.emailVerified),
+      is_staff: Boolean(userDoc.is_staff || userDoc.isAdmin),
       activeRoles: userDoc.activeRoles || [],
     };
 
-    return { user: verifiedUser };
+    return { authenticated: true, user: verifiedUser };
   } catch (err: any) {
     return {
+      authenticated: false,
+      user: null as any,
       error: NextResponse.json(
         { success: false, message: 'Database error validating session.' },
         { status: 500 }
@@ -677,10 +781,18 @@ export async function requireEntityMasterContext(
 
     const verifiedUser: VerifiedAuthUser = {
       id: userDoc.id || String(userDoc._id),
+      userId: userDoc.id || String(userDoc._id),
       email: userDoc.email || payload.email || '',
       fullName: userDoc.fullName || userDoc.name || 'Entity Head',
+      name: userDoc.fullName || userDoc.name || 'Entity Head',
       accountType: userDoc.accountType || 'Startup Founder',
+      role: userDoc.primaryRole || userDoc.role || 'Startup Founder',
+      roleTitle: userDoc.roleTitle || 'Founder',
+      avatar: userDoc.avatar || userDoc.photoUrl || '',
+      organization: userDoc.organization || entity.name || '',
       isActive: true,
+      is_verified: Boolean(userDoc.is_verified || userDoc.emailVerified),
+      is_staff: Boolean(userDoc.is_staff || userDoc.isAdmin),
       activeRoles: userDoc.activeRoles || [],
     };
 
@@ -921,10 +1033,18 @@ export async function requireEntityWorkspaceContext(
 
     const verifiedUser: VerifiedAuthUser = {
       id: userDoc.id || String(userDoc._id),
+      userId: userDoc.id || String(userDoc._id),
       email: userDoc.email || payload.email || '',
       fullName: userDoc.fullName || userDoc.name || 'Team Member',
+      name: userDoc.fullName || userDoc.name || 'Team Member',
       accountType: userDoc.accountType || 'Explorer',
+      role: membership.role || userDoc.primaryRole || 'Member',
+      roleTitle: membership.role || userDoc.roleTitle || 'Member',
+      avatar: userDoc.avatar || userDoc.photoUrl || '',
+      organization: userDoc.organization || entity.name || '',
       isActive: true,
+      is_verified: Boolean(userDoc.is_verified || userDoc.emailVerified),
+      is_staff: Boolean(userDoc.is_staff || userDoc.isAdmin),
       activeRoles: userDoc.activeRoles || [],
     };
 
@@ -1070,6 +1190,58 @@ export async function revokeEntitySession(
     return result.modifiedCount > 0;
   } catch (err) {
     console.warn('[revokeEntitySession] Failed to revoke session:', err);
+    return false;
+  }
+}
+
+/**
+ * Ecosystem Stage 1/Phase 1: requireServerAuth alias for requireAuthenticatedUser
+ */
+export async function requireServerAuth(req: NextRequest): Promise<ServerAuthResult> {
+  return requireAuthenticatedUser(req);
+}
+
+/**
+ * Validates whether a caller user has permission to act on behalf of an entity
+ */
+export async function verifyCallerEntityAccess(userId: string, entityId: string): Promise<boolean> {
+  if (!userId || !entityId) return false;
+  try {
+    const db = await getDatabase();
+    const entitiesCol = db.collection('entities');
+    const entity = await entitiesCol.findOne({
+      $or: [{ id: entityId }, { entityId: entityId }],
+      status: { $nin: ['DELETED', 'ORPHANED_DELETED'] },
+    });
+    if (!entity) return false;
+
+    // 1. Direct owner or creator check
+    if (entity.primaryOwnerId === userId || entity.createdByUserId === userId) {
+      return true;
+    }
+
+    // 2. Memberships check
+    const membershipsCol = db.collection('memberships');
+    const membership = await membershipsCol.findOne({
+      entityId: entity.id || entityId,
+      userId,
+      status: 'ACTIVE',
+    });
+    if (membership) {
+      return true;
+    }
+
+    // 3. Embedded members check
+    if (Array.isArray(entity.members)) {
+      const isMem = entity.members.some(
+        (m: any) => m.userId === userId && m.status !== 'SUSPENDED' && m.status !== 'REVOKED'
+      );
+      if (isMem) return true;
+    }
+
+    return false;
+  } catch (err) {
+    console.warn('[verifyCallerEntityAccess] Warning:', err);
     return false;
   }
 }

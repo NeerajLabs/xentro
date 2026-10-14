@@ -1,14 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBackendBaseUrl } from '@/lib/backendUrl';
 import { getMongoClient } from '@/lib/mongodb';
+import { requireServerAuth } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
-  const excludeUserId = searchParams.get('excludeUserId') || '';
-  const excludeEmail = searchParams.get('excludeEmail') || '';
+  const caller = await requireServerAuth(req);
+  const callerUserId = caller.authenticated && caller.user ? (caller.user.id || caller.user.userId || '') : '';
+  const callerEmail = caller.authenticated && caller.user ? (caller.user.email || '') : '';
+
+  const excludeUserId = searchParams.get('excludeUserId') || callerUserId || '';
+  const excludeEmail = searchParams.get('excludeEmail') || callerEmail || '';
 
   // 1. Direct MongoDB Atlas Primary Query: Instantaneous (<20ms) response, eliminating Render cold starts
   try {
@@ -23,8 +28,26 @@ export async function GET(req: NextRequest) {
       is_deleted: { $ne: true },
     };
 
-    if (excludeUserId) {
-      queryConditions.id = { $ne: excludeUserId };
+    const excludedIds: string[] = [];
+    if (excludeUserId) excludedIds.push(excludeUserId);
+
+    // Exclude users blocked by or who blocked the caller
+    if (callerUserId) {
+      try {
+        const blocks = await db.collection('user_blocks').find({
+          $or: [{ blockerId: callerUserId }, { blockedId: callerUserId }],
+        }).toArray();
+        blocks.forEach((b: any) => {
+          if (b.blockerId === callerUserId && b.blockedId) excludedIds.push(b.blockedId);
+          if (b.blockedId === callerUserId && b.blockerId) excludedIds.push(b.blockerId);
+        });
+      } catch (bErr) {
+        console.warn('[Recommendations] Block check error:', bErr);
+      }
+    }
+
+    if (excludedIds.length > 0) {
+      queryConditions.id = { $nin: Array.from(new Set(excludedIds)) };
     }
     if (excludeEmail) {
       queryConditions.email = { $ne: excludeEmail.toLowerCase() };

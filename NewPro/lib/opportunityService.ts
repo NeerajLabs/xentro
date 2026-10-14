@@ -658,7 +658,7 @@ class OpportunityService {
     return null;
   }
 
-  public applyToOpportunity(
+  public async applyToOpportunity(
     opportunityId: string,
     data: {
       applicantId: string;
@@ -672,7 +672,7 @@ class OpportunityService {
       proposalPitch?: string;
       submittedDocuments?: string[];
     }
-  ): OpportunityApplicant {
+  ): Promise<OpportunityApplicant> {
     const all = this.getApplicantsStorage();
     const newApplicant: OpportunityApplicant = {
       id: `app_${Date.now()}`,
@@ -691,6 +691,34 @@ class OpportunityService {
     if (opp) {
       opp.applicantsCount = (opp.applicantsCount || 0) + 1;
       this.setStorage(opps);
+    }
+
+    // Authoritative Server-Side MongoDB Atlas Persistence
+    try {
+      const res = await fetch('/api/opportunities/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          opportunityId,
+          ...data,
+        }),
+      });
+      if (res.ok) {
+        const payload = await res.json();
+        if (payload.application) {
+          return payload.application;
+        }
+      } else {
+        const errPayload = await res.json().catch(() => ({}));
+        if (errPayload.error) {
+          throw new Error(errPayload.error);
+        }
+      }
+    } catch (apiErr: any) {
+      console.warn('[opportunityService] Server persistence error:', apiErr?.message);
+      if (apiErr?.message && !apiErr.message.includes('fetch')) {
+        throw apiErr;
+      }
     }
 
     return newApplicant;

@@ -189,9 +189,27 @@ export const PostCard: React.FC<PostCardProps> = ({ post, onLikeToggle }) => {
     showToast('Post link copied to clipboard!');
   };
 
-  const handleReport = () => {
-    showToast('Report submitted. Thank you for keeping XENTRO safe.', 'info');
+  const handleReport = async () => {
     setShowMenu(false);
+    try {
+      const res = await fetch('/api/reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetType: 'post',
+          targetId: post.id,
+          reason: 'Reported by user from post menu',
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(data.message || 'Report submitted. Thank you for keeping Xentro safe.', 'info');
+      } else {
+        showToast(data.error || 'Could not submit report. Please try again.', 'error');
+      }
+    } catch {
+      showToast('Report request failed. Please check your connection.', 'error');
+    }
   };
 
   const handleSave = () => {
