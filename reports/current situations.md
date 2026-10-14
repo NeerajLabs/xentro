@@ -22,7 +22,7 @@ All changes were implemented on a dedicated security branch (`fix/phase-1-securi
 ## 2. Complete Vulnerabilities Remediated (SEC-01 through SEC-11)
 
 ### SEC-01: Exposed Cloud & Database Credentials (P0 Critical)
-- **The Problem:** Production MongoDB Atlas connection strings (`mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@...`), Cloudflare R2 object storage access keys (`b023f03aa7cae5e1c0d507b1e1026064`), secret access keys, and Zoho base64 SMTP passwords were hardcoded in route handlers, scripts, and example files.
+- **The Problem:** Historical MongoDB Atlas connection strings (`mongodb+srv://xentro_backend:<REDACTED>@...`), Cloudflare R2 object storage access keys (`<REDACTED_R2_KEY>`), secret access keys, and Zoho base64 SMTP passwords were hardcoded in legacy route handlers, scripts, and example files.
 - **What We Did:**
   - Eradicated all hardcoded credentials and fallback connection strings across 18 Next.js routes/scripts and Python backend modules.
   - Enforced strict server-side environment checks (`MONGODB_URI`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `ZOHO_MAIL_PASSWORD`).
@@ -243,8 +243,8 @@ Because live secrets previously existed in historical source code commits, **rem
    - Rotate the database user password for `xentro_backend`.
    - Update `MONGODB_URI` in deployment hosting environments (Vercel, AWS ECS, etc.).
 2. **Cloudflare R2 Object Storage Rotation:**
-   - Log into Cloudflare dashboard for account `d2ad4f738fe76d05908a8f4c28a86776`.
-   - Revoke compromised Access Key `b023f03aa7cae5e1c0d507b1e1026064`.
+   - Log into Cloudflare dashboard for account `<REDACTED_ACCOUNT_ID>`.
+   - Revoke compromised historical Access Key.
    - Generate a new scoped token for bucket `xentro-user-assets`.
    - Set new `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` in environment variables.
 3. **Zoho Mail SMTP Credentials:**

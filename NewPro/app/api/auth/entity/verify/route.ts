@@ -7,8 +7,9 @@ import {
   resolveAuthoritativeHead,
   issueEntityMasterGrant,
   logSecurityAuditEvent,
+  hashOtp,
 } from '@/lib/serverAuth';
-import { hashOtp } from '../challenge/route';
+
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';

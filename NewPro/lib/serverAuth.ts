@@ -76,6 +76,17 @@ export function signJwtToken(payload: Record<string, any>, expiresInSec: number 
 }
 
 /**
+ * Hashes an OTP with a challenge ID using SHA-256 for secure verification.
+ */
+export function hashOtp(otp: string, challengeId: string): string {
+  return crypto
+    .createHash('sha256')
+    .update(`${otp.trim()}:${challengeId}`)
+    .digest('hex');
+}
+
+
+/**
  * Resolves the authoritative governing Head User ID for an entity.
  * Fails closed if legacy owner fields disagree.
  */

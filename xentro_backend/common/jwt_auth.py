@@ -125,8 +125,11 @@ class XentroAnonymousUser:
 
 
 class XentroJWTAuthentication(authentication.BaseAuthentication):
-
     """DRF Authentication class supporting Header and Cookie."""
+
+    def authenticate_header(self, request):
+        return 'Bearer realm="api"'
+
     def authenticate(self, request):
         token = None
         auth_header = request.headers.get("Authorization") or request.headers.get("authorization")

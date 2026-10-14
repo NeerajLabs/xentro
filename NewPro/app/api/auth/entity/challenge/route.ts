@@ -6,6 +6,7 @@ import {
   verifyJwtToken,
   resolveAuthoritativeHead,
   logSecurityAuditEvent,
+  hashOtp,
 } from '@/lib/serverAuth';
 import { sendZohoEmail } from '@/lib/email/zohoDispatcher';
 
@@ -22,12 +23,6 @@ function maskEmail(email: string): string {
   return `${name[0]}***${name[name.length - 1]}@${domain}`;
 }
 
-export function hashOtp(otp: string, challengeId: string): string {
-  return crypto
-    .createHash('sha256')
-    .update(`${otp.trim()}:${challengeId}`)
-    .digest('hex');
-}
 
 export async function POST(req: NextRequest) {
   try {
