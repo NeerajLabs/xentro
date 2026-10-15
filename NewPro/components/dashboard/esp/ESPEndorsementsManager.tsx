@@ -289,13 +289,16 @@ export const ESPEndorsementsManager: React.FC = () => {
 
   const handleToggleVisibility = async (affId: string, currentConsent: boolean) => {
     try {
+      const activeEspId = entityContextService.getActiveEntityId() || 'esp_org_1';
       const res = await fetch('/api/affiliates', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           action: 'UPDATE_VISIBILITY',
           affiliationId: affId,
-          mutualVisibilityConsent: !currentConsent,
+          entityId: activeEspId,
+          issuerVisibilityConsent: !currentConsent,
+          consent: !currentConsent,
           userId: user?.id || 'esp_admin',
         }),
       });

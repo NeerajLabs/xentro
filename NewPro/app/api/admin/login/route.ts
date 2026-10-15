@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
 import { getBackendBaseUrl } from '@/lib/backendUrl';
+import { signJwtToken } from '@/lib/serverAuth';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
@@ -177,9 +178,45 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const jwtPayload = {
+      sub: matchedAdmin.employeeId,
+      employeeId: matchedAdmin.employeeId,
+      name: matchedAdmin.name,
+      role: matchedAdmin.role,
+      department: matchedAdmin.department,
+      permissions: matchedAdmin.permissions,
+      is_staff: true,
+      isAdmin: true,
+    };
+    const jwtToken = signJwtToken(jwtPayload, 24 * 3600);
+
     const sessionToken =
       'xa_sec_' + crypto.randomBytes(24).toString('hex') + '_' + Date.now().toString(36);
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+
+    // Persist session to MongoDB admin_sessions for authoritative validation
+    try {
+      const db = await getDatabase();
+      await db.collection('admin_sessions').updateOne(
+        { employeeId: matchedAdmin.employeeId },
+        {
+          $set: {
+            token: sessionToken,
+            jwtToken,
+            employeeId: matchedAdmin.employeeId,
+            name: matchedAdmin.name,
+            role: matchedAdmin.role,
+            department: matchedAdmin.department,
+            permissions: matchedAdmin.permissions,
+            updatedAt: new Date().toISOString(),
+            expiresAt,
+          },
+        },
+        { upsert: true }
+      );
+    } catch (sessionPersistErr) {
+      console.warn('[Admin Login] Session persistence warning:', sessionPersistErr);
+    }
 
     const session = {
       employeeId: matchedAdmin.employeeId,
@@ -187,7 +224,8 @@ export async function POST(req: NextRequest) {
       role: matchedAdmin.role,
       department: matchedAdmin.department,
       permissions: matchedAdmin.permissions,
-      token: sessionToken,
+      token: jwtToken, // Use signed JWT for cross-service and Next.js verification
+      sessionToken,
       expiresAt,
     };
 
@@ -195,11 +233,14 @@ export async function POST(req: NextRequest) {
       success: true,
       data: {
         session,
+        tokens: {
+          accessToken: jwtToken,
+        },
       },
     });
 
     // Set secure HTTP-only cookie for admin
-    res.cookies.set('xentro_admin_auth', sessionToken, {
+    res.cookies.set('xentro_admin_auth', jwtToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',

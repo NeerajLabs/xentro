@@ -1421,7 +1421,11 @@ class AdminEntitiesListView(APIView):
 
             # Entitlement & Pro Status (Paid vs ESP Affiliation)
             active_sub = sub_col.find_one({"entityId": e_id, "status": "Active"})
-            active_aff = aff_col.find_one({"startupEntityId": e_id, "status": "Active"})
+            active_aff = aff_col.find_one({
+                "startupEntityId": e_id,
+                "status": "Active",
+                "issuingOrgType": {"$in": ["ESP", "esp", "Esp"]}
+            })
             
             if active_sub and "Pro" in active_sub.get("planName", ""):
                 entitlement_tier = "Startup Pro"

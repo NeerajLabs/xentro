@@ -160,6 +160,11 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
 
   // Authoritative MongoDB Affiliation & Pending Links State
   const [pendingAffiliateLinks, setPendingAffiliateLinks] = useState<any[]>([]);
+  const [authoritativeAffiliations, setAuthoritativeAffiliations] = useState<any[]>([]);
+  const [isAffiliationsModalOpen, setIsAffiliationsModalOpen] = useState(false);
+  const [selectedForRevoke, setSelectedForRevoke] = useState<any | null>(null);
+  const [revokeReason, setRevokeReason] = useState('');
+  const [isRevoking, setIsRevoking] = useState(false);
   const [isRedeemModalOpen, setIsRedeemModalOpen] = useState(false);
   const [redeemCodeInput, setRedeemCodeInput] = useState('');
   const [redeemVisibilityConsent, setRedeemVisibilityConsent] = useState(true);
@@ -178,7 +183,8 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
           );
           setPendingAffiliateLinks(validPending);
         }
-        if (Array.isArray(json.data.affiliations) && json.data.affiliations.length > 0) {
+        if (Array.isArray(json.data.affiliations)) {
+          setAuthoritativeAffiliations(json.data.affiliations);
           const activeAffs = json.data.affiliations.filter((a: any) => a.status === 'Active');
           if (activeAffs.length > 0) {
             const mapped: StartupESPEndorsementItem[] = activeAffs.map((a: any) => ({
@@ -322,6 +328,81 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
       showToast(err.message || 'Error redeeming invitation code.', 'error');
     } finally {
       setIsRedeeming(false);
+    }
+  };
+
+  const handleRevokeAffiliation = async (affiliationId: string, reason?: string) => {
+    const eid = entityContextService.getActiveEntityId() || 'st_1';
+    let userId = 'user_startup';
+    try {
+      const p = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
+      if (p) userId = JSON.parse(p).id || userId;
+    } catch {}
+
+    setIsRevoking(true);
+    try {
+      const res = await fetch('/api/affiliates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'REVOKE',
+          affiliationId,
+          revokingEntityId: eid,
+          revokingUserId: userId,
+          reason: reason || 'Terminated by startup founder',
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        showToast(json.message || 'Failed to revoke affiliation.', 'error');
+        return;
+      }
+
+      showToast('Affiliation terminated successfully.', 'info');
+      setSelectedForRevoke(null);
+      loadAuthoritativeAffiliations();
+      loadDomainTelemetry();
+      window.dispatchEvent(new CustomEvent('xentro-startup-endorsements-changed'));
+    } catch (err: any) {
+      showToast(err.message || 'Error revoking affiliation.', 'error');
+    } finally {
+      setIsRevoking(false);
+    }
+  };
+
+  const handleToggleVisibility = async (affiliationId: string, currentConsent: boolean) => {
+    let userId = 'user_startup';
+    try {
+      const p = localStorage.getItem('xentro_user_profile') || sessionStorage.getItem('xentro_user_profile');
+      if (p) userId = JSON.parse(p).id || userId;
+    } catch {}
+
+    const eid = entityContextService.getActiveEntityId() || 'st_1';
+    try {
+      const res = await fetch('/api/affiliates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'UPDATE_VISIBILITY',
+          affiliationId,
+          entityId: eid,
+          startupVisibilityConsent: !currentConsent,
+          consent: !currentConsent,
+          userId,
+        }),
+      });
+
+      const json = await res.json();
+      if (!res.ok || !json.success) {
+        showToast(json.message || 'Failed to update visibility consent.', 'error');
+        return;
+      }
+
+      showToast(`Public showcase ${!currentConsent ? 'enabled' : 'hidden'}.`, 'success');
+      loadAuthoritativeAffiliations();
+    } catch (err: any) {
+      showToast(err.message || 'Error updating visibility consent.', 'error');
     }
   };
 
@@ -1076,11 +1157,11 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
           </p>
         </div>
 
-        {/* Telemetry 3: ESP Endorsement */}
+        {/* Telemetry 3: ESP & Institutional Affiliations */}
         <div
-          onClick={() => onNavigateTab('billing')}
+          onClick={() => setIsAffiliationsModalOpen(true)}
           className="p-3 rounded-xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-1.5 cursor-pointer hover:border-[#D9FF3F]/50 transition-all group"
-          title="Click to view Active and Inbound ESP Endorsements"
+          title="Click to view and manage Institutional Affiliations & Endorsements"
         >
           <div className="flex items-center justify-between text-[#565B59] dark:text-[#B6B8B7]">
             <span className="text-[10px] font-bold uppercase tracking-wider">ESP Endorsement</span>
@@ -2229,6 +2310,211 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Institutional Affiliations Management Modal (Section 9) */}
+      {isAffiliationsModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] rounded-2xl p-6 shadow-2xl space-y-5 animate-scale-up max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-[#262A29]">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center">
+                  <Award className="w-5 h-5 text-emerald-600 dark:text-[#D9FF3F]" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-[#101212] dark:text-white font-heading">
+                    Institutional Affiliations & Endorsements
+                  </h3>
+                  <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                    Manage active ESP & academic affiliations, public visibility, and perks
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsAffiliationsModalOpen(false)}
+                className="p-1.5 rounded-lg text-[#565B59] hover:text-[#101212] dark:hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Quick Action: Redeem code */}
+            <div className="flex items-center justify-between p-3 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]">
+              <span className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                Have a single-use affiliation invitation code from an incubator or university?
+              </span>
+              <button
+                onClick={() => {
+                  setIsAffiliationsModalOpen(false);
+                  setIsRedeemModalOpen(true);
+                }}
+                className="px-3 py-1.5 rounded-lg bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] font-bold text-xs whitespace-nowrap cursor-pointer transition-all"
+              >
+                Redeem Code
+              </button>
+            </div>
+
+            {/* Active Affiliations List */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#565B59] dark:text-[#B6B8B7]">
+                Active Relationships ({authoritativeAffiliations.filter((a: any) => a.status === 'Active').length})
+              </h4>
+
+              {authoritativeAffiliations.filter((a: any) => a.status === 'Active').length === 0 ? (
+                <div className="p-8 text-center rounded-xl bg-gray-50 dark:bg-[#202422] border border-dashed border-gray-200 dark:border-[#262A29] space-y-2">
+                  <Award className="w-8 h-8 text-gray-400 mx-auto" />
+                  <p className="text-xs font-semibold text-[#565B59] dark:text-[#B6B8B7]">
+                    No active institutional affiliations currently linked.
+                  </p>
+                  <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                    Receive an invitation link from an accredited ESP or enter an invite code to connect.
+                  </p>
+                </div>
+              ) : (
+                authoritativeAffiliations
+                  .filter((a: any) => a.status === 'Active')
+                  .map((aff: any) => (
+                    <div
+                      key={aff.id}
+                      className="p-4 rounded-xl border border-gray-200 dark:border-[#262A29] bg-white dark:bg-[#181B1A] space-y-3 shadow-xs"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center font-bold text-base shrink-0">
+                            {aff.issuingOrgName?.charAt(0) || 'P'}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h5 className="text-sm font-bold text-[#101212] dark:text-white font-sora">
+                                {aff.issuingOrgName}
+                              </h5>
+                              <span className="px-2 py-0.2 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                                {aff.issuingOrgType === 'ESP' ? 'ESP Incubator' : 'Institution'}
+                              </span>
+                              <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F]">
+                                {aff.issuingOrgType === 'ESP' ? 'Startup Pro Sponsored' : 'Affiliation Active'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] mt-0.5">
+                              Program: <strong>{aff.programName}</strong> &bull; Cohort: <strong>{aff.cohort}</strong>
+                            </p>
+                            <p className="text-[10px] text-[#565B59] dark:text-[#B6B8B7]">
+                              Affiliated since: {aff.acceptedAt ? new Date(aff.acceptedAt).toLocaleDateString() : 'Active'}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Leave / Revoke Affiliation Action */}
+                        <button
+                          onClick={() => setSelectedForRevoke(aff)}
+                          className="px-3 py-1.5 rounded-lg border border-rose-500/30 text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0"
+                        >
+                          Leave Affiliation
+                        </button>
+                      </div>
+
+                      {/* Mutual Visibility Consent Toggle */}
+                      <div className="flex items-center justify-between pt-2 border-t border-gray-100 dark:border-[#262A29] text-xs">
+                        <span className="text-[#565B59] dark:text-[#B6B8B7]">
+                          Public Profile Showcase:
+                        </span>
+                        <button
+                          onClick={() => handleToggleVisibility(aff.id, aff.mutualVisibilityConsent !== false)}
+                          className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                            aff.mutualVisibilityConsent !== false
+                              ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30'
+                              : 'bg-gray-100 dark:bg-[#202422] text-[#565B59] border border-gray-200 dark:border-[#262A29]'
+                          }`}
+                        >
+                          {aff.mutualVisibilityConsent !== false ? '✓ Showcased Publicly' : 'Hidden from Public'}
+                        </button>
+                      </div>
+                    </div>
+                  ))
+              )}
+            </div>
+
+            {/* Past / Revoked Affiliations */}
+            {authoritativeAffiliations.some((a: any) => a.status === 'Revoked') && (
+              <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-[#262A29]">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-[#565B59] dark:text-[#B6B8B7]">
+                  Affiliation History (Revoked / Past)
+                </h4>
+                <div className="space-y-2">
+                  {authoritativeAffiliations
+                    .filter((a: any) => a.status === 'Revoked')
+                    .map((aff: any) => (
+                      <div
+                        key={aff.id}
+                        className="p-3 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-center justify-between text-xs"
+                      >
+                        <div>
+                          <span className="font-bold text-[#101212] dark:text-white">{aff.issuingOrgName}</span>
+                          <span className="text-[#565B59] dark:text-[#B6B8B7] ml-2">
+                            ({aff.programName} - {aff.cohort})
+                          </span>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/10 text-rose-600 dark:text-rose-400">
+                          Revoked {aff.revokedAt ? new Date(aff.revokedAt).toLocaleDateString() : ''}
+                        </span>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Revocation Confirmation Dialog */}
+      {selectedForRevoke && (
+        <div className="fixed inset-0 z-60 bg-black/75 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="w-full max-w-md bg-white dark:bg-[#181B1A] border border-rose-500/30 rounded-2xl p-6 shadow-2xl space-y-4 animate-scale-up">
+            <div className="w-12 h-12 rounded-xl bg-rose-500/15 text-rose-600 dark:text-rose-400 flex items-center justify-center mx-auto border border-rose-500/30">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-bold font-sora text-[#101212] dark:text-white">
+                Terminate Affiliation with {selectedForRevoke.issuingOrgName}?
+              </h3>
+              <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
+                Either party may terminate this relationship at any time. Any sponsored <strong>Startup Pro</strong> platform entitlements derived exclusively from this relationship will be deactivated unless you maintain an independent active paid subscription or another qualifying ESP affiliation.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-[#101212] dark:text-white">
+                Termination Reason (Optional)
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Program completed or mutual agreement"
+                value={revokeReason}
+                onChange={(e) => setRevokeReason(e.target.value)}
+                className="w-full px-3.5 py-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-rose-500"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedForRevoke(null)}
+                className="px-4 py-2 rounded-xl border border-gray-200 dark:border-[#262A29] text-xs font-bold text-[#565B59] dark:text-[#B6B8B7] cursor-pointer"
+              >
+                Keep Affiliation
+              </button>
+              <button
+                type="button"
+                disabled={isRevoking}
+                onClick={() => handleRevokeAffiliation(selectedForRevoke.id, revokeReason)}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs active:scale-95 cursor-pointer disabled:opacity-50"
+              >
+                {isRevoking ? 'Terminating...' : 'Confirm Termination'}
+              </button>
+            </div>
           </div>
         </div>
       )}

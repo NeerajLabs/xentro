@@ -93,10 +93,9 @@ def resolve_and_validate_database_config(enforce_test_isolation: bool = False):
         }
 
     # Non-test environment
-    canonical_mongo_uri = (
-        "mongodb+srv://xentro_backend:aGhEUewSo1C9Py5i@xentro-db.rokwmb.mongodb.net/?appName=xentro-db"
-    )
-    uri = (os.getenv("MONGODB_URI") or canonical_mongo_uri).strip()
+    uri = (os.getenv("MONGODB_URI") or "").strip()
+    if not uri:
+        raise DatabaseIsolationError("Database configuration error: MONGODB_URI environment variable is required.")
     db_name = (os.getenv("MONGODB_DB_NAME") or "xentro_db").strip()
 
     return {
