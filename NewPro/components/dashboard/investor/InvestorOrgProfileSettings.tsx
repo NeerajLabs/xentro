@@ -23,6 +23,7 @@ import {
   InvestorOrganizationType,
   INVESTOR_ORG_TYPES,
 } from '@/types/investorOrganization';
+import { InvestorBillingManager } from './InvestorBillingManager';
 import { useToast } from '@/components/ui/Toast';
 
 interface InvestorOrgProfileSettingsProps {
@@ -36,7 +37,7 @@ export const InvestorOrgProfileSettings: React.FC<InvestorOrgProfileSettingsProp
 }) => {
   const { showToast } = useToast();
   const [activeCategory, setActiveCategory] = useState<
-    'identity' | 'focus' | 'value' | 'criteria' | 'process' | 'connect'
+    'identity' | 'focus' | 'value' | 'criteria' | 'process' | 'connect' | 'billing'
   >('identity');
 
   const [org, setOrg] = useState<InvestorOrganization>(() => {
@@ -84,6 +85,7 @@ export const InvestorOrgProfileSettings: React.FC<InvestorOrgProfileSettingsProp
     { id: 'criteria', label: 'Criteria & Diligence' },
     { id: 'process', label: 'Investment Process' },
     { id: 'connect', label: 'Connection Guidelines' },
+    { id: 'billing', label: 'Billing & Plans' },
   ];
 
   return (
@@ -476,6 +478,13 @@ export const InvestorOrgProfileSettings: React.FC<InvestorOrgProfileSettingsProp
                 className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
               />
             </div>
+          </div>
+        )}
+
+        {/* 7. BILLING & PLANS */}
+        {activeCategory === 'billing' && (
+          <div className="pt-2">
+            <InvestorBillingManager />
           </div>
         )}
       </div>

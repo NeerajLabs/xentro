@@ -20,6 +20,7 @@ import {
   Sparkles,
   User,
   Settings,
+  Receipt,
 } from 'lucide-react';
 import { UserRole } from '@/lib/userProfile';
 
@@ -97,6 +98,7 @@ export const mentorDashboardConfig: PersonaDashboardConfig = {
       items: [
         { id: 'mentorship', label: 'Mentorship', icon: GraduationCap, badge: 'Advisory' },
         { id: 'meetings', label: 'Meetings & Availability', icon: Calendar },
+        { id: 'earnings', label: 'Earnings & Withdrawals', icon: Receipt },
       ],
     },
     {

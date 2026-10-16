@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Target,
   Plus,
@@ -30,6 +30,7 @@ import {
   mockESPParticipants,
 } from '@/data/espWorkspaceData';
 import { ESPProgram, ProgramType, ESPApplication, ESPParticipant } from '@/types/esp';
+import { entityContextService } from '@/lib/entityContextService';
 
 interface ESPProgramsManagerProps {
   initialSubTab?: 'programs' | 'cohorts' | 'applications' | 'participants';
@@ -42,12 +43,38 @@ export const ESPProgramsManager: React.FC<ESPProgramsManagerProps> = ({
 }) => {
   const { showToast } = useToast();
   const esp = espProfilesData['uni_9'];
+  const activeEntityId = entityContextService.getActiveEntityId() || 'ES-100001';
   const [activeMainTab, setActiveMainTab] = useState<'programs' | 'cohorts' | 'applications' | 'participants'>(initialSubTab);
 
   // Programs state
   const [programs, setPrograms] = useState<ESPProgram[]>(esp.programs);
   const [activeCategory, setActiveCategory] = useState<'all' | 'active' | 'upcoming' | 'past'>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+
+  // Load programs from authoritative backend
+  useEffect(() => {
+    let isMounted = true;
+    async function loadPrograms() {
+      try {
+        const token = sessionStorage.getItem('xentro_access_token') || localStorage.getItem('xentro_access_token');
+        const res = await fetch(`/api/esp/${activeEntityId}/programs`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (json.success && Array.isArray(json.data) && json.data.length > 0 && isMounted) {
+            setPrograms(json.data);
+          }
+        }
+      } catch (err) {
+        console.warn('[ESPProgramsManager] Error fetching programs from server:', err);
+      }
+    }
+    loadPrograms();
+    return () => {
+      isMounted = false;
+    };
+  }, [activeEntityId]);
 
   // Applications state
   const [applications, setApplications] = useState<ESPApplication[]>(mockESPApplications);
@@ -94,7 +121,7 @@ export const ESPProgramsManager: React.FC<ESPProgramsManagerProps> = ({
     );
   });
 
-  const handleCreateProgram = (e: React.FormEvent) => {
+  const handleCreateProgram = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newProgName) return;
 
@@ -117,9 +144,33 @@ export const ESPProgramsManager: React.FC<ESPProgramsManagerProps> = ({
       eligibility: ['Functional MVP', 'Full-time founders', 'Clean incorporation'],
     };
 
-    setPrograms([newProgram, ...programs]);
+    setPrograms((prev) => [newProgram, ...prev]);
     setIsCreateModalOpen(false);
-    showToast(`Created new program "${newProgName}"!`, 'success');
+
+    try {
+      const token = sessionStorage.getItem('xentro_access_token') || localStorage.getItem('xentro_access_token');
+      const res = await fetch(`/api/esp/${activeEntityId}/programs`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(newProgram),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        showToast(`Created new program "${newProgName}"!`, 'success');
+        if (data.data) {
+          setPrograms((prev) => [data.data, ...prev.filter((p) => p.id !== newProgram.id)]);
+        }
+      } else {
+        showToast(data.message || 'Server rejected program creation', 'error');
+        setPrograms(programs);
+      }
+    } catch (err: any) {
+      console.warn('[ESPProgramsManager] Server sync warning:', err);
+      showToast(`Program "${newProgName}" created locally`, 'info');
+    }
 
     setNewProgName('');
     setNewProgDesc('');

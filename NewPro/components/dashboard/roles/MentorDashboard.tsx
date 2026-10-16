@@ -24,6 +24,7 @@ import {
   ArrowRight,
   ChevronRight,
   BookOpen,
+  Receipt,
 } from 'lucide-react';
 import { UserProfile } from '@/lib/userProfile';
 import { useToast } from '@/components/ui/Toast';
@@ -37,6 +38,7 @@ import { MentorProfileManage } from '@/components/mentor/MentorProfileManage';
 import { MentorNotifications } from '@/components/mentor/MentorNotifications';
 import { MentorSettings } from '@/components/mentor/MentorSettings';
 import { MentorBillingManager } from '@/components/mentor/MentorBillingManager';
+import { MentorEarningsWorkspace } from '@/components/mentor/MentorEarningsWorkspace';
 import { MentorProfileView } from '@/components/dashboard/MentorProfileView';
 import { Feed } from '@/components/dashboard/Feed';
 import { FullMessagesPage } from '@/components/dashboard/FullMessagesPage';
@@ -57,6 +59,7 @@ import {
 export type MentorWorkspaceTab =
   | 'home'
   | 'meetings'
+  | 'earnings'
   | 'mentorship'
   | 'messages'
   | 'explore'
@@ -109,6 +112,7 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({ profile, onNav
   }> = [
     { id: 'home', label: 'Home', icon: LayoutDashboard },
     { id: 'meetings', label: 'Meetings', icon: Calendar },
+    { id: 'earnings', label: 'Earnings & Withdrawals', icon: Receipt },
     {
       id: 'mentorship',
       label: 'Mentorship',
@@ -258,6 +262,11 @@ export const MentorDashboard: React.FC<MentorDashboardProps> = ({ profile, onNav
             meetings={initialMentorMeetings}
             availabilityConfig={defaultAvailability}
           />
+        )}
+
+        {/* MODULE: EARNINGS & WITHDRAWALS */}
+        {activeSubTab === 'earnings' && (
+          <MentorEarningsWorkspace onNavigateTab={(tab) => setActiveSubTab(tab as any)} />
         )}
 
         {/* MODULE 3: MENTORSHIP (Structured Engagements — Immediately after Meetings!) */}

@@ -16,15 +16,17 @@ import {
   Target,
   GraduationCap,
   Users,
+  Award,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { espProfilesData } from '@/data/espProfilesData';
 import { FullESPProfile, StartupStage } from '@/types/esp';
 import { ESPTeamEcosystemManager } from './ESPTeamEcosystemManager';
+import { ESPBillingManager } from './ESPBillingManager';
 
 interface ESPPublicProfileManagerProps {
   onPreviewProfile: () => void;
-  initialSubTab?: 'details' | 'team';
+  initialSubTab?: 'details' | 'team' | 'billing';
 }
 
 export const ESPPublicProfileManager: React.FC<ESPPublicProfileManagerProps> = ({
@@ -32,7 +34,7 @@ export const ESPPublicProfileManager: React.FC<ESPPublicProfileManagerProps> = (
   initialSubTab = 'details',
 }) => {
   const { showToast } = useToast();
-  const [activeSubSection, setActiveSubSection] = useState<'details' | 'team'>(initialSubTab);
+  const [activeSubSection, setActiveSubSection] = useState<'details' | 'team' | 'billing'>(initialSubTab);
   const defaultProfile = espProfilesData['uni_9'];
 
   const [name, setName] = useState(defaultProfile.identity.name);
@@ -155,9 +157,24 @@ export const ESPPublicProfileManager: React.FC<ESPPublicProfileManagerProps> = (
           <Users className="w-3.5 h-3.5" />
           <span>Team & Ecosystem</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveSubSection('billing')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeSubSection === 'billing'
+              ? 'bg-[#101212] text-white dark:bg-[#D9FF3F] dark:text-[#101212] shadow-xs'
+              : 'text-[#565B59] dark:text-[#B6B8B7] hover:text-[#101212] dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#202422]'
+          }`}
+        >
+          <Award className="w-3.5 h-3.5" />
+          <span>Billing & Capacity</span>
+        </button>
       </div>
 
-      {activeSubSection === 'team' ? (
+      {activeSubSection === 'billing' ? (
+        <ESPBillingManager />
+      ) : activeSubSection === 'team' ? (
         <ESPTeamEcosystemManager onPreviewProfile={onPreviewProfile} />
       ) : (
         /* Profile Form */

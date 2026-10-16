@@ -280,7 +280,10 @@ export const StartupDashboard: React.FC<StartupDashboardProps> = ({ profile, onN
         {activeSubTab === 'my_listings' && <StartupMyListings />}
 
         {activeSubTab === 'finances' && (
-          <StartupFinanceDashboard onNavigateTab={handleNavigateSubTab} />
+          <StartupFinanceDashboard
+            onNavigateTab={handleNavigateSubTab}
+            userRole={profile?.role || 'Viewer'}
+          />
         )}
 
         {activeSubTab === 'profile' && (

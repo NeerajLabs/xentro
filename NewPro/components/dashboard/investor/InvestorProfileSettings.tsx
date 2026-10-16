@@ -48,6 +48,7 @@ import {
   INVESTOR_PROFILE_UPDATED_EVENT,
 } from '@/lib/investorProfileState';
 import { investorDomainService } from '@/lib/investorDomainService';
+import { InvestorBillingManager } from './InvestorBillingManager';
 
 interface InvestorProfileSettingsProps {
   onViewPreview?: () => void;
@@ -60,7 +61,8 @@ type SettingsTab =
   | 'value_criteria'
   | 'process'
   | 'portfolio'
-  | 'account_governance';
+  | 'account_governance'
+  | 'billing';
 
 export const InvestorProfileSettings: React.FC<InvestorProfileSettingsProps> = ({
   onViewPreview,
@@ -512,6 +514,18 @@ export const InvestorProfileSettings: React.FC<InvestorProfileSettingsProps> = (
         >
           <ShieldCheck className="w-3.5 h-3.5" />
           <span>Account & Visibility</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('billing')}
+          className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'billing'
+              ? 'bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] shadow-2xs'
+              : 'text-[#565B59] dark:text-[#B6B8B7] hover:bg-gray-100 dark:hover:bg-[#202422]'
+          }`}
+        >
+          <DollarSign className="w-3.5 h-3.5" />
+          <span>Billing & Plans</span>
         </button>
       </div>
 
@@ -1705,6 +1719,15 @@ export const InvestorProfileSettings: React.FC<InvestorProfileSettingsProps> = (
                 />
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 7: BILLING & PLANS                                    */}
+        {/* ========================================================= */}
+        {activeTab === 'billing' && (
+          <div className="pt-2 animate-fade-slide">
+            <InvestorBillingManager />
           </div>
         )}
       </div>

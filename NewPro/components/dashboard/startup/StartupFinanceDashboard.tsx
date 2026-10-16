@@ -74,8 +74,8 @@ interface StartupFinanceDashboardProps {
 export const StartupFinanceDashboard: React.FC<StartupFinanceDashboardProps> = ({
   initialTab = 'overview',
   onNavigateTab,
-  userRole = 'Founder',
-  userPermissions = ['view_financials', 'edit_financials'],
+  userRole = 'Viewer',
+  userPermissions = [],
 }) => {
   const { showToast } = useToast();
 
@@ -100,13 +100,19 @@ export const StartupFinanceDashboard: React.FC<StartupFinanceDashboardProps> = (
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
   const [uploadFormat, setUploadFormat] = useState<'xlsx' | 'csv'>('xlsx');
 
-  // Check RBAC permission for upload
+  // Check RBAC permission for view and upload
+  const normalizedRole = (userRole || '').trim().toLowerCase();
+  const isViewer = normalizedRole === 'viewer';
+  const canViewFinancials = !isViewer || userPermissions.includes('view_financials');
+
   const canEditFinancials =
-    userPermissions.includes('edit_financials') ||
-    userRole === 'Founder' ||
-    userRole === 'Owner' ||
-    userRole === 'Finance' ||
-    userRole === 'Owner / Founder';
+    canViewFinancials &&
+    (userPermissions.includes('edit_financials') ||
+      userRole === 'Founder' ||
+      userRole === 'Owner' ||
+      userRole === 'Finance' ||
+      userRole === 'Owner / Founder' ||
+      userRole === 'Founder/Head');
 
   useEffect(() => {
     const handleFinancesUpdated = () => {
@@ -164,6 +170,25 @@ export const StartupFinanceDashboard: React.FC<StartupFinanceDashboardProps> = (
     { id: 'visibility', label: 'Visibility' },
     { id: 'forecasts', label: 'Forecasts', badge: 'Pro' },
   ];
+
+  if (!canViewFinancials) {
+    return (
+      <div className="p-8 sm:p-12 text-center bg-white dark:bg-[#181B1A] rounded-3xl border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-4 max-w-xl mx-auto my-8">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 flex items-center justify-center mx-auto">
+          <FolderLock className="w-7 h-7" />
+        </div>
+        <h3 className="text-lg font-bold font-sora text-[#101212] dark:text-white">
+          Confidential Financial Records Restricted
+        </h3>
+        <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
+          Your current role in this startup (<span className="font-semibold text-[#101212] dark:text-white">{userRole || 'Viewer'}</span>) does not have authorization to inspect confidential financial telemetry, monthly burn rates, cash runway, or cap table equity allocations.
+        </p>
+        <p className="text-[11px] text-[#7A807D]">
+          To request financial permissions, contact the startup Founder or an Organization Administrator.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 animate-fade-slide">

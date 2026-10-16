@@ -67,6 +67,7 @@ import { MentorshipWorkspace } from '@/components/mentor/MentorshipWorkspace';
 import { MentorshipModule } from '@/components/mentor/MentorshipModule';
 import { MentorMeetings } from '@/components/mentor/MentorMeetings';
 import { MentorProfileManage } from '@/components/mentor/MentorProfileManage';
+import { MentorEarningsWorkspace } from '@/components/mentor/MentorEarningsWorkspace';
 import {
   initialMentorMeetings,
   defaultAvailability,
@@ -467,7 +468,12 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                   <StartupBusinessOperations onNavigateTab={handleNavigateModule} />
                 )}
                 {activeModuleId === 'finance' && (
-                  <StartupFinanceDashboard initialTab="overview" onNavigateTab={handleNavigateModule} />
+                  <StartupFinanceDashboard
+                    initialTab="overview"
+                    onNavigateTab={handleNavigateModule}
+                    userRole={activeEntity?.role || 'Viewer'}
+                    userPermissions={activeEntity?.permissions || []}
+                  />
                 )}
                 {activeModuleId === 'dd_locker' && <StartupDDLocker />}
                 {activeModuleId === 'relationships' && (
@@ -492,8 +498,22 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                 {activeModuleId === 'connections' && <StartupRelationshipsWorkspace initialSubTab="connections" onNavigateTab={handleNavigateModule} />}
                 {activeModuleId === 'mentorship' && <StartupRelationshipsWorkspace initialSubTab="mentorship" onNavigateTab={handleNavigateModule} />}
                 {activeModuleId === 'meetings' && <StartupRelationshipsWorkspace initialSubTab="meetings" onNavigateTab={handleNavigateModule} />}
-                {activeModuleId === 'cap_table' && <StartupFinanceDashboard initialTab="cap_table" onNavigateTab={handleNavigateModule} />}
-                {activeModuleId === 'runway' && <StartupFinanceDashboard initialTab="cash_runway" onNavigateTab={handleNavigateModule} />}
+                {activeModuleId === 'cap_table' && (
+                  <StartupFinanceDashboard
+                    initialTab="cap_table"
+                    onNavigateTab={handleNavigateModule}
+                    userRole={activeEntity?.role || 'Viewer'}
+                    userPermissions={activeEntity?.permissions || []}
+                  />
+                )}
+                {activeModuleId === 'runway' && (
+                  <StartupFinanceDashboard
+                    initialTab="cash_runway"
+                    onNavigateTab={handleNavigateModule}
+                    userRole={activeEntity?.role || 'Viewer'}
+                    userPermissions={activeEntity?.permissions || []}
+                  />
+                )}
               </>
             )}
 
@@ -588,6 +608,9 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                     availabilityConfig={defaultAvailability}
                     defaultTab="upcoming"
                   />
+                )}
+                {activeModuleId === 'earnings' && (
+                  <MentorEarningsWorkspace onNavigateTab={handleNavigateModule} />
                 )}
                 {activeModuleId === 'activities' && (
                   <DashboardActivitiesWorkspace role="mentor" onNavigateTab={handleNavigateModule} />
