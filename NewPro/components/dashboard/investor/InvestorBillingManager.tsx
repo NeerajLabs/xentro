@@ -77,9 +77,10 @@ export const InvestorBillingManager: React.FC = () => {
   }, []);
 
   const handleSelectTier = (tier: InvestorPlanTier) => {
-    const updated = investorDomainService.updateSubscriptionTier(tier);
-    setSubscription(updated);
-    showToast(`Subscription upgraded to ${tier.toUpperCase()} tier!`, 'success');
+    showToast(
+      `Commercial subscription upgrade to ${tier.toUpperCase()} tier requires operator payment gateway keys. Simulated client purchases are disabled in V1 production.`,
+      'info'
+    );
     setIsUpgradeModalOpen(false);
   };
 
@@ -92,7 +93,7 @@ export const InvestorBillingManager: React.FC = () => {
 
   const handleSaveCard = (e: React.FormEvent) => {
     e.preventDefault();
-    showToast('Corporate payment method updated and verified!', 'success');
+    showToast('Payment gateway integration pending from platform operator. Card tokenization is currently paused.', 'info');
     setIsPaymentModalOpen(false);
   };
 
@@ -103,6 +104,17 @@ export const InvestorBillingManager: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* Production Payment Gateway Notice Banner */}
+      <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs text-amber-800 dark:text-amber-300">
+        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+        <div className="space-y-0.5">
+          <span className="font-bold block">Production Payment Processing Notice (Operator Gateway Required)</span>
+          <p className="leading-relaxed">
+            Corporate investor plan upgrades and card checkout require operator-managed payment provider credentials. Simulated client-side purchases are disabled in V1 production to ensure billing records remain backend-authoritative.
+          </p>
+        </div>
+      </div>
+
       {/* 1. Header Toolbar */}
       <div className="p-4 sm:p-5 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

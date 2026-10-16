@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   CreditCard,
   FileText,
@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Sparkles,
   Check,
+  AlertTriangle,
 } from 'lucide-react';
 import { useToast } from '@/components/ui/Toast';
 import { logAuditEvent } from '@/lib/espDomainService';
@@ -29,6 +30,7 @@ import {
   mockESPBillingDetails,
 } from '@/data/espWorkspaceData';
 import { getUserProfile } from '@/lib/userProfile';
+import { entityContextService } from '@/lib/entityContextService';
 
 export const ESPBillingManager: React.FC = () => {
   const { showToast } = useToast();
@@ -45,6 +47,21 @@ export const ESPBillingManager: React.FC = () => {
   const [methods, setMethods] = useState(mockESPPaymentMethods);
   const [billingDetails, setBillingDetails] = useState(mockESPBillingDetails);
   const [subscription, setSubscription] = useState(mockESPSubscriptionDetails);
+  const [capacity, setCapacity] = useState<any>(null);
+
+  useEffect(() => {
+    const eid = entityContextService.getActiveEntityId();
+    if (eid) {
+      fetch(`/api/affiliates?issuingEntityId=${encodeURIComponent(eid)}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && d.capacity) {
+            setCapacity(d.capacity);
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   // Modals state
   const [isAddCardOpen, setIsAddCardOpen] = useState(false);
@@ -75,33 +92,10 @@ export const ESPBillingManager: React.FC = () => {
 
   const handleAddPaymentMethod = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newCardNumber) return;
-
-    const last4 = newCardNumber.slice(-4) || '9988';
-    const newMethod = {
-      id: `pm_${Date.now()}`,
-      type: 'card' as const,
-      brand: 'Visa',
-      last4,
-      expiryMonth: 12,
-      expiryYear: 2028,
-      isDefault: false,
-    };
-
-    setMethods([...methods, newMethod]);
+    showToast('Payment gateway integration pending from platform operator. Card tokenization is currently paused.', 'info');
     setIsAddCardOpen(false);
     setNewCardNumber('');
     setNewCardExpiry('');
-
-    // Never log raw numbers or CVV!
-    logAuditEvent(
-      'Payment Method Added',
-      'Billing',
-      actorName,
-      actorRole,
-      `Added payment method token reference (Visa ending in •••• ${last4})`
-    );
-    showToast(`Added card ending in •••• ${last4}!`, 'success');
   };
 
   const handleRemovePaymentMethod = (id: string, last4?: string) => {
@@ -204,6 +198,17 @@ export const ESPBillingManager: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-slide">
+      {/* Production Payment Gateway Notice Banner */}
+      <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs text-amber-800 dark:text-amber-300">
+        <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+        <div className="space-y-0.5">
+          <span className="font-bold block">Production Payment Processing Notice (Operator Gateway Required)</span>
+          <p className="leading-relaxed">
+            Institutional subscription upgrades, card tokenization, and commercial overage checkouts require operator-managed payment provider credentials. Simulated client purchases are disabled in V1 production to ensure billing records remain backend-authoritative.
+          </p>
+        </div>
+      </div>
+
       {/* 0. Header with Security Notice */}
       <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
@@ -253,57 +258,85 @@ export const ESPBillingManager: React.FC = () => {
       {/* 2. Sub-Tab: Overview */}
       {activeSubTab === 'overview' && (
         <div className="space-y-6">
+          {/* Status Alert for Restricted Over-Capacity */}
+          {capacity?.isRestrictedOverCapacity && (
+            <div className="p-4 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-800 dark:text-rose-300 flex items-center gap-3">
+              <AlertTriangle className="w-5 h-5 flex-shrink-0 text-rose-600 dark:text-rose-400" />
+              <div>
+                <strong className="block font-bold">Capacity Notice: Monthly Subscription Past Due</strong>
+                <span>
+                  {capacity.restrictedReason ||
+                    'Monthly overage capacity is expired. Existing affiliated startups remain preserved and active, but new startup affiliations are blocked until your monthly subscription is updated.'}
+                </span>
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {/* Plan Card */}
             <div className="p-5 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-3">
               <div className="flex items-center justify-between">
-                <span className="text-xs font-bold text-[#565B59] dark:text-[#B6B8B7]">Current Plan</span>
-                <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F]">
-                  Active
+                <span className="text-xs font-bold text-[#565B59] dark:text-[#B6B8B7]">Current Allocation</span>
+                <span
+                  className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                    capacity?.isRestrictedOverCapacity
+                      ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400'
+                      : 'bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F]'
+                  }`}
+                >
+                  {capacity?.isRestrictedOverCapacity ? 'Past Due / Restricted' : 'Active'}
                 </span>
               </div>
               <div>
                 <h3 className="text-xl font-bold font-sora text-[#101212] dark:text-white">
-                  {mockESPBillingOverview.currentPlan}
+                  Xentro Standard ESP Allocation
                 </h3>
                 <p className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5">
-                  {mockESPBillingOverview.billingCycle} &bull; Next renewal {mockESPBillingOverview.renewalDate}
+                  250 Included Startups {capacity?.activeMonthlySlots ? `+ ${capacity.activeMonthlySlots} Monthly Paid` : ''}
                 </p>
+                {capacity?.nextRenewalDate && (
+                  <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] mt-0.5">
+                    Next renewal: {new Date(capacity.nextRenewalDate).toLocaleDateString()}
+                  </p>
+                )}
               </div>
-              <button
-                onClick={() => setActiveSubTab('subscription')}
-                className="text-xs font-bold text-[#D9FF3F] hover:underline flex items-center gap-1 cursor-pointer pt-2"
-              >
-                <span>Change Plan</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
+              <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                Monthly overage: <strong>₹399 per additional startup per month</strong> via Razorpay.
+              </p>
             </div>
 
             {/* Quota Usage */}
             <div className="p-5 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-3">
               <span className="text-xs font-bold text-[#565B59] dark:text-[#B6B8B7]">
-                Endorsement Quota Allocation
+                Affiliated Startup Capacity
               </span>
               <div>
                 <div className="flex items-baseline justify-between">
                   <span className="text-2xl font-bold font-sora text-[#101212] dark:text-white">
-                    {mockESPBillingOverview.activeEndorsementsCount} / {mockESPBillingOverview.maxEndorsementsLimit}
+                    {capacity?.activeStartupCount ?? 0} / {capacity?.maxCapacity ?? 250}
                   </span>
                   <span className="text-xs font-semibold text-emerald-500">
-                    {mockESPBillingOverview.remainingEndorsements} remaining
+                    {Math.max(0, (capacity?.maxCapacity ?? 250) - (capacity?.activeStartupCount ?? 0))} slots available
                   </span>
                 </div>
                 <div className="w-full bg-gray-100 dark:bg-[#202422] h-2 rounded-full mt-2 overflow-hidden">
                   <div
-                    className="bg-[#D9FF3F] h-full rounded-full"
+                    className={`h-full rounded-full transition-all ${
+                      capacity?.isRestrictedOverCapacity ? 'bg-rose-500' : 'bg-[#D9FF3F]'
+                    }`}
                     style={{
-                      width: `${(((mockESPBillingOverview.activeEndorsementsCount ?? 18) / (mockESPBillingOverview.maxEndorsementsLimit ?? 25))) * 100}%`,
+                      width: `${Math.min(
+                        100,
+                        (((capacity?.activeStartupCount ?? 0) / (capacity?.maxCapacity ?? 250))) * 100
+                      )}%`,
                     }}
                   />
                 </div>
               </div>
               <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
-                Startup Pro benefits grantable per billing cycle
+                {capacity?.activeMonthlySlots
+                  ? `250 included + ${capacity.activeMonthlySlots} monthly paid slots (₹${capacity.monthlyCommitmentInr}/mo)`
+                  : '250 included qualifying active startups'}
               </p>
             </div>
 

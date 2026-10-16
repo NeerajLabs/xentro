@@ -9,7 +9,7 @@ export const runtime = 'nodejs';
  * Validates internal Admin session using cryptographic JWT verification or active admin_sessions record.
  * Merely possessing an unvalidated bearer prefix or random cookie is strictly rejected.
  */
-async function verifyAdminAuth(req: NextRequest, db: any): Promise<{ authenticated: boolean; adminInfo?: any }> {
+async function verifyAdminAuth(req: NextRequest, getDb?: () => Promise<any>): Promise<{ authenticated: boolean; adminInfo?: any }> {
   const authHeader = req.headers.get('authorization') || req.headers.get('x-admin-token');
   const cookieToken = req.cookies.get('xentro_admin_auth')?.value;
   let rawToken = cookieToken || '';
@@ -26,7 +26,7 @@ async function verifyAdminAuth(req: NextRequest, db: any): Promise<{ authenticat
     return { authenticated: false };
   }
 
-  // 1. Attempt cryptographic JWT verification
+  // 1. Attempt cryptographic JWT verification (zero DB overhead)
   const jwtPayload = verifyJwtToken(rawToken);
   if (jwtPayload) {
     const isStaffOrAdmin =
@@ -40,17 +40,20 @@ async function verifyAdminAuth(req: NextRequest, db: any): Promise<{ authenticat
     }
   }
 
-  // 2. Fallback: Check MongoDB authoritative admin_sessions collection
-  try {
-    const sessionDoc = await db.collection('admin_sessions').findOne({
-      $or: [{ token: rawToken }, { jwtToken: rawToken }],
-      expiresAt: { $gt: new Date().toISOString() },
-    });
-    if (sessionDoc) {
-      return { authenticated: true, adminInfo: sessionDoc };
+  // 2. Fallback: Check MongoDB authoritative admin_sessions collection if provider supplied
+  if (getDb) {
+    try {
+      const db = await getDb();
+      const sessionDoc = await db.collection('admin_sessions').findOne({
+        $or: [{ token: rawToken }, { jwtToken: rawToken }],
+        expiresAt: { $gt: new Date().toISOString() },
+      });
+      if (sessionDoc) {
+        return { authenticated: true, adminInfo: sessionDoc };
+      }
+    } catch (err) {
+      console.warn('[Admin Auth] Session lookup warning:', err);
     }
-  } catch (err) {
-    console.warn('[Admin Auth] Session lookup warning:', err);
   }
 
   return { authenticated: false };
@@ -63,6 +66,14 @@ async function verifyAdminAuth(req: NextRequest, db: any): Promise<{ authenticat
  */
 export async function GET(req: NextRequest) {
   try {
+    const auth = await verifyAdminAuth(req, getDatabase);
+    if (!auth.authenticated) {
+      return NextResponse.json(
+        { success: false, message: 'Unauthorized: Internal Administrative authorization required.' },
+        { status: 401 }
+      );
+    }
+
     const db = await getDatabase();
     const affCol = db.collection('affiliations');
     const linksCol = db.collection('affiliate_links');
@@ -74,14 +85,6 @@ export async function GET(req: NextRequest) {
     const issuingId = req.nextUrl.searchParams.get('issuingId');
     const status = req.nextUrl.searchParams.get('status');
     const limit = Math.min(parseInt(req.nextUrl.searchParams.get('limit') || '100', 10), 500);
-
-    const auth = await verifyAdminAuth(req, db);
-    if (!auth.authenticated) {
-      return NextResponse.json(
-        { success: false, message: 'Unauthorized: Internal Administrative authorization required.' },
-        { status: 401 }
-      );
-    }
 
     const affFilter: any = {};
     if (startupId) affFilter.startupEntityId = startupId;

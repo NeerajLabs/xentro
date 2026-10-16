@@ -14,11 +14,12 @@ import {
   Compass,
   Briefcase,
   TrendingUp,
-  Clock,
+  Bookmark,
   CheckCircle2,
   Award,
   Sparkles,
   User,
+  Settings,
 } from 'lucide-react';
 import { UserRole } from '@/lib/userProfile';
 
@@ -28,6 +29,7 @@ export interface DashboardNavItem {
   icon: LucideIcon;
   badge?: string | number;
   badgeColor?: string;
+  capability?: string;
 }
 
 export interface DashboardNavSection {
@@ -36,174 +38,320 @@ export interface DashboardNavSection {
 }
 
 export interface PersonaDashboardConfig {
-  role: UserRole;
+  role: string;
   workspaceName: string;
   badge: string;
   badgeColor: string;
   sections: DashboardNavSection[];
 }
 
-export const personaDashboardConfigs: Record<UserRole, PersonaDashboardConfig> = {
-  explorer: {
-    role: 'explorer',
-    workspaceName: 'Explorer View',
-    badge: 'EXPLORER',
-    badgeColor: 'bg-gray-200 text-[#101212] dark:bg-[#202422] dark:text-white',
-    sections: [
-      {
-        label: 'EXPLORE',
-        items: [
-          { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-          { id: 'discover', label: 'Discover', icon: Compass },
-          { id: 'opportunities', label: 'Opportunities', icon: Briefcase },
-          { id: 'connections', label: 'Connections', icon: Users },
-        ],
-      },
-      {
-        label: 'ACCOUNT',
-        items: [
-          { id: 'profile', label: 'My Guest Profile', icon: User },
-        ],
-      },
-    ],
-  },
-  startup: {
-    role: 'startup',
-    workspaceName: 'Startup Workspace',
-    badge: 'STARTUP',
-    badgeColor: 'bg-[#D9FF3F] text-[#101212]',
-    sections: [
-      {
-        label: 'OVERVIEW',
-        items: [
-          { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-        ],
-      },
-      {
-        label: 'STARTUP WORKSPACE',
-        items: [
-          { id: 'my_listings', label: 'My Listings', icon: FolderKanban },
-          { id: 'my_applications', label: 'My Applications', icon: FileCheck2, badge: '5 Active' },
-          { id: 'connections', label: 'Connections', icon: Users },
-          { id: 'meetings', label: 'Meetings', icon: Calendar, badge: 3 },
-          { id: 'mentorship', label: 'Mentorship', icon: GraduationCap, badge: 2, badgeColor: 'bg-[#D9FF3F] text-[#101212]' },
-          { id: 'dd_locker', label: 'DD Locker', icon: FolderLock, badge: 2, badgeColor: 'bg-purple-500 text-white' },
-          { id: 'finance', label: 'Finance', icon: DollarSign },
-          { id: 'startup_asks', label: 'Startup Asks', icon: Target, badge: 'Active' },
-        ],
-      },
-      {
-        label: 'ACCOUNT / BUSINESS',
-        items: [
-          { id: 'profile', label: 'Startup Profile', icon: Building2 },
-        ],
-      },
-    ],
-  },
-
-  investor: {
-    role: 'investor',
-    workspaceName: 'Investment Workspace',
-    badge: 'INVESTOR',
-    badgeColor: 'bg-emerald-400 text-[#101212]',
-    sections: [
-      {
-        label: 'OVERVIEW',
-        items: [
-          { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-        ],
-      },
-      {
-        label: 'INVESTMENT WORKSPACE',
-        items: [
-          { id: 'deal_flow', label: 'Deal Flow', icon: Layers, badge: 6, badgeColor: 'bg-[#D9FF3F] text-[#101212]' },
-          { id: 'discover', label: 'Startup Discovery', icon: Compass, badge: 'New' },
-          { id: 'portfolio', label: 'Portfolio', icon: Briefcase, badge: '18 Cos' },
-          { id: 'diligence_locker', label: 'Diligence Locker', icon: FolderLock, badge: 4, badgeColor: 'bg-purple-500 text-white' },
-          { id: 'investor_asks', label: 'Investor Asks', icon: Target, badge: 'Active' },
-          { id: 'my_listings', label: 'My Listings', icon: FolderKanban },
-          { id: 'my_applications', label: 'My Applications', icon: FileCheck2 },
-          { id: 'connections', label: 'Connections', icon: Users },
-          { id: 'meetings', label: 'Meetings', icon: Calendar, badge: 2, badgeColor: 'bg-blue-500 text-white' },
-          { id: 'team_access', label: 'Team & RBAC', icon: Users },
-          { id: 'billing_payments', label: 'Billing & Plans', icon: DollarSign },
-        ],
-      },
-      {
-        label: 'ACCOUNT',
-        items: [
-          { id: 'profile', label: 'Investor Profile', icon: TrendingUp },
-        ],
-      },
-    ],
-  },
-
-  mentor: {
-    role: 'mentor',
-    workspaceName: 'Mentor Workspace',
-    badge: 'MENTOR',
-    badgeColor: 'bg-blue-400 text-[#101212]',
-    sections: [
-      {
-        label: 'OVERVIEW',
-        items: [
-          { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-        ],
-      },
-      {
-        label: 'MENTOR WORKSPACE',
-        items: [
-          { id: 'advisory_workspaces', label: 'Advisory Workspaces', icon: Briefcase, badge: 'Active' },
-          { id: 'mentorship', label: 'Mentorship', icon: GraduationCap, badge: 2, badgeColor: 'bg-[#D9FF3F] text-[#101212]' },
-          { id: 'mentor_asks', label: 'Mentor Asks', icon: Target, badge: 'Active' },
-          { id: 'meetings', label: 'Meetings', icon: Calendar, badge: 3 },
-          { id: 'my_listings', label: 'My Listings', icon: FolderKanban },
-          { id: 'my_applications', label: 'My Applications', icon: FileCheck2 },
-          { id: 'connections', label: 'Connections', icon: Users, badge: 34 },
-        ],
-      },
-      {
-        label: 'ACCOUNT',
-        items: [
-          { id: 'profile', label: 'Mentor Profile', icon: User },
-        ],
-      },
-    ],
-  },
-
-  esp: {
-    role: 'esp',
-    workspaceName: 'Program Workspace',
-    badge: 'ESP / HUB',
-    badgeColor: 'bg-purple-400 text-[#101212]',
-    sections: [
-      {
-        label: 'OVERVIEW',
-        items: [
-          { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-        ],
-      },
-      {
-        label: 'PROGRAM WORKSPACE',
-        items: [
-          { id: 'programs', label: 'Programs', icon: Target, badge: '4 Active' },
-          { id: 'cohorts', label: 'Cohorts', icon: Layers },
-          { id: 'portfolio', label: 'Portfolio Directory', icon: Award, badge: 5 },
-          { id: 'demo_days', label: 'Demo Days', icon: Sparkles },
-          { id: 'events', label: 'Events', icon: Calendar, badge: 4 },
-          { id: 'esp_asks', label: 'ESP Asks', icon: Target, badge: 'Active' },
-          { id: 'my_listings', label: 'My Listings', icon: FolderKanban },
-          { id: 'my_applications', label: 'My Applications', icon: FileCheck2 },
-          { id: 'connections', label: 'Connections', icon: Users },
-          { id: 'meetings', label: 'Meetings', icon: Calendar },
-        ],
-      },
-      {
-        label: 'ACCOUNT',
-        items: [
-          { id: 'profile', label: 'ESP / Institution Profile', icon: Building2 },
-        ],
-      },
-    ],
-  },
+// =========================================================================
+// 1. STARTUP DASHBOARD HIERARCHY (Section 4.1 Approved)
+// =========================================================================
+export const startupDashboardConfig: PersonaDashboardConfig = {
+  role: 'startup',
+  workspaceName: 'Startup Workspace',
+  badge: 'STARTUP',
+  badgeColor: 'bg-[#D9FF3F] text-[#101212]',
+  sections: [
+    {
+      label: 'MAIN',
+      items: [
+        { id: 'profile', label: 'Startup Profile', icon: Building2 },
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+        { id: 'business_operations', label: 'Business Operations', icon: FolderKanban },
+        { id: 'finance', label: 'Finance', icon: DollarSign },
+        { id: 'dd_locker', label: 'DD Locker', icon: FolderLock, badge: 'Vault' },
+        { id: 'relationships', label: 'Relationships', icon: Users },
+        { id: 'affiliations', label: 'Affiliations', icon: Award, badge: 'Active' },
+      ],
+    },
+    {
+      label: 'ADMINISTRATION',
+      items: [
+        { id: 'team_access', label: 'Team & Roles', icon: Users, badge: 'RBAC' },
+        { id: 'billing_payments', label: 'Billing & Plans', icon: DollarSign },
+        { id: 'settings', label: 'Settings', icon: Settings },
+      ],
+    },
+  ],
 };
+
+// =========================================================================
+// 2. MENTOR DASHBOARD HIERARCHY (Section 4.2 Approved)
+// =========================================================================
+export const mentorDashboardConfig: PersonaDashboardConfig = {
+  role: 'mentor',
+  workspaceName: 'Mentor Workspace',
+  badge: 'MENTOR',
+  badgeColor: 'bg-blue-400 text-[#101212]',
+  sections: [
+    {
+      label: 'OVERVIEW',
+      items: [
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+      ],
+    },
+    {
+      label: 'MENTORSHIP',
+      items: [
+        { id: 'mentorship', label: 'Mentorship', icon: GraduationCap, badge: 'Advisory' },
+        { id: 'meetings', label: 'Meetings & Availability', icon: Calendar },
+      ],
+    },
+    {
+      label: 'ACTIVITIES',
+      items: [
+        { id: 'activities', label: 'Activities', icon: Briefcase },
+        { id: 'connections', label: 'Connections', icon: Users },
+      ],
+    },
+    {
+      label: 'ACCOUNT',
+      items: [
+        { id: 'profile', label: 'Mentor Profile & Settings', icon: User },
+      ],
+    },
+  ],
+};
+
+// =========================================================================
+// 3. INDIVIDUAL INVESTOR DASHBOARD HIERARCHY (Section 4.3 Approved)
+// =========================================================================
+export const individualInvestorDashboardConfig: PersonaDashboardConfig = {
+  role: 'investor_individual',
+  workspaceName: 'Personal Angel Workspace',
+  badge: 'ANGEL INVESTOR',
+  badgeColor: 'bg-emerald-400 text-[#101212]',
+  sections: [
+    {
+      label: 'OVERVIEW',
+      items: [
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+      ],
+    },
+    {
+      label: 'INVESTMENT WORKSPACE',
+      items: [
+        { id: 'watchlist', label: 'Saved Startups / Watchlist', icon: Bookmark, badge: 'Max 10' },
+        { id: 'deal_flow', label: 'Deal Flow', icon: Layers, badge: 'Pipeline' },
+        { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
+        { id: 'diligence_locker', label: 'Diligence Locker', icon: FolderLock },
+      ],
+    },
+    {
+      label: 'ACTIVITIES & NETWORK',
+      items: [
+        { id: 'activities', label: 'Activities & Network', icon: Target },
+      ],
+    },
+    {
+      label: 'ACCOUNT',
+      items: [
+        { id: 'profile', label: 'Investor Profile & Billing', icon: TrendingUp },
+      ],
+    },
+  ],
+};
+
+// =========================================================================
+// 4. INVESTMENT ORGANIZATION DASHBOARD HIERARCHY (Section 4.4 Approved)
+// =========================================================================
+export const investmentOrgDashboardConfig: PersonaDashboardConfig = {
+  role: 'investor_org',
+  workspaceName: 'Investment Organization Workspace',
+  badge: 'VC / FIRM',
+  badgeColor: 'bg-emerald-500 text-white',
+  sections: [
+    {
+      label: 'OVERVIEW',
+      items: [
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+      ],
+    },
+    {
+      label: 'INVESTMENT WORKSPACE',
+      items: [
+        { id: 'watchlist', label: 'Saved Startups / Watchlist', icon: Bookmark, badge: 'Max 30' },
+        { id: 'deal_flow', label: 'Deal Flow', icon: Layers, badge: 'Shared' },
+        { id: 'portfolio_diligence', label: 'Portfolio & Diligence', icon: Briefcase },
+      ],
+    },
+    {
+      label: 'ACTIVITIES & NETWORK',
+      items: [
+        { id: 'activities', label: 'Activities & Network', icon: Target },
+      ],
+    },
+    {
+      label: 'GOVERNANCE & TEAM',
+      items: [
+        { id: 'team_access', label: 'Team & Governance', icon: Users, badge: '5 Roles' },
+        { id: 'profile', label: 'Organization Profile & Billing', icon: Building2 },
+      ],
+    },
+  ],
+};
+
+// =========================================================================
+// 5. ESP DASHBOARD HIERARCHY (Section 4.5 Approved)
+// =========================================================================
+export const espDashboardConfig: PersonaDashboardConfig = {
+  role: 'esp',
+  workspaceName: 'Ecosystem Service Provider Workspace',
+  badge: 'ESP / INCUBATOR',
+  badgeColor: 'bg-purple-400 text-[#101212]',
+  sections: [
+    {
+      label: 'OVERVIEW',
+      items: [
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+      ],
+    },
+    {
+      label: 'PROGRAMS & AFFILIATIONS',
+      items: [
+        { id: 'programs_cohorts', label: 'Programs & Cohorts', icon: Target, badge: 'Programs' },
+        { id: 'affiliated_startups', label: 'Affiliated Startups', icon: Award, badge: '250+ ₹399' },
+        { id: 'events', label: 'Events & Demo Days', icon: Sparkles },
+      ],
+    },
+    {
+      label: 'ACTIVITIES & NETWORK',
+      items: [
+        { id: 'activities', label: 'Activities & Network', icon: FolderKanban },
+      ],
+    },
+    {
+      label: 'ADMINISTRATION',
+      items: [
+        { id: 'team_access', label: 'Team & Roles', icon: Users, badge: 'RBAC' },
+        { id: 'profile', label: 'ESP Profile & Billing', icon: Building2 },
+      ],
+    },
+  ],
+};
+
+// =========================================================================
+// 6. INSTITUTION DASHBOARD HIERARCHY (Section 4.6 Approved)
+// =========================================================================
+export const institutionDashboardConfig: PersonaDashboardConfig = {
+  role: 'institution',
+  workspaceName: 'Academic & Institutional Workspace',
+  badge: 'INSTITUTION',
+  badgeColor: 'bg-amber-400 text-[#101212]',
+  sections: [
+    {
+      label: 'OVERVIEW',
+      items: [
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+      ],
+    },
+    {
+      label: 'PROGRAMS & AFFILIATIONS',
+      items: [
+        { id: 'programs_cohorts', label: 'Institutional Programs', icon: Target },
+        { id: 'affiliated_startups', label: 'Associated Startups', icon: Award, badge: 'Badge Only' },
+        { id: 'events', label: 'Institutional Events', icon: Sparkles },
+      ],
+    },
+    {
+      label: 'ACTIVITIES & NETWORK',
+      items: [
+        { id: 'activities', label: 'Activities & Network', icon: FolderKanban },
+      ],
+    },
+    {
+      label: 'ADMINISTRATION',
+      items: [
+        { id: 'team_access', label: 'Team & Roles', icon: Users, badge: 'RBAC' },
+        { id: 'profile', label: 'Institution Profile & Billing', icon: Building2 },
+      ],
+    },
+  ],
+};
+
+// =========================================================================
+// EXPLORER (GUEST READ-ONLY)
+// =========================================================================
+export const explorerDashboardConfig: PersonaDashboardConfig = {
+  role: 'explorer',
+  workspaceName: 'Explorer View',
+  badge: 'EXPLORER',
+  badgeColor: 'bg-gray-200 text-[#101212] dark:bg-[#202422] dark:text-white',
+  sections: [
+    {
+      label: 'EXPLORE',
+      items: [
+        { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+        { id: 'discover', label: 'Discover', icon: Compass },
+        { id: 'opportunities', label: 'Opportunities', icon: Briefcase },
+        { id: 'connections', label: 'Connections', icon: Users },
+      ],
+    },
+    {
+      label: 'ACCOUNT',
+      items: [
+        { id: 'profile', label: 'My Guest Profile', icon: User },
+      ],
+    },
+  ],
+};
+
+// Standard Record for backward compatibility
+export const personaDashboardConfigs: Record<string, PersonaDashboardConfig> = {
+  startup: startupDashboardConfig,
+  mentor: mentorDashboardConfig,
+  investor: individualInvestorDashboardConfig,
+  investor_individual: individualInvestorDashboardConfig,
+  investor_org: investmentOrgDashboardConfig,
+  esp: espDashboardConfig,
+  institution: institutionDashboardConfig,
+  explorer: explorerDashboardConfig,
+};
+
+/**
+ * Resolves the authoritative navigation configuration based on role, organization context, and entity type.
+ */
+export function resolveDashboardNavConfig(
+  role: string,
+  options?: {
+    isOrganizationContext?: boolean;
+    entityType?: string;
+    entityName?: string;
+  }
+): PersonaDashboardConfig {
+  const normRole = (role || 'startup').toLowerCase();
+  const entityType = (options?.entityType || '').toLowerCase();
+
+  // Institution check
+  if (normRole === 'institution' || entityType.includes('institution') || entityType.includes('university') || entityType.includes('academic')) {
+    return institutionDashboardConfig;
+  }
+
+  // ESP check
+  if (normRole === 'esp' || entityType.includes('esp') || entityType.includes('incubator') || entityType.includes('accelerator')) {
+    return espDashboardConfig;
+  }
+
+  // Investor context check
+  if (normRole === 'investor' || normRole.includes('investor')) {
+    if (options?.isOrganizationContext || entityType.includes('investor_org') || entityType.includes('fund') || entityType.includes('vc')) {
+      return investmentOrgDashboardConfig;
+    }
+    return individualInvestorDashboardConfig;
+  }
+
+  // Mentor check
+  if (normRole === 'mentor') {
+    return mentorDashboardConfig;
+  }
+
+  // Explorer
+  if (normRole === 'explorer') {
+    return explorerDashboardConfig;
+  }
+
+  // Default to Startup
+  return startupDashboardConfig;
+}

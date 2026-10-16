@@ -21,6 +21,10 @@ import {
   toggleStartupBookmark,
   BookmarkedStartup,
 } from '@/lib/startupBookmarkState';
+import {
+  addStartupToWatchlist,
+  removeStartupFromWatchlist,
+} from '@/lib/investorWatchlistService';
 import { getBackendBaseUrl } from '@/lib/backendUrl';
 
 export interface StartupItem {
@@ -164,12 +168,34 @@ export const InvestorDiscoverStartups: React.FC = () => {
     });
   }, [combinedStartups, viewTab, bookmarkedStartups, searchTerm, selectedSector, selectedStage]);
 
-  const handleToggleBookmark = (startup: StartupItem) => {
-    const res = toggleStartupBookmark(startup);
-    if (res.isBookmarked) {
-      showToast(`${startup.name} bookmarked! Saved in Interested Startups.`, 'success');
+  const handleToggleBookmark = async (startup: StartupItem) => {
+    const isSaved = bookmarkedStartups.some((b) => b.id === startup.id);
+    if (isSaved) {
+      const res = await removeStartupFromWatchlist(startup.id);
+      toggleStartupBookmark(startup);
+      showToast(`Removed ${startup.name} from Watchlist.`, 'info');
     } else {
-      showToast(`Removed ${startup.name} from Interested bookmarks.`, 'info');
+      const res = await addStartupToWatchlist({
+        startupId: startup.id,
+        name: startup.name,
+        logo: startup.logo,
+        tagline: startup.tagline,
+        founder: startup.founder,
+        location: startup.location,
+        sector: startup.sector,
+        stage: startup.stage,
+        askingRound: startup.askingRound,
+        valuation: startup.valuation,
+        tractionMRR: startup.tractionMRR,
+        matchScore: startup.matchScore,
+        tags: startup.tags,
+      });
+      if (!res.success) {
+        showToast(res.message, 'error');
+        return;
+      }
+      toggleStartupBookmark(startup);
+      showToast(`${startup.name} saved to Watchlist!`, 'success');
     }
   };
 

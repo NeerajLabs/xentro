@@ -289,14 +289,14 @@ function setStoredTeamItem(key: string, val: string): void {
   localStorage.setItem(key, val);
 }
 
-async function syncTeamActionToBackend(action: string, payload: Record<string, any>) {
-  if (typeof window === 'undefined') return;
+async function syncTeamActionToBackend(action: string, payload: Record<string, any>): Promise<{ success: boolean; message?: string }> {
+  if (typeof window === 'undefined') return { success: true };
   const eid = getActiveEntityId();
-  if (!eid) return;
+  if (!eid) return { success: true };
 
   try {
     const userId = getUserId();
-    await fetch(`/api/startups/${eid}/team`, {
+    const res = await fetch(`/api/startups/${eid}/team`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -308,8 +308,21 @@ async function syncTeamActionToBackend(action: string, payload: Record<string, a
         userId,
       }),
     });
-  } catch (err) {
+
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      const msg = errJson.message || `Server sync returned HTTP ${res.status}`;
+      console.warn('[StartupTeamService] Server sync failed:', msg);
+      window.dispatchEvent(new CustomEvent('xentro-team-sync-error', { detail: { message: msg } }));
+      return { success: false, message: msg };
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    const msg = err.message || 'Network error communicating with team persistence service';
     console.warn('[StartupTeamService] Background sync to MongoDB failed:', err);
+    window.dispatchEvent(new CustomEvent('xentro-team-sync-error', { detail: { message: msg } }));
+    return { success: false, message: msg };
   }
 }
 

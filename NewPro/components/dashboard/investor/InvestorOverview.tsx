@@ -22,6 +22,7 @@ import {
   Building2,
   Clock,
   Video,
+  Bookmark,
 } from 'lucide-react';
 import { UserProfile } from '@/lib/userProfile';
 import { useToast } from '@/components/ui/Toast';
@@ -30,6 +31,12 @@ import {
   investorOrganizationService,
   INVESTOR_ORG_EVENTS,
 } from '@/lib/investorOrganizationService';
+import {
+  getCachedWatchlist,
+  fetchAuthoritativeWatchlist,
+  WATCHLIST_CHANGED_EVENT,
+  WatchlistStatus,
+} from '@/lib/investorWatchlistService';
 import {
   ActiveInvestorContext,
   InvestorOrganization,
@@ -59,6 +66,7 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
     investorOrganizationService.getScopedDeals()
   );
   const [meetings, setMeetings] = useState<InvestorMeeting[]>([]);
+  const [watchlist, setWatchlist] = useState<WatchlistStatus>(() => getCachedWatchlist());
 
   useEffect(() => {
     const refreshData = () => {
@@ -67,9 +75,19 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
       setActiveOrg(investorOrganizationService.getActiveOrganization());
       setDeals(investorOrganizationService.getScopedDeals(ctx));
       setMeetings(investorDomainService.getMeetings());
+      setWatchlist(getCachedWatchlist());
     };
 
     refreshData();
+
+    const syncWatchlist = async () => {
+      setWatchlist(getCachedWatchlist());
+      const res = await fetchAuthoritativeWatchlist();
+      if (res.success && res.data) {
+        setWatchlist(res.data);
+      }
+    };
+    syncWatchlist();
 
     const handleContextChange = (e: Event) => {
       const ce = e as CustomEvent;
@@ -80,6 +98,7 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
       } else {
         refreshData();
       }
+      syncWatchlist();
     };
 
     const handleDealsChange = (e: Event) => {
@@ -99,11 +118,13 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
     window.addEventListener(INVESTOR_ORG_EVENTS.CONTEXT_CHANGED, handleContextChange);
     window.addEventListener('xentro-investor-deals-changed', handleDealsChange);
     window.addEventListener('xentro-investor-meetings-changed', handleMeetingsChange);
+    window.addEventListener(WATCHLIST_CHANGED_EVENT, syncWatchlist);
 
     return () => {
       window.removeEventListener(INVESTOR_ORG_EVENTS.CONTEXT_CHANGED, handleContextChange);
       window.removeEventListener('xentro-investor-deals-changed', handleDealsChange);
       window.removeEventListener('xentro-investor-meetings-changed', handleMeetingsChange);
+      window.removeEventListener(WATCHLIST_CHANGED_EVENT, syncWatchlist);
     };
   }, []);
 
@@ -197,9 +218,40 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
         </div>
       </div>
 
-      {/* 1. Top 4 Investor KPI Cards */}
+      {/* 1. Top 4 Investor KPI Cards (Optimized Operational Readiness) */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2">
+        {/* Watchlist Usage Card (Gate 4 & Gate 8 Requirement) */}
+        <div
+          onClick={() => onSelectSubTab && onSelectSubTab('watchlist')}
+          className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2 cursor-pointer hover:border-[#D9FF3F] transition-all"
+        >
+          <div className="flex items-center justify-between text-[#565B59] dark:text-[#B6B8B7]">
+            <span className="text-xs font-semibold">Watchlist Usage</span>
+            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+              <Bookmark className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold font-sora text-[#101212] dark:text-white">
+              {watchlist.activeCount} <span className="text-sm font-normal text-[#565B59]">/ {watchlist.capacityLimit}</span>
+            </span>
+            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+              watchlist.isAtCapacity
+                ? 'bg-rose-500/15 text-rose-600 dark:text-rose-400'
+                : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+            }`}>
+              {watchlist.isAtCapacity ? 'Max Reached' : `${watchlist.remainingSlots} free`}
+            </span>
+          </div>
+          <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+            {isOrg ? 'Firm-wide Watchlist (Max 30)' : 'Personal Angel Watchlist (Max 10)'}
+          </p>
+        </div>
+
+        <div
+          onClick={() => onSelectSubTab && onSelectSubTab('deal_flow')}
+          className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2 cursor-pointer hover:border-[#D9FF3F] transition-all"
+        >
           <div className="flex items-center justify-between text-[#565B59] dark:text-[#B6B8B7]">
             <span className="text-xs font-semibold">Deal Pipeline</span>
             <div className="p-2 rounded-xl bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F]">
@@ -215,11 +267,14 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
             </span>
           </div>
           <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
-            {pendingPitchesCount} pitches awaiting partner triage
+            {pendingPitchesCount} pitches awaiting review
           </p>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2">
+        <div
+          onClick={() => onSelectSubTab && onSelectSubTab('diligence_locker')}
+          className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2 cursor-pointer hover:border-[#D9FF3F] transition-all"
+        >
           <div className="flex items-center justify-between text-[#565B59] dark:text-[#B6B8B7]">
             <span className="text-xs font-semibold">Active Diligence</span>
             <div className="p-2 rounded-xl bg-purple-500/10 text-purple-600 dark:text-purple-400">
@@ -231,7 +286,7 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
               {activeDiligenceCount}
             </span>
             <span className="text-xs text-purple-600 dark:text-purple-400 font-semibold">
-              Deep In Review
+              In Review
             </span>
           </div>
           <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
@@ -239,45 +294,28 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
           </p>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2">
+        <div
+          onClick={() => onSelectSubTab && onSelectSubTab(isOrg ? 'portfolio' : 'meetings')}
+          className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2 cursor-pointer hover:border-[#D9FF3F] transition-all"
+        >
           <div className="flex items-center justify-between text-[#565B59] dark:text-[#B6B8B7]">
-            <span className="text-xs font-semibold">Dry Powder</span>
-            <div className="p-2 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              <DollarSign className="w-4 h-4" />
+            <span className="text-xs font-semibold">{isOrg ? 'Portfolio Startups' : 'Upcoming Meetings'}</span>
+            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
+              {isOrg ? <Briefcase className="w-4 h-4" /> : <Calendar className="w-4 h-4" />}
             </div>
           </div>
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-bold font-sora text-[#101212] dark:text-white">
-              {activeOrg?.aum || activeOrg?.fundSize || '₹0'}
+              {isOrg ? (activeOrg?.portfolio || []).length : meetings.length}
             </span>
-            <span className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-              Available
+            <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold">
+              {isOrg ? 'Active Holdings' : 'Scheduled'}
             </span>
           </div>
           <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
-            Live fund deployment
-          </p>
-        </div>
-
-        <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2">
-          <div className="flex items-center justify-between text-[#565B59] dark:text-[#B6B8B7]">
-            <span className="text-xs font-semibold">Portfolio Startups</span>
-            <div className="p-2 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400">
-              <Briefcase className="w-4 h-4" />
-            </div>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-sora text-[#101212] dark:text-white">
-              {(activeOrg?.portfolio || []).length}
-            </span>
-            <span className="text-xs text-blue-600 dark:text-blue-400 font-semibold">
-              Active Companies
-            </span>
-          </div>
-          <p className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
-            {(activeOrg?.portfolio || []).length > 0
-              ? 'Active portfolio holdings'
-              : 'No active holdings'}
+            {isOrg
+              ? (activeOrg?.portfolio || []).length > 0 ? 'Active portfolio holdings' : 'No active holdings'
+              : `${meetings.length} founder interactions`}
           </p>
         </div>
       </div>

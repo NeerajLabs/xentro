@@ -105,17 +105,11 @@ export const StartupBillingManager: React.FC<StartupBillingManagerProps> = ({
       showToast('You do not have permission to change subscription plans.', 'error');
       return;
     }
-    const updated: StartupSubscription = {
-      ...subscription,
-      planId: plan.id,
-      planName: plan.name,
-      amount: subscription.billingCycle === 'Annual' ? plan.priceAnnual : plan.priceMonthly,
-      status: 'Active',
-      entitlementSource: entitlement.source === 'ESP Endorsement' ? 'ESP Endorsement' : 'Paid Subscription',
-    };
-    saveStartupSubscription(updated);
+    showToast(
+      `Direct checkout for ${plan.name} requires live payment gateway integration. Gateway provider keys pending from platform operator.`,
+      'info'
+    );
     setIsPlanModalOpen(false);
-    showToast(`Subscription updated to ${plan.name}!`, 'success');
   };
 
   const handleCancelSubscription = () => {
@@ -143,6 +137,17 @@ export const StartupBillingManager: React.FC<StartupBillingManagerProps> = ({
 
   return (
     <div className="space-y-6">
+      {/* Production Payment Gateway Notice Banner */}
+      <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-3 text-xs text-amber-800 dark:text-amber-300">
+        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-amber-600 dark:text-amber-400" />
+        <div className="space-y-0.5">
+          <span className="font-bold block">Production Payment Processing Notice (Operator Gateway Required)</span>
+          <p className="leading-relaxed">
+            Direct subscription checkout and corporate payment processing require operator-managed payment provider credentials. Simulated client-side purchases are disabled in V1 production to ensure billing records remain backend-authoritative. Sponsored platform entitlements (such as complimentary Startup Pro via verified ESP Affiliation) remain fully active.
+          </p>
+        </div>
+      </div>
+
       {/* 1. Header Banner */}
       <div className="p-5 sm:p-6 rounded-3xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

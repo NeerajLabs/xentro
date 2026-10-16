@@ -8,6 +8,7 @@ import {
   Shield,
   Eye,
   Plus,
+  AlertCircle,
 } from 'lucide-react';
 import {
   StartupTeamMember,
@@ -60,6 +61,7 @@ export type TeamWorkspaceTab =
 export const StartupTeamWorkspace: React.FC = () => {
   const { showToast } = useToast();
   const [activeTab, setActiveTab] = useState<TeamWorkspaceTab>('team_members');
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   // Core Data
   const [members, setMembers] = useState<StartupTeamMember[]>([]);
@@ -110,14 +112,21 @@ export const StartupTeamWorkspace: React.FC = () => {
       }
     };
 
+    const handleSyncError = (e: Event) => {
+      const ce = e as CustomEvent;
+      setSyncError(ce.detail?.message || 'Server sync error');
+    };
+
     window.addEventListener('xentro-startup-team-changed', handleTeamChanged);
     window.addEventListener('xentro-startup-talent-changed', handleTalentChanged);
     window.addEventListener('xentro-startup-applicants-changed', handleApplicantsChanged);
+    window.addEventListener('xentro-team-sync-error', handleSyncError);
 
     return () => {
       window.removeEventListener('xentro-startup-team-changed', handleTeamChanged);
       window.removeEventListener('xentro-startup-talent-changed', handleTalentChanged);
       window.removeEventListener('xentro-startup-applicants-changed', handleApplicantsChanged);
+      window.removeEventListener('xentro-team-sync-error', handleSyncError);
     };
   }, []);
 
@@ -272,6 +281,24 @@ export const StartupTeamWorkspace: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-fade-slide">
+      {/* Server Persistence Error Banner */}
+      {syncError && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-300 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>
+              <strong>Server Persistence Warning:</strong> {syncError}. Changes are temporarily cached in your browser.
+            </span>
+          </div>
+          <button
+            onClick={() => setSyncError(null)}
+            className="text-xs font-bold underline cursor-pointer"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Internal Navigation Tabs */}
       <div className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-gray-100 dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29] overflow-x-auto">
         {tabs.map((tab) => {

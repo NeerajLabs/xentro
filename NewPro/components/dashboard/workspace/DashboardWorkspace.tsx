@@ -15,7 +15,7 @@ import {
 import { UserRole, UserProfile, getUserProfile, getActiveRole, setActiveRole, getUserRegisteredRoles } from '@/lib/userProfile';
 import { isDevToolsEnabled } from '@/lib/devTools';
 import { useToast } from '@/components/ui/Toast';
-import { personaDashboardConfigs, PersonaDashboardConfig } from './dashboardNavConfig';
+import { personaDashboardConfigs, PersonaDashboardConfig, resolveDashboardNavConfig } from './dashboardNavConfig';
 import { DashboardSidebar } from './DashboardSidebar';
 import {
   entityContextService,
@@ -33,6 +33,12 @@ import { StartupDDLocker } from '../startup/StartupDDLocker';
 import { StartupFinanceDashboard } from '../startup/StartupFinanceDashboard';
 import { StartupAskManager, UniversalAskManager } from '../startup/StartupAskManager';
 import { StartupProfileManager } from '../startup/StartupProfileManager';
+import { StartupBusinessOperations } from '../startup/StartupBusinessOperations';
+import { StartupRelationshipsWorkspace } from '../startup/StartupRelationshipsWorkspace';
+import { StartupAffiliationsWorkspace } from '../startup/StartupAffiliationsWorkspace';
+import { StartupSettings } from '../startup/StartupSettings';
+import { StartupTeamWorkspace } from '../startup/team/StartupTeamWorkspace';
+import { StartupBillingManager } from '../startup/StartupBillingManager';
 import { FinanceDocumentsView } from '../startup/finance/FinanceDocumentsView';
 import { FinanceFundingView } from '../startup/finance/FinanceFundingView';
 import { FinanceCashRunwayView } from '../startup/finance/FinanceCashRunwayView';
@@ -43,6 +49,8 @@ import { InvestorDealFlowCRM } from '../investor/InvestorDealFlowCRM';
 import { InvestorDiscoverStartups } from '../investor/InvestorDiscoverStartups';
 import { InvestorPortfolioManager } from '../investor/InvestorPortfolioManager';
 import { InvestorDiligenceLocker } from '../investor/InvestorDiligenceLocker';
+import { InvestorWatchlist } from '../investor/InvestorWatchlist';
+import { InvestorPortfolioDiligence } from '../investor/InvestorPortfolioDiligence';
 import { InvestorConnections } from '../investor/InvestorConnections';
 import { InvestorMeetings } from '../investor/InvestorMeetings';
 import { InvestorProfileSettings } from '../investor/InvestorProfileSettings';
@@ -65,13 +73,18 @@ import {
 } from '@/data/mentorMockData';
 import { getActiveMentorships, initialActiveMentorshipsData } from '@/lib/mentorshipService';
 
-// ESP Components
+// ESP & Institution Components
 import { ESPOverview } from '../esp/ESPOverview';
 import { ESPProgramsManager } from '../esp/ESPProgramsManager';
 import { ESPPortfolioManager } from '../esp/ESPPortfolioManager';
 import { ESPEventsManager } from '../esp/ESPEventsManager';
+import { ESPEndorsementsManager } from '../esp/ESPEndorsementsManager';
 import { ESPTeamEcosystemManager } from '../esp/ESPTeamEcosystemManager';
 import { ESPPublicProfileManager } from '../esp/ESPPublicProfileManager';
+import { ESPBillingManager } from '../esp/ESPBillingManager';
+
+// Shared Unified Workspaces
+import { DashboardActivitiesWorkspace } from './DashboardActivitiesWorkspace';
 
 interface DashboardWorkspaceProps {
   onBackToUniversal: () => void;
@@ -166,8 +179,17 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
   }, [activeEntity, profile]);
 
   const effectiveRole: UserRole = resolveEffectiveRole(activeEntity, profile);
+  const isOrg = effectiveRole === 'investor' && investorOrganizationService.isOrganizationContext();
+  const isInst = (activeEntity?.entityType || '').toLowerCase().includes('institution');
 
-  const baseConfig = personaDashboardConfigs[effectiveRole] || personaDashboardConfigs.startup;
+  const baseConfig = resolveDashboardNavConfig(
+    isInst ? 'institution' : isOrg ? 'investor_org' : effectiveRole,
+    {
+      isOrganizationContext: isOrg,
+      entityType: activeEntity?.entityType,
+      entityName: activeEntity?.name,
+    }
+  );
   const currentConfig: PersonaDashboardConfig = activeEntity
     ? {
         ...baseConfig,
@@ -188,40 +210,51 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
     const normalized = target.trim().toLowerCase();
     const map: Record<string, string> = {
       overview: 'overview',
-      my_listings: 'my_listings',
-      my_applications: 'my_applications',
-      opportunities: 'my_applications',
-      connections: 'connections',
-      meetings: 'meetings',
-      mentorship: 'mentorship',
-      advisory_workspaces: 'advisory_workspaces',
-      dd_locker: 'dd_locker',
-      pitch_deck: 'pitch_deck',
+      profile: 'profile',
+      business_operations: 'business_operations',
+      my_listings: 'business_operations',
+      my_applications: 'business_operations',
+      opportunities: 'business_operations',
       finance: 'finance',
       finances: 'finance',
-      cap_table: 'cap_table',
-      runway: 'runway',
-      startup_asks: 'startup_asks',
-      investor_asks: 'investor_asks',
-      mentor_asks: 'mentor_asks',
-      esp_asks: 'esp_asks',
-      asks: 'asks',
-      ask: 'asks',
-      deal_flow: 'deal_flow',
-      discover: 'discover',
-      portfolio: 'portfolio',
-      diligence_locker: 'diligence_locker',
-      availability: 'availability',
-      evaluations: 'evaluations',
-      programs: 'programs',
-      cohorts: 'cohorts',
-      demo_days: 'demo_days',
-      events: 'events',
+      cap_table: 'finance',
+      runway: 'finance',
+      dd_locker: 'dd_locker',
+      pitch_deck: 'dd_locker',
+      relationships: 'relationships',
+      connections: 'relationships',
+      mentorship: 'relationships',
+      advisory_workspaces: 'advisory_workspaces',
+      affiliations: 'affiliations',
       team: 'team_access',
       team_access: 'team_access',
       billing: 'billing_payments',
       billing_payments: 'billing_payments',
-      profile: 'profile',
+      settings: 'settings',
+      // Investor specific
+      watchlist: 'watchlist',
+      saved_startups: 'watchlist',
+      deal_flow: 'deal_flow',
+      portfolio: 'portfolio',
+      portfolio_diligence: 'portfolio_diligence',
+      diligence_locker: 'diligence_locker',
+      discover: 'watchlist',
+      // Shared Activities & Network
+      activities: 'activities',
+      startup_asks: 'business_operations',
+      investor_asks: 'activities',
+      mentor_asks: 'activities',
+      esp_asks: 'activities',
+      asks: 'activities',
+      ask: 'activities',
+      availability: 'meetings',
+      meetings: 'meetings',
+      programs: 'programs_cohorts',
+      cohorts: 'programs_cohorts',
+      programs_cohorts: 'programs_cohorts',
+      affiliated_startups: 'affiliated_startups',
+      events: 'events',
+      demo_days: 'events',
     };
 
     const targetModule = map[normalized] || normalized;
@@ -415,38 +448,6 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
             {/* ================= STARTUP PERSONA ================= */}
             {effectiveRole === 'startup' && (
               <>
-                {activeModuleId === 'overview' && (
-                  <StartupOverview onNavigateTab={handleNavigateModule} />
-                )}
-                {activeModuleId === 'my_listings' && <StartupMyListings />}
-                {activeModuleId === 'my_applications' && (
-                  <StartupMyApplications onNavigateTab={handleNavigateModule} />
-                )}
-                {activeModuleId === 'connections' && <StartupConnections />}
-                {activeModuleId === 'meetings' && (
-                  <MentorMeetings
-                    meetings={initialMentorMeetings}
-                    availabilityConfig={defaultAvailability}
-                    defaultTab="upcoming"
-                  />
-                )}
-                {activeModuleId === 'mentorship' && (
-                  <MentorshipModule userRole="startup" defaultSubTab="active" />
-                )}
-                {activeModuleId === 'dd_locker' && <StartupDDLocker />}
-                {activeModuleId === 'pitch_deck' && <FinanceDocumentsView />}
-                {activeModuleId === 'finance' && (
-                  <StartupFinanceDashboard initialTab="overview" onNavigateTab={handleNavigateModule} />
-                )}
-                {activeModuleId === 'cap_table' && (
-                  <StartupFinanceDashboard initialTab="cap_table" onNavigateTab={handleNavigateModule} />
-                )}
-                {activeModuleId === 'runway' && (
-                  <StartupFinanceDashboard initialTab="cash_runway" onNavigateTab={handleNavigateModule} />
-                )}
-                {(activeModuleId === 'startup_asks' || activeModuleId === 'asks') && (
-                  <StartupAskManager role="startup" />
-                )}
                 {activeModuleId === 'profile' && (
                   <StartupProfileManager
                     onPreviewPublicProfile={() =>
@@ -459,6 +460,40 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                     onNavigateTab={handleNavigateModule}
                   />
                 )}
+                {activeModuleId === 'overview' && (
+                  <StartupOverview onNavigateTab={handleNavigateModule} />
+                )}
+                {activeModuleId === 'business_operations' && (
+                  <StartupBusinessOperations onNavigateTab={handleNavigateModule} />
+                )}
+                {activeModuleId === 'finance' && (
+                  <StartupFinanceDashboard initialTab="overview" onNavigateTab={handleNavigateModule} />
+                )}
+                {activeModuleId === 'dd_locker' && <StartupDDLocker />}
+                {activeModuleId === 'relationships' && (
+                  <StartupRelationshipsWorkspace onNavigateTab={handleNavigateModule} />
+                )}
+                {activeModuleId === 'affiliations' && (
+                  <StartupAffiliationsWorkspace />
+                )}
+                {activeModuleId === 'team_access' && (
+                  <StartupTeamWorkspace />
+                )}
+                {activeModuleId === 'billing_payments' && (
+                  <StartupBillingManager />
+                )}
+                {activeModuleId === 'settings' && (
+                  <StartupSettings />
+                )}
+                {/* Backward-compatible module mappings */}
+                {activeModuleId === 'my_listings' && <StartupBusinessOperations initialSubTab="listings" onNavigateTab={handleNavigateModule} />}
+                {activeModuleId === 'my_applications' && <StartupBusinessOperations initialSubTab="applications" onNavigateTab={handleNavigateModule} />}
+                {activeModuleId === 'startup_asks' && <StartupBusinessOperations initialSubTab="asks" onNavigateTab={handleNavigateModule} />}
+                {activeModuleId === 'connections' && <StartupRelationshipsWorkspace initialSubTab="connections" onNavigateTab={handleNavigateModule} />}
+                {activeModuleId === 'mentorship' && <StartupRelationshipsWorkspace initialSubTab="mentorship" onNavigateTab={handleNavigateModule} />}
+                {activeModuleId === 'meetings' && <StartupRelationshipsWorkspace initialSubTab="meetings" onNavigateTab={handleNavigateModule} />}
+                {activeModuleId === 'cap_table' && <StartupFinanceDashboard initialTab="cap_table" onNavigateTab={handleNavigateModule} />}
+                {activeModuleId === 'runway' && <StartupFinanceDashboard initialTab="cash_runway" onNavigateTab={handleNavigateModule} />}
               </>
             )}
 
@@ -468,22 +503,33 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                 {activeModuleId === 'overview' && (
                   <InvestorOverview profile={profile} onNavigateTab={handleNavigateModule} />
                 )}
+                {activeModuleId === 'watchlist' && (
+                  <InvestorWatchlist onNavigateTab={handleNavigateModule} />
+                )}
                 {activeModuleId === 'deal_flow' && <InvestorDealFlowCRM />}
-                {activeModuleId === 'discover' && <InvestorDiscoverStartups />}
                 {activeModuleId === 'portfolio' && <InvestorPortfolioManager />}
                 {activeModuleId === 'diligence_locker' && <InvestorDiligenceLocker />}
-                {(activeModuleId === 'investor_asks' || activeModuleId === 'asks') && (
-                  <UniversalAskManager role="investor" />
+                {activeModuleId === 'portfolio_diligence' && <InvestorPortfolioDiligence />}
+                {activeModuleId === 'activities' && (
+                  <DashboardActivitiesWorkspace
+                    role={investorOrganizationService.isOrganizationContext() ? 'investor_org' : 'investor_individual'}
+                    onNavigateTab={handleNavigateModule}
+                  />
                 )}
-                {activeModuleId === 'my_listings' && <StartupMyListings />}
-                {activeModuleId === 'my_applications' && (
-                  <StartupMyApplications onNavigateTab={handleNavigateModule} />
+                {activeModuleId === 'team_access' && (
+                  investorOrganizationService.isOrganizationContext() ? (
+                    <InvestorTeamAccess />
+                  ) : (
+                    <div className="p-8 text-center bg-white dark:bg-[#181B1A] rounded-2xl border border-[#E5E7EB] dark:border-[#262A29] space-y-3">
+                      <p className="text-sm font-bold text-[#101212] dark:text-white">
+                        Team & Governance is only available for Investment Organizations
+                      </p>
+                      <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                        Switch to an organization account or create a new fund to access multi-member team controls and RBAC.
+                      </p>
+                    </div>
+                  )
                 )}
-                {activeModuleId === 'connections' && (
-                  <InvestorConnections showFilters={false} />
-                )}
-                {activeModuleId === 'meetings' && <InvestorMeetings />}
-                {activeModuleId === 'team_access' && <InvestorTeamAccess />}
                 {activeModuleId === 'billing_payments' && <InvestorBillingManager />}
                 {activeModuleId === 'profile' &&
                   (investorOrganizationService.isOrganizationContext() ? (
@@ -509,6 +555,13 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                       }
                     />
                   ))}
+                {/* Fallback routes */}
+                {activeModuleId === 'discover' && <InvestorWatchlist onNavigateTab={handleNavigateModule} />}
+                {activeModuleId === 'connections' && <InvestorConnections showFilters={false} />}
+                {activeModuleId === 'meetings' && <InvestorMeetings />}
+                {(activeModuleId === 'investor_asks' || activeModuleId === 'asks') && (
+                  <UniversalAskManager role="investor" />
+                )}
               </>
             )}
 
@@ -529,9 +582,6 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                     onNavigateMeetings={() => handleNavigateModule('meetings')}
                   />
                 )}
-                {(activeModuleId === 'mentor_asks' || activeModuleId === 'asks') && (
-                  <UniversalAskManager role="mentor" />
-                )}
                 {activeModuleId === 'meetings' && (
                   <MentorMeetings
                     meetings={initialMentorMeetings}
@@ -539,9 +589,8 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                     defaultTab="upcoming"
                   />
                 )}
-                {activeModuleId === 'my_listings' && <StartupMyListings />}
-                {activeModuleId === 'my_applications' && (
-                  <StartupMyApplications onNavigateTab={handleNavigateModule} />
+                {activeModuleId === 'activities' && (
+                  <DashboardActivitiesWorkspace role="mentor" onNavigateTab={handleNavigateModule} />
                 )}
                 {activeModuleId === 'connections' && (
                   <InvestorConnections
@@ -561,43 +610,41 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                     }
                   />
                 )}
-              </>
-            )}
-
-            {/* ================= ESP PERSONA ================= */}
-            {effectiveRole === 'esp' && (
-              <>
-                {activeModuleId === 'overview' && (
-                  <ESPOverview profile={profile} onNavigateTab={handleNavigateModule} />
-                )}
-                {activeModuleId === 'programs' && (
-                  <ESPProgramsManager
-                    initialSubTab="programs"
-                    onNavigateTab={handleNavigateModule}
-                  />
-                )}
-                {activeModuleId === 'cohorts' && (
-                  <ESPProgramsManager
-                    initialSubTab="cohorts"
-                    onNavigateTab={handleNavigateModule}
-                  />
-                )}
-                {activeModuleId === 'portfolio' && <ESPPortfolioManager />}
-                {activeModuleId === 'demo_days' && (
-                  <ESPEventsManager onNavigateTab={handleNavigateModule} />
-                )}
-                {activeModuleId === 'events' && (
-                  <ESPEventsManager onNavigateTab={handleNavigateModule} />
-                )}
-                {(activeModuleId === 'esp_asks' || activeModuleId === 'asks') && (
-                  <UniversalAskManager role="esp" />
+                {/* Fallback routes */}
+                {(activeModuleId === 'mentor_asks' || activeModuleId === 'asks') && (
+                  <UniversalAskManager role="mentor" />
                 )}
                 {activeModuleId === 'my_listings' && <StartupMyListings />}
                 {activeModuleId === 'my_applications' && (
                   <StartupMyApplications onNavigateTab={handleNavigateModule} />
                 )}
-                {activeModuleId === 'connections' && <ESPTeamEcosystemManager />}
-                {activeModuleId === 'meetings' && <InvestorMeetings />}
+              </>
+            )}
+
+            {/* ================= ESP / INSTITUTION PERSONA ================= */}
+            {(effectiveRole === 'esp' || isInst) && (
+              <>
+                {activeModuleId === 'overview' && (
+                  <ESPOverview profile={profile} onNavigateTab={handleNavigateModule} />
+                )}
+                {(activeModuleId === 'programs_cohorts' || activeModuleId === 'programs' || activeModuleId === 'cohorts') && (
+                  <ESPProgramsManager
+                    initialSubTab={activeModuleId === 'cohorts' ? 'cohorts' : 'programs'}
+                    onNavigateTab={handleNavigateModule}
+                  />
+                )}
+                {activeModuleId === 'affiliated_startups' && (
+                  <ESPEndorsementsManager isInstitution={isInst} />
+                )}
+                {activeModuleId === 'portfolio' && <ESPPortfolioManager />}
+                {(activeModuleId === 'events' || activeModuleId === 'demo_days') && (
+                  <ESPEventsManager onNavigateTab={handleNavigateModule} />
+                )}
+                {activeModuleId === 'activities' && (
+                  <DashboardActivitiesWorkspace role={isInst ? 'institution' : 'esp'} onNavigateTab={handleNavigateModule} />
+                )}
+                {activeModuleId === 'team_access' && <ESPTeamEcosystemManager />}
+                {activeModuleId === 'billing_payments' && <ESPBillingManager />}
                 {activeModuleId === 'profile' && (
                   <ESPPublicProfileManager
                     onPreviewProfile={() =>
@@ -609,6 +656,16 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                     }
                   />
                 )}
+                {/* Fallback routes */}
+                {(activeModuleId === 'esp_asks' || activeModuleId === 'asks') && (
+                  <UniversalAskManager role="esp" />
+                )}
+                {activeModuleId === 'my_listings' && <StartupMyListings />}
+                {activeModuleId === 'my_applications' && (
+                  <StartupMyApplications onNavigateTab={handleNavigateModule} />
+                )}
+                {activeModuleId === 'connections' && <ESPTeamEcosystemManager />}
+                {activeModuleId === 'meetings' && <InvestorMeetings />}
               </>
             )}
 

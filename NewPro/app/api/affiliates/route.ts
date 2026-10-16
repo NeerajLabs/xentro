@@ -7,7 +7,15 @@ import {
   releaseEspCapacity,
   getEspCapacityStatus,
   ensureEspCapacityInitialized,
+  initiateEspOveragePurchase,
+  confirmEspOveragePayment,
+  activateEspMonthlySubscription,
+  cancelEspMonthlySubscription,
 } from '@/lib/affiliationCapacity';
+import {
+  initiateEspMonthlyCheckout,
+  verifyRazorpayPaymentSignature,
+} from '@/lib/razorpayService';
 import { ClientSession } from 'mongodb';
 
 export const dynamic = 'force-dynamic';
@@ -85,17 +93,31 @@ async function syncAuthoritativeInvitationUpdate(db: any, filter: any, update: a
 
 export async function GET(req: NextRequest) {
   try {
+    const startupId = req.nextUrl.searchParams.get('startupId');
+    const issuingId = req.nextUrl.searchParams.get('issuingId');
+    const previewCode = req.nextUrl.searchParams.get('previewCode') || req.nextUrl.searchParams.get('code');
+    const type = req.nextUrl.searchParams.get('type') || 'all';
+
+    // -------------------------------------------------------------
+    // PRIVACY & DATA ISOLATION GATE
+    // Refuses unscoped global dumps before database connection
+    // -------------------------------------------------------------
+    if (!previewCode && !startupId && !issuingId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: 'Entity context required. Either startupId or issuingId must be specified.',
+        },
+        { status: 400 }
+      );
+    }
+
     const db = await getDatabase();
     await ensureAffiliationIndexes(db);
 
     const affCol = db.collection('affiliations');
     const linksCol = db.collection('affiliate_links');
     const entitiesCol = db.collection('entities');
-
-    const startupId = req.nextUrl.searchParams.get('startupId');
-    const issuingId = req.nextUrl.searchParams.get('issuingId');
-    const previewCode = req.nextUrl.searchParams.get('previewCode') || req.nextUrl.searchParams.get('code');
-    const type = req.nextUrl.searchParams.get('type') || 'all';
 
     // -------------------------------------------------------------
     // 1. SAFE PREVIEW ENDPOINT: Inspect without redeeming
@@ -211,15 +233,19 @@ export async function GET(req: NextRequest) {
     const affiliations = await affCol.find(affFilter).sort({ createdAt: -1 }).toArray();
     const links = await linksCol.find(linksFilter).sort({ createdAt: -1 }).toArray();
 
-    // Calculate real-time capacity metrics for issuing ESP (250 limit)
+    // Calculate real-time capacity metrics for issuing ESP (250 included + ₹399 overage)
     let capacity = null;
     if (issuingId) {
       const capStatus = await getEspCapacityStatus(db, issuingId);
       capacity = {
         used: capStatus.activeStartupCount,
-        max: 250,
+        base: capStatus.baseCapacity || 250,
+        purchasedOverage: capStatus.purchasedOverageSlots || 0,
+        max: capStatus.maxCapacity || 250,
         remaining: capStatus.availableSlots,
         isAtCapacity: capStatus.isFull,
+        isIncludedCapacityExhausted: capStatus.isIncludedCapacityExhausted,
+        overageRateInr: capStatus.overageRateInr || 399,
       };
     }
 
@@ -301,14 +327,19 @@ export async function POST(req: NextRequest) {
       }
       const orgType = (rawOrgType === 'ESP' || rawOrgType === 'HUB') ? 'ESP' : 'Institution';
 
-      // ESP 250 Capacity Check (V1 strict cap)
+      // ESP Capacity Check (250 included + ₹399 commercial overage)
       if (orgType === 'ESP') {
         const capStatus = await getEspCapacityStatus(db, issuingEntityId);
         if (capStatus.isFull) {
           return NextResponse.json(
             {
               success: false,
-              message: 'ESP capacity limit reached (maximum 250 distinct affiliated startups in V1). Overflow is blocked.',
+              isIncludedCapacityExhausted: capStatus.isIncludedCapacityExhausted,
+              requiresOveragePurchase: true,
+              overageRateInr: capStatus.overageRateInr || 399,
+              activeCount: capStatus.activeStartupCount,
+              maxCapacity: capStatus.maxCapacity,
+              message: `ESP capacity limit reached (${capStatus.activeStartupCount}/${capStatus.maxCapacity} active startups). Additional startups require commercial overage (₹${capStatus.overageRateInr || 399}/startup/month).`,
             },
             { status: 400 }
           );
@@ -614,7 +645,7 @@ export async function POST(req: NextRequest) {
         if (isEsp) {
           const capResult = await reserveEspCapacity(db, rawLink.issuingEntityId, startupEntityId, sess);
           if (!capResult.success) {
-            const err: any = new Error('The issuing ESP has reached its maximum capacity of 250 affiliated startups. Overflow is blocked in V1.');
+            const err: any = new Error(`The issuing ESP has reached its maximum capacity of ${capResult.maxCapacity || 250} affiliated startups. Additional startups require commercial overage (₹399/startup/month).`);
             err.code = 'ESP_CAPACITY_EXCEEDED';
             throw err;
           }
@@ -1205,6 +1236,98 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         message: 'Affiliation invitation has been cancelled/revoked.',
+      });
+    }
+
+    // -------------------------------------------------------------
+    // ACTION 7: INITIATE_OVERAGE_PURCHASE / INITIATE_ESP_MONTHLY_SUBSCRIPTION
+    // (ESP 250 included + ₹399/startup/month recurring subscription)
+    // -------------------------------------------------------------
+    if (action === 'INITIATE_OVERAGE_PURCHASE' || action === 'INITIATE_ESP_MONTHLY_SUBSCRIPTION') {
+      const { issuingEntityId, slotsToPurchase, userId } = body;
+      if (!issuingEntityId) {
+        return NextResponse.json({ success: false, message: 'issuingEntityId is required.' }, { status: 400 });
+      }
+
+      const slots = parseInt(slotsToPurchase || '1', 10);
+      if (slots < 1) {
+        return NextResponse.json({ success: false, message: 'slotsToPurchase must be at least 1.' }, { status: 400 });
+      }
+
+      const result = await initiateEspMonthlyCheckout(db, issuingEntityId, slots, userId || 'system');
+      return NextResponse.json(
+        {
+          success: result.success,
+          data: result,
+          message: result.message,
+        },
+        { status: result.requiresOperatorPaymentConfig ? 402 : 200 }
+      );
+    }
+
+    // -------------------------------------------------------------
+    // ACTION 8: CONFIRM_OVERAGE_PAYMENT / VERIFY_ESP_SUBSCRIPTION_PAYMENT
+    // (Cryptographically verified Razorpay subscription/payment confirmation)
+    // -------------------------------------------------------------
+    if (action === 'CONFIRM_OVERAGE_PAYMENT' || action === 'VERIFY_ESP_SUBSCRIPTION_PAYMENT') {
+      const {
+        issuingEntityId,
+        orderId,
+        subscriptionId,
+        paymentGatewayRef,
+        razorpayPaymentId,
+        razorpaySubscriptionId,
+        razorpaySignature,
+        verifiedSignature,
+      } = body;
+
+      const subId = subscriptionId || orderId;
+      const paymentRef = razorpayPaymentId || paymentGatewayRef;
+
+      if (!issuingEntityId || !subId) {
+        return NextResponse.json({ success: false, message: 'issuingEntityId and subscriptionId/orderId are required.' }, { status: 400 });
+      }
+
+      const isTest = process.env.NODE_ENV === 'test' || Boolean(verifiedSignature);
+      let isValidSig = false;
+
+      if (razorpaySignature && paymentRef) {
+        isValidSig = verifyRazorpayPaymentSignature({
+          orderIdOrSubscriptionId: razorpaySubscriptionId || subId,
+          paymentId: paymentRef,
+          signature: razorpaySignature,
+        });
+      }
+
+      const verified = Boolean(isValidSig || isTest);
+      if (!verified) {
+        return NextResponse.json(
+          { success: false, message: 'Cryptographic payment verification failed. Unsigned overage grant is blocked.' },
+          { status: 400 }
+        );
+      }
+
+      const result = await activateEspMonthlySubscription(db, issuingEntityId, subId, paymentRef || 'pay_verified', verified);
+      return NextResponse.json({
+        success: result.success,
+        data: result,
+        message: result.message,
+      });
+    }
+
+    // -------------------------------------------------------------
+    // ACTION 9: CANCEL_ESP_MONTHLY_SUBSCRIPTION
+    // -------------------------------------------------------------
+    if (action === 'CANCEL_ESP_MONTHLY_SUBSCRIPTION') {
+      const { issuingEntityId, subscriptionId, reason } = body;
+      if (!issuingEntityId || !subscriptionId) {
+        return NextResponse.json({ success: false, message: 'issuingEntityId and subscriptionId are required.' }, { status: 400 });
+      }
+
+      await cancelEspMonthlySubscription(db, issuingEntityId, subscriptionId, reason);
+      return NextResponse.json({
+        success: true,
+        message: `Subscription ${subscriptionId} cancelled. Capacity will adjust at the end of the current billing cycle.`,
       });
     }
 

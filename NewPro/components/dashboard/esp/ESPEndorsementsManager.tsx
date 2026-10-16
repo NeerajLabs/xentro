@@ -43,7 +43,13 @@ import {
   History as HistoryIcon,
 } from 'lucide-react';
 
-export const ESPEndorsementsManager: React.FC = () => {
+export interface ESPEndorsementsManagerProps {
+  isInstitution?: boolean;
+}
+
+export const ESPEndorsementsManager: React.FC<ESPEndorsementsManagerProps> = ({
+  isInstitution = false,
+}) => {
   const { showToast } = useToast();
   const user = typeof window !== 'undefined' ? getUserProfile() : null;
   const actorName = user?.name || 'Administrator';
@@ -90,8 +96,21 @@ export const ESPEndorsementsManager: React.FC = () => {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteStartupName, setInviteStartupName] = useState('');
 
-  // Authoritative MongoDB State & V1 Capacity Tracking
-  const [capacity, setCapacity] = useState<{ used: number; max: number; remaining: number; isAtCapacity: boolean } | null>(null);
+  // Authoritative MongoDB State & V1 Capacity Tracking (250 included + ₹399 overage)
+  const [capacity, setCapacity] = useState<{
+    used: number;
+    base?: number;
+    purchasedOverage?: number;
+    max: number;
+    remaining: number;
+    isAtCapacity: boolean;
+    isIncludedCapacityExhausted?: boolean;
+    overageRateInr?: number;
+  } | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [isOverageModalOpen, setIsOverageModalOpen] = useState(false);
+  const [overageSlotsToBuy, setOverageSlotsToBuy] = useState<number>(5);
+  const [isPurchasingOverage, setIsPurchasingOverage] = useState(false);
   const [pendingLinks, setPendingLinks] = useState<any[]>([]);
   const [generatedLink, setGeneratedLink] = useState<{ code: string; expiresAt: string; linkUrl: string; intendedStartupName?: string } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -104,9 +123,10 @@ export const ESPEndorsementsManager: React.FC = () => {
     }
     try {
       setIsLoading(true);
+      setApiError(null);
       const res = await fetch(`/api/affiliates?issuingId=${encodeURIComponent(eid)}`);
       const json = await res.json();
-      if (json?.success && json?.data) {
+      if (res.ok && json?.success && json?.data) {
         if (json.data.capacity) {
           setCapacity(json.data.capacity);
         }
@@ -148,9 +168,12 @@ export const ESPEndorsementsManager: React.FC = () => {
           setEndorsements(mapped);
           return;
         }
+      } else {
+        setApiError(json?.message || 'Failed to fetch authoritative affiliations.');
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn('[ESPEndorsementsManager] Failed to load affiliations from MongoDB:', err);
+      setApiError(err?.message || 'Network error communicating with server.');
     } finally {
       setIsLoading(false);
     }
@@ -189,7 +212,8 @@ export const ESPEndorsementsManager: React.FC = () => {
     }
 
     if (capacity?.isAtCapacity) {
-      showToast('ESP Capacity limit of 250 active startups reached. Overflow is blocked in V1.', 'error');
+      setIsOverageModalOpen(true);
+      showToast('Capacity limit reached. Extend capacity with monthly overage (₹399 per additional startup per month).', 'info');
       return;
     }
 
@@ -409,7 +433,8 @@ export const ESPEndorsementsManager: React.FC = () => {
   const handleSendInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     if (capacity?.isAtCapacity) {
-      showToast('ESP Capacity limit of 250 active startups reached. Overflow is blocked in V1.', 'error');
+      setIsOverageModalOpen(true);
+      showToast('Capacity limit reached. Extend capacity with monthly overage (₹399 per additional startup per month).', 'info');
       return;
     }
 
@@ -466,8 +491,63 @@ export const ESPEndorsementsManager: React.FC = () => {
     }
   };
 
+  const handlePurchaseOverage = async () => {
+    const eid = entityContextService.getActiveEntityId();
+    if (!eid) return;
+    try {
+      setIsPurchasingOverage(true);
+      const res = await fetch('/api/affiliates', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'INITIATE_OVERAGE_PURCHASE',
+          issuingEntityId: eid,
+          slotsToPurchase: overageSlotsToBuy,
+          userId: user?.id,
+        }),
+      });
+      const json = await res.json();
+      if (json.data?.requiresOperatorPaymentConfig || res.status === 402) {
+        showToast(
+          json.message ||
+            'Commercial overage checkout requires operator payment gateway keys. Order logged pending operator activation.',
+          'info'
+        );
+      } else if (json.success) {
+        showToast(json.message || `Overage capacity expanded by ${overageSlotsToBuy} slots!`, 'success');
+        loadAuthoritativeAffiliations();
+      } else {
+        showToast(json.message || 'Failed to initiate overage purchase.', 'error');
+      }
+    } catch (err: any) {
+      showToast(err.message || 'Error communicating with server', 'error');
+    } finally {
+      setIsPurchasingOverage(false);
+      setIsOverageModalOpen(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-slide">
+      {/* Offline Sync State / Error Banner */}
+      {apiError && (
+        <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-300 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>
+              <strong>Offline Mode / Server Sync Disconnected:</strong> Displaying cached local endorsement records. {apiError}
+            </span>
+          </div>
+          <button
+            onClick={loadAuthoritativeAffiliations}
+            disabled={isLoading}
+            className="px-3 py-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs cursor-pointer self-start sm:self-auto disabled:opacity-50"
+          >
+            {isLoading ? 'Retrying...' : 'Retry Server Sync'}
+          </button>
+        </div>
+      )}
+
       {/* 0. Header with Actions & Capacity Banner */}
       <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
@@ -512,34 +592,45 @@ export const ESPEndorsementsManager: React.FC = () => {
 
       {/* 1. Metrics Strip & Capacity Bar */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        {/* Capacity Metric (V1 ESP Limit: 250 startups) */}
+        {/* Capacity Metric (V1 ESP Limit: 250 included + ₹399 overage) */}
         <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-1.5">
           <div className="flex items-center justify-between">
             <span className="text-[10px] uppercase font-bold text-[#565B59] dark:text-[#B6B8B7] block">
-              ESP Capacity Cap
+              ESP Capacity
             </span>
             <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
-              (capacity?.used ?? activeCount) >= 250
-                ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400'
+              (capacity?.used ?? activeCount) >= (capacity?.max ?? 250)
+                ? 'bg-amber-500/20 text-amber-600 dark:text-amber-400'
                 : 'bg-emerald-500/20 text-emerald-600 dark:text-emerald-400'
             }`}>
-              {(capacity?.used ?? activeCount) >= 250 ? 'Cap Reached' : 'Active Cap'}
+              {(capacity?.used ?? activeCount) >= 250 ? 'Monthly Overage Tier (₹399/mo)' : '250 Included'}
             </span>
           </div>
           <p className="text-2xl font-bold font-sora text-[#101212] dark:text-white">
-            {capacity?.used ?? activeCount} <span className="text-xs text-[#565B59] dark:text-[#B6B8B7] font-normal">/ 250</span>
+            {capacity?.used ?? activeCount}{' '}
+            <span className="text-xs text-[#565B59] dark:text-[#B6B8B7] font-normal">
+              / {capacity?.max ?? 250}
+            </span>
           </p>
           <div className="w-full bg-gray-100 dark:bg-[#202422] h-1.5 rounded-full overflow-hidden">
             <div
               className={`h-full transition-all duration-500 ${
-                (capacity?.used ?? activeCount) >= 250 ? 'bg-rose-500' : 'bg-[#D9FF3F]'
+                (capacity?.used ?? activeCount) >= (capacity?.max ?? 250) ? 'bg-amber-500' : 'bg-[#D9FF3F]'
               }`}
-              style={{ width: `${Math.min(100, (((capacity?.used ?? activeCount) / 250) * 100))}%` }}
+              style={{ width: `${Math.min(100, (((capacity?.used ?? activeCount) / (capacity?.max ?? 250)) * 100))}%` }}
             />
           </div>
-          <p className="text-[10px] text-[#565B59] dark:text-[#B6B8B7]">
-            {Math.max(0, 250 - (capacity?.used ?? activeCount))} slots remaining (V1 Cap)
-          </p>
+          <div className="flex items-center justify-between pt-0.5">
+            <p className="text-[10px] text-[#565B59] dark:text-[#B6B8B7]">
+              {Math.max(0, (capacity?.max ?? 250) - (capacity?.used ?? activeCount))} slots remaining
+            </p>
+            <button
+              onClick={() => setIsOverageModalOpen(true)}
+              className="text-[10px] font-bold text-amber-600 dark:text-amber-400 underline cursor-pointer hover:opacity-80"
+            >
+              + Extend
+            </button>
+          </div>
         </div>
 
         <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-1.5">
@@ -1699,6 +1790,94 @@ export const ESPEndorsementsManager: React.FC = () => {
                 className="px-5 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold cursor-pointer"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Commercial Overage Extension Modal (V1 ESP 250+ ₹399) */}
+      {isOverageModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-3xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-base text-[#101212] dark:text-white">
+                  Extend ESP Capacity (Monthly Recurring Capacity)
+                </h3>
+              </div>
+              <button
+                onClick={() => setIsOverageModalOpen(false)}
+                className="p-1 rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-[#565B59] dark:text-[#B6B8B7]">
+              <p>
+                The first <strong>250 active startups</strong> are included in your standard ESP program allocation. Additional qualifying startups can be affiliated at <strong>₹399 per additional startup per month</strong> via Razorpay.
+              </p>
+
+              <div className="p-3.5 rounded-xl bg-[#F7F8F6] dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] space-y-2">
+                <label className="font-bold text-[#101212] dark:text-white block">
+                  Select Additional Startup Slots:
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {[1, 5, 10, 25].map((count) => (
+                    <button
+                      key={count}
+                      type="button"
+                      onClick={() => setOverageSlotsToBuy(count)}
+                      className={`py-2 rounded-xl text-xs font-bold transition-all ${
+                        overageSlotsToBuy === count
+                          ? 'bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212]'
+                          : 'bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29] text-gray-700 dark:text-gray-300'
+                      }`}
+                    >
+                      +{count}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-800 dark:text-emerald-300 flex items-center justify-between font-bold">
+                <span>Monthly Recurring Commitment:</span>
+                <span className="text-sm">
+                  {overageSlotsToBuy} &times; ₹399 = ₹{overageSlotsToBuy * 399}/month
+                </span>
+              </div>
+
+              <p className="text-[11px] text-[#565B59] dark:text-[#7A807D]">
+                * Commercial transactions require server-side gateway processing. If payment provider keys are pending from the operator, this subscription order is recorded in pending state.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsOverageModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#202422]"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handlePurchaseOverage}
+                disabled={isPurchasingOverage}
+                className="px-5 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isPurchasingOverage ? (
+                  <>
+                    <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>Processing...</span>
+                  </>
+                ) : (
+                  <span>Confirm Monthly Subscription (+{overageSlotsToBuy} Slots)</span>
+                )}
               </button>
             </div>
           </div>
