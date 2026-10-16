@@ -50,6 +50,7 @@ import { AddMemberWizardModal } from './AddMemberWizardModal';
 import { MemberControlDrawer } from './MemberControlDrawer';
 import { TalentAskModal } from './TalentAskModal';
 import { TalentPipelineModal } from './TalentPipelineModal';
+import { DashboardErrorBoundary } from '@/components/dashboard/workspace/DashboardErrorBoundary';
 
 export type TeamWorkspaceTab =
   | 'team_members'
@@ -63,10 +64,31 @@ export const StartupTeamWorkspace: React.FC = () => {
   const [activeTab, setActiveTab] = useState<TeamWorkspaceTab>('team_members');
   const [syncError, setSyncError] = useState<string | null>(null);
 
-  // Core Data
-  const [members, setMembers] = useState<StartupTeamMember[]>([]);
-  const [talentAsks, setTalentAsks] = useState<StartupTalentAsk[]>([]);
-  const [applicants, setApplicants] = useState<TalentApplicant[]>([]);
+  // Core Data with safe array defaults
+  const [members, setMembers] = useState<StartupTeamMember[]>(() => {
+    try {
+      const initial = getStartupMembers();
+      return Array.isArray(initial) ? initial : [];
+    } catch {
+      return [];
+    }
+  });
+  const [talentAsks, setTalentAsks] = useState<StartupTalentAsk[]>(() => {
+    try {
+      const initial = getTalentAsks();
+      return Array.isArray(initial) ? initial : [];
+    } catch {
+      return [];
+    }
+  });
+  const [applicants, setApplicants] = useState<TalentApplicant[]>(() => {
+    try {
+      const initial = getTalentApplicants();
+      return Array.isArray(initial) ? initial : [];
+    } catch {
+      return [];
+    }
+  });
 
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -81,34 +103,40 @@ export const StartupTeamWorkspace: React.FC = () => {
 
   // Load state and subscribe to events
   useEffect(() => {
-    setMembers(getStartupMembers());
-    setTalentAsks(getTalentAsks());
-    setApplicants(getTalentApplicants());
+    const initialMembers = getStartupMembers();
+    setMembers(Array.isArray(initialMembers) ? initialMembers : []);
+    const initialAsks = getTalentAsks();
+    setTalentAsks(Array.isArray(initialAsks) ? initialAsks : []);
+    const initialApplicants = getTalentApplicants();
+    setApplicants(Array.isArray(initialApplicants) ? initialApplicants : []);
 
     const handleTeamChanged = (e: Event) => {
       const ce = e as CustomEvent;
-      if (ce.detail?.members) {
+      if (Array.isArray(ce.detail?.members)) {
         setMembers(ce.detail.members);
       } else {
-        setMembers(getStartupMembers());
+        const fallback = getStartupMembers();
+        setMembers(Array.isArray(fallback) ? fallback : []);
       }
     };
 
     const handleTalentChanged = (e: Event) => {
       const ce = e as CustomEvent;
-      if (ce.detail?.asks) {
+      if (Array.isArray(ce.detail?.asks)) {
         setTalentAsks(ce.detail.asks);
       } else {
-        setTalentAsks(getTalentAsks());
+        const fallback = getTalentAsks();
+        setTalentAsks(Array.isArray(fallback) ? fallback : []);
       }
     };
 
     const handleApplicantsChanged = (e: Event) => {
       const ce = e as CustomEvent;
-      if (ce.detail?.applicants) {
+      if (Array.isArray(ce.detail?.applicants)) {
         setApplicants(ce.detail.applicants);
       } else {
-        setApplicants(getTalentApplicants());
+        const fallback = getTalentApplicants();
+        setApplicants(Array.isArray(fallback) ? fallback : []);
       }
     };
 
@@ -280,7 +308,8 @@ export const StartupTeamWorkspace: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6 animate-fade-slide">
+    <DashboardErrorBoundary moduleName="Startup Team & Roles">
+      <div className="space-y-6 animate-fade-slide">
       {/* Server Persistence Error Banner */}
       {syncError && (
         <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-300 flex items-center justify-between">
@@ -396,44 +425,53 @@ export const StartupTeamWorkspace: React.FC = () => {
       )}
 
       {/* Modals & Drawers */}
-      <AddMemberWizardModal
-        isOpen={isAddModalOpen}
-        initialCategory={addModalInitialCategory}
-        existingMembers={members}
-        onClose={() => setIsAddModalOpen(false)}
-        onAddMember={handleAddMember}
-      />
+      {isAddModalOpen && (
+        <AddMemberWizardModal
+          isOpen={isAddModalOpen}
+          initialCategory={addModalInitialCategory}
+          existingMembers={members}
+          onClose={() => setIsAddModalOpen(false)}
+          onAddMember={handleAddMember}
+        />
+      )}
 
-      <MemberControlDrawer
-        isOpen={!!selectedMemberForDrawer}
-        member={selectedMemberForDrawer}
-        allMembers={members}
-        onClose={() => setSelectedMemberForDrawer(null)}
-        onUpdateMember={handleUpdateMember}
-        onRemoveMember={handleRemoveMember}
-        onMarkFormer={markStartupMemberFormer}
-        onTransferOwnership={handleTransferOwnership}
-      />
+      {selectedMemberForDrawer && (
+        <MemberControlDrawer
+          isOpen={!!selectedMemberForDrawer}
+          member={selectedMemberForDrawer}
+          allMembers={members}
+          onClose={() => setSelectedMemberForDrawer(null)}
+          onUpdateMember={handleUpdateMember}
+          onRemoveMember={handleRemoveMember}
+          onMarkFormer={markStartupMemberFormer}
+          onTransferOwnership={handleTransferOwnership}
+        />
+      )}
 
-      <TalentAskModal
-        isOpen={isTalentModalOpen}
-        ask={editingTalentAsk}
-        onClose={() => {
-          setIsTalentModalOpen(false);
-          setEditingTalentAsk(null);
-        }}
-        onSave={handleSaveTalentAsk}
-      />
+      {isTalentModalOpen && (
+        <TalentAskModal
+          isOpen={isTalentModalOpen}
+          ask={editingTalentAsk}
+          onClose={() => {
+            setIsTalentModalOpen(false);
+            setEditingTalentAsk(null);
+          }}
+          onSave={handleSaveTalentAsk}
+        />
+      )}
 
-      <TalentPipelineModal
-        isOpen={isPipelineModalOpen}
-        selectedAskId={pipelineSelectedAskId}
-        asks={talentAsks}
-        applicants={applicants}
-        onClose={() => setIsPipelineModalOpen(false)}
-        onMoveStage={handleMoveApplicantStage}
-        onConvertToMember={handleConvertToMember}
-      />
+      {isPipelineModalOpen && (
+        <TalentPipelineModal
+          isOpen={isPipelineModalOpen}
+          selectedAskId={pipelineSelectedAskId}
+          asks={talentAsks}
+          applicants={applicants}
+          onClose={() => setIsPipelineModalOpen(false)}
+          onMoveStage={handleMoveApplicantStage}
+          onConvertToMember={handleConvertToMember}
+        />
+      )}
     </div>
+    </DashboardErrorBoundary>
   );
 };

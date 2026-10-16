@@ -33,8 +33,10 @@ export const AdvisorsMentorsTab: React.FC<AdvisorsMentorsTabProps> = ({
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
 
+  const safeMembers = Array.isArray(members) ? members : [];
+
   // Filter advisors and mentors only
-  const advisors = members.filter(
+  const advisors = safeMembers.filter(
     (m) =>
       m.teamCategory === 'advisor' ||
       m.teamCategory === 'mentor' ||

@@ -257,7 +257,7 @@ export const RolesPermissionsTab: React.FC<RolesPermissionsTabProps> = ({ member
           <div className="space-y-2">
             {systemRoles.map((r) => {
               const isSelected = selectedRole === r.id;
-              const countInRole = members.filter((m) => {
+              const countInRole = (members || []).filter((m) => {
                 const roleNorm = (m.dashboardRole || m.role || '').toLowerCase().replace(/[\s\/-]+/g, '_');
                 const targetNorm = r.id.toLowerCase().replace(/[\s\/-]+/g, '_');
                 return (

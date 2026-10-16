@@ -83,6 +83,7 @@ import { ESPEndorsementsManager } from '../esp/ESPEndorsementsManager';
 import { ESPTeamEcosystemManager } from '../esp/ESPTeamEcosystemManager';
 import { ESPPublicProfileManager } from '../esp/ESPPublicProfileManager';
 import { ESPBillingManager } from '../esp/ESPBillingManager';
+import { DashboardErrorBoundary } from './DashboardErrorBoundary';
 
 // Shared Unified Workspaces
 import { DashboardActivitiesWorkspace } from './DashboardActivitiesWorkspace';
@@ -444,10 +445,16 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
             )}
           </div>
 
-          {/* Module Content Rendering by Active Role */}
-          <div key={`${effectiveRole}_${activeModuleId}`} className="animate-fade-slide">
-            {/* ================= STARTUP PERSONA ================= */}
-            {effectiveRole === 'startup' && (
+          {/* Module Content Rendering by Active Role with Scoped Error Boundary */}
+          <DashboardErrorBoundary
+            key={`${effectiveRole}_${activeModuleId}`}
+            moduleName={activeModuleId}
+            onReset={() => setActiveModuleId(activeModuleId)}
+            onNavigateHome={() => setActiveModuleId('overview')}
+          >
+            <div className="animate-fade-slide">
+              {/* ================= STARTUP PERSONA ================= */}
+              {effectiveRole === 'startup' && (
               <>
                 {activeModuleId === 'profile' && (
                   <StartupProfileManager
@@ -715,7 +722,8 @@ export const DashboardWorkspace: React.FC<DashboardWorkspaceProps> = ({
                 </button>
               </div>
             )}
-          </div>
+            </div>
+          </DashboardErrorBoundary>
         </div>
       </div>
 

@@ -54,33 +54,33 @@ export const MemberControlDrawer: React.FC<MemberControlDrawerProps> = ({
   onMarkFormer,
   onTransferOwnership,
 }) => {
-  if (!isOpen || !member) return null;
-
   const isSoleOwner =
-    member.dashboardRole === 'owner' &&
-    allMembers.filter((m) => m.dashboardRole === 'owner' && m.entityMembershipStatus === 'active').length <= 1;
+    member?.dashboardRole === 'owner' &&
+    (allMembers || []).filter((m) => m.dashboardRole === 'owner' && m.entityMembershipStatus === 'active').length <= 1;
 
   // Local state initialized with member props
-  const [name, setName] = useState(member.name);
-  const [designation, setDesignation] = useState(member.designation || member.role);
-  const [department, setDepartment] = useState(member.department || 'Operations');
-  const [teamCategory, setTeamCategory] = useState<TeamCategory>(member.teamCategory || 'core_team');
-  const [shortBio, setShortBio] = useState(member.shortBio || member.bio || '');
-  const [expertise, setExpertise] = useState(member.expertise?.join(', ') || '');
-  const [linkedin, setLinkedin] = useState(member.linkedin || '');
+  const [name, setName] = useState(member?.name || '');
+  const [designation, setDesignation] = useState(member?.designation || member?.role || '');
+  const [department, setDepartment] = useState(member?.department || 'Operations');
+  const [teamCategory, setTeamCategory] = useState<TeamCategory>(member?.teamCategory || 'core_team');
+  const [shortBio, setShortBio] = useState(member?.shortBio || member?.bio || '');
+  const [expertise, setExpertise] = useState(member?.expertise?.join(', ') || '');
+  const [linkedin, setLinkedin] = useState(member?.linkedin || '');
 
   // Public Profile
-  const [publicProfileVisible, setPublicProfileVisible] = useState(member.publicProfileVisible !== undefined ? member.publicProfileVisible : true);
+  const [publicProfileVisible, setPublicProfileVisible] = useState(
+    member?.publicProfileVisible !== undefined ? member.publicProfileVisible : true
+  );
   const [publicFields, setPublicFields] = useState<StartupMemberPublicFields>({
     ...DEFAULT_PUBLIC_FIELDS,
-    ...(member.publicDisplayFields || {}),
+    ...(member?.publicDisplayFields || {}),
   });
 
   // Dashboard Access & Role
-  const [dashboardAccessEnabled, setDashboardAccessEnabled] = useState(!!member.dashboardAccessEnabled);
-  const [dashboardRole, setDashboardRole] = useState<StartupDashboardRole>(member.dashboardRole || 'team_member');
+  const [dashboardAccessEnabled, setDashboardAccessEnabled] = useState(!!member?.dashboardAccessEnabled);
+  const [dashboardRole, setDashboardRole] = useState<StartupDashboardRole>(member?.dashboardRole || 'team_member');
   const [permissions, setPermissions] = useState<StartupPermissionSet>(
-    member.permissions || getDefaultPermissionsForRole(member.dashboardRole || 'team_member')
+    member?.permissions || getDefaultPermissionsForRole(member?.dashboardRole || 'team_member')
   );
 
   // Accordion state for permission groups
@@ -112,8 +112,8 @@ export const MemberControlDrawer: React.FC<MemberControlDrawerProps> = ({
 
   useEffect(() => {
     if (member) {
-      setName(member.name);
-      setDesignation(member.designation || member.role);
+      setName(member.name || '');
+      setDesignation(member.designation || member.role || '');
       setDepartment(member.department || 'Operations');
       setTeamCategory(member.teamCategory || 'core_team');
       setShortBio(member.shortBio || member.bio || '');
@@ -129,6 +129,8 @@ export const MemberControlDrawer: React.FC<MemberControlDrawerProps> = ({
       setPermissions(member.permissions || getDefaultPermissionsForRole(member.dashboardRole || 'team_member'));
     }
   }, [member]);
+
+  if (!isOpen || !member) return null;
 
   const toggleGroup = (groupKey: string) => {
     setExpandedGroups((prev) => ({

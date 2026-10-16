@@ -106,10 +106,11 @@ export const PublicDisplayTab: React.FC<PublicDisplayTabProps> = ({
   };
 
   const handleMove = (index: number, direction: 'up' | 'down') => {
+    const list = members || [];
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
-    if (targetIndex < 0 || targetIndex >= members.length) return;
+    if (targetIndex < 0 || targetIndex >= list.length) return;
 
-    const copy = [...members];
+    const copy = [...list];
     const temp = copy[index];
     copy[index] = copy[targetIndex];
     copy[targetIndex] = temp;
@@ -136,7 +137,7 @@ export const PublicDisplayTab: React.FC<PublicDisplayTabProps> = ({
       {/* Sections by Group */}
       <div className="space-y-6">
         {categoriesOrder.map((cat) => {
-          const groupMembers = members.filter(cat.filter);
+          const groupMembers = (members || []).filter(cat.filter);
           if (groupMembers.length === 0 && cat.key !== 'former') return null;
 
           return (
@@ -161,7 +162,7 @@ export const PublicDisplayTab: React.FC<PublicDisplayTabProps> = ({
               ) : (
                 <div className="space-y-3">
                   {groupMembers.map((member) => {
-                    const globalIndex = members.findIndex((m) => m.id === member.id);
+                    const globalIndex = (members || []).findIndex((m) => m.id === member.id);
                     const fields = member.publicDisplayFields || DEFAULT_PUBLIC_FIELDS;
 
                     return (

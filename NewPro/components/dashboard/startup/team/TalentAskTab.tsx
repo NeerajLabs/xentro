@@ -44,12 +44,14 @@ export const TalentAskTab: React.FC<TalentAskTabProps> = ({
   onDeleteAsk,
 }) => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const safeAsks = Array.isArray(asks) ? asks : [];
+  const safeApplicants = Array.isArray(applicants) ? applicants : [];
 
-  const totalOpenings = asks.filter((a) => a.status === 'Open').length;
-  const totalApplicants = applicants.length;
-  const shortlistedCount = applicants.filter((a) => a.stage === 'Shortlisted' || a.stage === 'Selected').length;
+  const totalOpenings = safeAsks.filter((a) => a.status === 'Open').length;
+  const totalApplicants = safeApplicants.length;
+  const shortlistedCount = safeApplicants.filter((a) => a.stage === 'Shortlisted' || a.stage === 'Selected').length;
 
-  const filteredAsks = asks.filter((a) => {
+  const filteredAsks = safeAsks.filter((a) => {
     if (statusFilter === 'all') return true;
     return a.status.toLowerCase() === statusFilter.toLowerCase();
   });

@@ -43,7 +43,7 @@ export const AddMemberWizardModal: React.FC<AddMemberWizardModalProps> = ({
   isOpen,
   onClose,
   onAddMember,
-  existingMembers,
+  existingMembers = [],
   initialCategory = 'core_team',
 }) => {
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | 4>(1);
@@ -80,6 +80,36 @@ export const AddMemberWizardModal: React.FC<AddMemberWizardModalProps> = ({
   const [isCustomizingPermissions, setIsCustomizingPermissions] = useState(false);
   const [remoteResults, setRemoteResults] = useState<any[]>([]);
   const [isSearchingRemote, setIsSearchingRemote] = useState(false);
+
+  // Safely initialize / reset form state when modal opens
+  React.useEffect(() => {
+    if (isOpen) {
+      setCurrentStep(1);
+      setIdentityMode('search');
+      setSearchQuery('');
+      setSelectedPlatformUser(null);
+      setInviteEmail('');
+      setName('');
+      setDesignation('');
+      setTeamCategory(initialCategory);
+      setDepartment('Engineering');
+      setShortBio('');
+      setExpertiseInput('');
+      setLinkedin('');
+      setStartDate(new Date().toISOString().split('T')[0]);
+      setAvatar(
+        'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80'
+      );
+      setPublicProfileVisible(true);
+      setPublicFields({ ...DEFAULT_PUBLIC_FIELDS });
+      setDashboardAccessEnabled(false);
+      setDashboardRole('team_member');
+      setCustomPermissions(getDefaultPermissionsForRole('team_member'));
+      setIsCustomizingPermissions(false);
+      setRemoteResults([]);
+      setIsSearchingRemote(false);
+    }
+  }, [isOpen, initialCategory]);
 
   // Debounced lookup from MongoDB Atlas /api/users/lookup by @tag or name
   React.useEffect(() => {
@@ -122,16 +152,14 @@ export const AddMemberWizardModal: React.FC<AddMemberWizardModalProps> = ({
     return () => clearTimeout(timer);
   }, [searchQuery]);
 
-  if (!isOpen) return null;
-
-  // Platform users pool for search derived from active connected network
+  // Platform users pool for search derived from active connected network (called unconditionally)
   const platformUsers = React.useMemo(() => {
     try {
       const partners = connectionService.getConnectedPartners();
-      return partners.map((p) => ({
+      return (partners || []).map((p) => ({
         id: p.id,
         name: p.name,
-        handle: `@${p.name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
+        handle: `@${(p.name || '').toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
         role: p.role,
         category: p.role?.toLowerCase().includes('advisor') ? 'advisor' : 'core_team',
         avatar: p.avatar || '/xentro-logo.png',
@@ -145,12 +173,14 @@ export const AddMemberWizardModal: React.FC<AddMemberWizardModalProps> = ({
 
   const allSearchUsers = React.useMemo(() => {
     const map = new Map<string, any>();
-    platformUsers.forEach((u) => map.set(u.id, u));
-    remoteResults.forEach((u) => {
+    (platformUsers || []).forEach((u) => map.set(u.id, u));
+    (remoteResults || []).forEach((u) => {
       if (!map.has(u.id)) map.set(u.id, u);
     });
     return Array.from(map.values());
   }, [platformUsers, remoteResults]);
+
+  if (!isOpen) return null;
 
   const handleSelectUser = (u: any) => {
     setSelectedPlatformUser(u);
@@ -327,8 +357,8 @@ export const AddMemberWizardModal: React.FC<AddMemberWizardModalProps> = ({
                       )
                       .map((u) => {
                         const isSelected = selectedPlatformUser?.id === u.id;
-                        const alreadyInTeam = existingMembers.some(
-                          (m) => m.name.toLowerCase() === u.name.toLowerCase()
+                        const alreadyInTeam = (existingMembers || []).some(
+                          (m) => (m.name || '').toLowerCase() === (u.name || '').toLowerCase()
                         );
                         return (
                           <div

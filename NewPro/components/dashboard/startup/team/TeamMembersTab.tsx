@@ -50,16 +50,17 @@ export const TeamMembersTab: React.FC<TeamMembersTabProps> = ({
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [accessFilter, setAccessFilter] = useState<string>('all');
+  const safeMembers = Array.isArray(members) ? members : [];
 
   // Metrics
-  const activeMembersCount = members.filter((m) => m.entityMembershipStatus === 'active').length;
-  const dashboardUsersCount = members.filter((m) => m.dashboardAccessEnabled).length;
-  const publicVisibleCount = members.filter((m) => m.publicProfileVisible).length;
-  const invitedCount = members.filter((m) => m.entityMembershipStatus === 'invited' || m.entityMembershipStatus === 'pending').length;
+  const activeMembersCount = safeMembers.filter((m) => m.entityMembershipStatus === 'active').length;
+  const dashboardUsersCount = safeMembers.filter((m) => m.dashboardAccessEnabled).length;
+  const publicVisibleCount = safeMembers.filter((m) => m.publicProfileVisible).length;
+  const invitedCount = safeMembers.filter((m) => m.entityMembershipStatus === 'invited' || m.entityMembershipStatus === 'pending').length;
 
   // Filtered members
   const filteredMembers = useMemo(() => {
-    return members.filter((m) => {
+    return safeMembers.filter((m) => {
       const matchesSearch =
         !searchQuery.trim() ||
         m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
