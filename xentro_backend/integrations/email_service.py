@@ -165,7 +165,13 @@ import hmac
 import hashlib
 
 def get_otp_secret() -> bytes:
-    sec = os.getenv("OTP_SECRET") or os.getenv("JWT_SECRET") or getattr(settings, "SECRET_KEY", "xentro-jwt-access-secret-2026-sha256-key")
+    sec = os.getenv("OTP_SECRET") or os.getenv("JWT_SECRET")
+    is_prod = not (os.getenv("DEBUG", "True").lower() in ("true", "1", "yes")) or bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
+    if is_prod:
+        if not sec or sec == "xentro-jwt-access-secret-2026-sha256-key" or len(sec) < 32:
+            raise RuntimeError("CRITICAL SECURITY ERROR: Insecure or missing OTP/JWT secret in production.")
+        return sec.encode("utf-8") if isinstance(sec, str) else sec
+    sec = sec or getattr(settings, "SECRET_KEY", "xentro-jwt-access-secret-2026-sha256-key")
     return sec.encode("utf-8") if isinstance(sec, str) else sec
 
 def hash_otp_code(otp: str, email_or_challenge: str = "") -> str:

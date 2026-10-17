@@ -59,7 +59,46 @@ export interface EntityWorkspaceAuthResult {
   permissions: string[];
 }
 
-const JWT_SECRET = process.env.JWT_SECRET || 'xentro-jwt-access-secret-2026-sha256-key';
+const INSECURE_FALLBACK_KEY = 'xentro-jwt-access-secret-2026-sha256-key';
+
+export function isProductionEnvironment(): boolean {
+  return (
+    process.env.NODE_ENV === 'production' ||
+    Boolean(process.env.VERCEL) ||
+    Boolean(process.env.RENDER)
+  );
+}
+
+export function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (isProductionEnvironment()) {
+    if (!secret) {
+      throw new Error('CRITICAL SECURITY ERROR: Missing JWT_SECRET environment variable in production.');
+    }
+    if (secret === INSECURE_FALLBACK_KEY || secret.length < 32) {
+      throw new Error('CRITICAL SECURITY ERROR: Insecure or low-entropy JWT_SECRET detected in production.');
+    }
+    return secret;
+  }
+  return secret || INSECURE_FALLBACK_KEY;
+}
+
+export function getOtpSecret(): string {
+  const secret = process.env.OTP_SECRET || process.env.JWT_SECRET;
+  if (isProductionEnvironment()) {
+    if (!secret) {
+      throw new Error('CRITICAL SECURITY ERROR: Missing OTP_SECRET / JWT_SECRET environment variable in production.');
+    }
+    if (secret === INSECURE_FALLBACK_KEY || secret.length < 32) {
+      throw new Error('CRITICAL SECURITY ERROR: Insecure or low-entropy OTP_SECRET detected in production.');
+    }
+    return secret;
+  }
+  return secret || INSECURE_FALLBACK_KEY;
+}
+
+// Module-level alias for backward compatibility in non-prod scripts
+const JWT_SECRET = process.env.JWT_SECRET || INSECURE_FALLBACK_KEY;
 
 /**
  * Generates an HS256 cryptographically signed JWT token.
@@ -76,14 +115,12 @@ export function signJwtToken(payload: Record<string, any>, expiresInSec: number 
   const headerB64 = Buffer.from(JSON.stringify(header)).toString('base64url');
   const payloadB64 = Buffer.from(JSON.stringify(fullPayload)).toString('base64url');
   const signature = crypto
-    .createHmac('sha256', JWT_SECRET)
+    .createHmac('sha256', getJwtSecret())
     .update(`${headerB64}.${payloadB64}`)
     .digest('base64url');
 
   return `${headerB64}.${payloadB64}.${signature}`;
 }
-
-const OTP_SECRET = process.env.OTP_SECRET || process.env.JWT_SECRET || 'xentro-jwt-access-secret-2026-sha256-key';
 
 /**
  * Hashes an OTP with challenge ID using a server-secret keyed HMAC-SHA256.
@@ -91,7 +128,7 @@ const OTP_SECRET = process.env.OTP_SECRET || process.env.JWT_SECRET || 'xentro-j
  */
 export function hashOtp(otp: string, challengeId: string): string {
   return crypto
-    .createHmac('sha256', OTP_SECRET)
+    .createHmac('sha256', getOtpSecret())
     .update(`${otp.trim()}:${challengeId}`)
     .digest('hex');
 }
@@ -215,9 +252,28 @@ export function verifyJwtToken(token: string): { sub: string; email?: string; [k
       return null; // Reject algorithm confusion (e.g. 'none', RS256)
     }
 
+    const activeSecret = getJwtSecret();
+
+    // In production, explicitly reject tokens signed with the known insecure fallback
+    if (isProductionEnvironment() && activeSecret !== INSECURE_FALLBACK_KEY) {
+      try {
+        const fallbackSig = crypto
+          .createHmac('sha256', INSECURE_FALLBACK_KEY)
+          .update(`${headerB64}.${payloadB64}`)
+          .digest('base64url');
+        const fallbackSigBuf = Buffer.from(fallbackSig);
+        const sigBufProbe = Buffer.from(signatureB64);
+        if (sigBufProbe.length === fallbackSigBuf.length && crypto.timingSafeEqual(sigBufProbe, fallbackSigBuf)) {
+          return null; // Known insecure fallback signature rejected
+        }
+      } catch {
+        // Continue
+      }
+    }
+
     // 2. Verify HMAC-SHA256 signature
     const expectedSignature = crypto
-      .createHmac('sha256', JWT_SECRET)
+      .createHmac('sha256', activeSecret)
       .update(`${headerB64}.${payloadB64}`)
       .digest('base64url');
 

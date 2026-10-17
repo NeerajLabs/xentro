@@ -8,10 +8,41 @@ import jwt
 from rest_framework import authentication, exceptions
 from integrations.mongodb import get_collection
 
-JWT_SECRET = os.getenv("JWT_SECRET", "xentro-jwt-access-secret-2026-sha256-key")
+INSECURE_FALLBACK_KEY = "xentro-jwt-access-secret-2026-sha256-key"
 JWT_ALGORITHM = "HS256"
 JWT_ACCESS_EXPIRY_MINUTES = int(os.getenv("JWT_ACCESS_EXPIRY_MINUTES", "60"))
 JWT_REFRESH_EXPIRY_DAYS = int(os.getenv("JWT_REFRESH_EXPIRY_DAYS", "30"))
+
+def is_production_environment() -> bool:
+    """Detects whether running in production (Render, cloud container, or non-DEBUG)."""
+    return (
+        not (os.getenv("DEBUG", "True").lower() in ("true", "1", "yes"))
+        or bool(os.getenv("RENDER") or os.getenv("RENDER_SERVICE_ID"))
+        or os.getenv("DJANGO_ENV") == "production"
+    )
+
+def get_jwt_secret() -> str:
+    """
+    Returns authoritative JWT signing secret.
+    In production: Strictly requires a high-entropy secret (>= 32 chars) and rejects known fallback.
+    In development/testing: Allows environment JWT_SECRET or fallback test key.
+    """
+    secret = os.getenv("JWT_SECRET")
+    if is_production_environment():
+        if not secret:
+            raise exceptions.AuthenticationFailed(
+                "CRITICAL SECURITY CONFIGURATION ERROR: JWT_SECRET environment variable is missing in production."
+            )
+        if secret == INSECURE_FALLBACK_KEY or len(secret) < 32:
+            raise exceptions.AuthenticationFailed(
+                "CRITICAL SECURITY CONFIGURATION ERROR: Insecure or low-entropy JWT_SECRET detected in production."
+            )
+        return secret
+
+    return secret or INSECURE_FALLBACK_KEY
+
+# Module-level alias for backward compatibility in non-prod scripts
+JWT_SECRET = os.getenv("JWT_SECRET", INSECURE_FALLBACK_KEY)
 
 def create_access_token(payload: dict) -> str:
     """Creates a signed JWT access token."""
@@ -22,7 +53,7 @@ def create_access_token(payload: dict) -> str:
         "iat": datetime.datetime.now(datetime.timezone.utc),
         "type": "access"
     }
-    return jwt.encode(token_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(token_payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 def create_refresh_token(user_id: str) -> str:
     """Creates a signed JWT refresh token."""
@@ -33,7 +64,7 @@ def create_refresh_token(user_id: str) -> str:
         "iat": datetime.datetime.now(datetime.timezone.utc),
         "type": "refresh"
     }
-    return jwt.encode(token_payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+    return jwt.encode(token_payload, get_jwt_secret(), algorithm=JWT_ALGORITHM)
 
 def decode_token(token: str) -> dict:
     """Decodes and validates a JWT token or session payload."""
@@ -45,9 +76,23 @@ def decode_token(token: str) -> dict:
     if token_str.startswith("Bearer "):
         token_str = token_str[7:].strip()
 
+    jwt_secret = get_jwt_secret()
+
+    # In production, explicitly reject tokens signed with the known insecure fallback
+    if is_production_environment() and jwt_secret != INSECURE_FALLBACK_KEY:
+        try:
+            jwt.decode(token_str, INSECURE_FALLBACK_KEY, algorithms=[JWT_ALGORITHM])
+            raise exceptions.AuthenticationFailed("Insecure legacy session token rejected. Please authenticate with new credentials.")
+        except (jwt.InvalidSignatureError, jwt.DecodeError):
+            pass  # Expected: token is NOT signed with the insecure fallback
+        except exceptions.AuthenticationFailed:
+            raise
+        except Exception:
+            pass
+
     # 1. Strictly enforce cryptographic JWT verification
     try:
-        payload = jwt.decode(token_str, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        payload = jwt.decode(token_str, jwt_secret, algorithms=[JWT_ALGORITHM])
     except jwt.ExpiredSignatureError:
         raise exceptions.AuthenticationFailed("Session token has expired. Please sign in again.")
     except jwt.InvalidTokenError:
@@ -162,18 +207,40 @@ class XentroJWTAuthentication(authentication.BaseAuthentication):
         if not user_doc:
             # Check admin team collection
             admin_col = get_collection("admin_users")
-            user_doc = admin_col.find_one({"$or": [{"employee_id": user_id}, {"employeeId": user_id}]})
+        if not user_doc:
+            # Check built-in platform personnel
+            try:
+                from apps.admin_ops.views import DEFAULT_ADMINS
+                emp_id = str(payload.get("employeeId") or user_id or "").strip().lower()
+                for adm in DEFAULT_ADMINS:
+                    if adm.get("employeeId", "").lower() == emp_id:
+                        user_doc = {
+                            "id": adm["employeeId"],
+                            "email": f"{adm['employeeId']}@xentro.internal",
+                            "full_name": adm.get("name", "Platform Admin"),
+                            "is_staff": True,
+                            "admin_employee_id": adm["employeeId"],
+                            "admin_role": adm.get("role", "Super Admin"),
+                            "admin_permissions": adm.get("permissions", []),
+                            "active_roles": ["Admin"]
+                        }
+                        break
+            except Exception:
+                pass
 
         if not user_doc:
-            # Fallback to payload data
+            # Strictly reject administrative claims if not found in database or personnel authority
+            if payload.get("is_staff") or payload.get("employeeId") or payload.get("admin_role") or payload.get("admin_employee_id"):
+                raise exceptions.AuthenticationFailed("Administrative identity not recognized or revoked.")
+            # Standard fallback for valid personal user tokens
             user_doc = {
                 "id": user_id,
                 "email": payload.get("email", ""),
                 "full_name": payload.get("name", "User"),
-                "is_staff": payload.get("is_staff", True if payload.get("employeeId") else False),
-                "admin_employee_id": payload.get("employeeId") or payload.get("employee_id"),
-                "admin_role": payload.get("role") or payload.get("admin_role"),
-                "admin_permissions": payload.get("permissions", []),
+                "is_staff": False,
+                "admin_employee_id": None,
+                "admin_role": None,
+                "admin_permissions": [],
                 "active_roles": payload.get("active_roles", ["Explorer"])
             }
 
