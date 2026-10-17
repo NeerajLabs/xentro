@@ -105,7 +105,7 @@ export const ESPBillingManager: React.FC = () => {
       'Billing',
       actorName,
       actorRole,
-      `Removed payment method reference (•••• ${last4 || '4242'})`
+      `Removed payment method reference (•••• ${last4 || 'card'})`
     );
     showToast('Payment method removed.', 'info');
   };
@@ -340,30 +340,46 @@ export const ESPBillingManager: React.FC = () => {
               </p>
             </div>
 
-            {/* Default Payment Method Card */}
-            <div className="p-5 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-3">
-              <span className="text-xs font-bold text-[#565B59] dark:text-[#B6B8B7]">Primary Card</span>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-[#202422] flex items-center justify-center font-bold text-xs text-[#101212] dark:text-white">
-                  VISA
+            {/* Primary Payment Method Card */}
+            {(() => {
+              const defaultMethod = methods.find((m) => m.isDefault) || methods[0];
+              return (
+                <div className="p-5 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-3">
+                  <span className="text-xs font-bold text-[#565B59] dark:text-[#B6B8B7]">Primary Payment Method</span>
+                  {defaultMethod ? (
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-[#202422] flex items-center justify-center font-bold text-xs text-[#101212] dark:text-white uppercase">
+                        {defaultMethod.brand || 'CARD'}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold font-mono text-[#101212] dark:text-white">
+                          •••• •••• •••• {defaultMethod.last4}
+                        </h4>
+                        <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                          Expires {defaultMethod.expiryMonth}/{defaultMethod.expiryYear} &bull; Auto-debit active
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-2 space-y-1">
+                      <p className="text-xs font-medium text-[#101212] dark:text-white">
+                        No payment method linked
+                      </p>
+                      <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                        Card tokenization is currently paused pending platform operator setup.
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    onClick={() => setActiveSubTab('methods')}
+                    className="text-xs font-bold text-[#D9FF3F] hover:underline flex items-center gap-1 cursor-pointer pt-2"
+                  >
+                    <span>Manage Payment Methods</span>
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-                <div>
-                  <h4 className="text-xs font-bold font-mono text-[#101212] dark:text-white">
-                    •••• •••• •••• 4242
-                  </h4>
-                  <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
-                    Expires 08/27 &bull; Auto-debit enabled
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setActiveSubTab('methods')}
-                className="text-xs font-bold text-[#D9FF3F] hover:underline flex items-center gap-1 cursor-pointer pt-2"
-              >
-                <span>Manage Payment Methods</span>
-                <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
+              );
+            })()}
           </div>
 
           {/* Recent Invoices Quick Table */}
@@ -380,29 +396,35 @@ export const ESPBillingManager: React.FC = () => {
               </button>
             </div>
 
-            <div className="divide-y divide-gray-100 dark:divide-[#262A29]">
-              {invoices.slice(0, 3).map((inv) => (
-                <div key={inv.id} className="py-3 flex items-center justify-between text-xs">
-                  <div className="space-y-0.5">
-                    <span className="font-bold text-[#101212] dark:text-white">{inv.invoiceNumber}</span>
-                    <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">{inv.period}</p>
+            {invoices.length === 0 ? (
+              <div className="py-6 text-center text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                No invoices generated yet. Invoices will appear here once billing cycles complete.
+              </div>
+            ) : (
+              <div className="divide-y divide-gray-100 dark:divide-[#262A29]">
+                {invoices.slice(0, 3).map((inv) => (
+                  <div key={inv.id} className="py-3 flex items-center justify-between text-xs">
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-[#101212] dark:text-white">{inv.invoiceNumber}</span>
+                      <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">{inv.period}</p>
+                    </div>
+                    <div className="flex items-center gap-4">
+                      <span className="font-bold text-[#101212] dark:text-white">{inv.amount}</span>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                        {inv.status}
+                      </span>
+                      <button
+                        onClick={() => handleDownloadInvoice(inv.invoiceNumber)}
+                        className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-[#202422] text-[#565B59] dark:text-[#B6B8B7] cursor-pointer"
+                        title="Download PDF"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <span className="font-bold text-[#101212] dark:text-white">{inv.amount}</span>
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
-                      {inv.status}
-                    </span>
-                    <button
-                      onClick={() => handleDownloadInvoice(inv.invoiceNumber)}
-                      className="p-1.5 rounded-lg hover:bg-gray-100 dark:hover:bg-[#202422] text-[#565B59] dark:text-[#B6B8B7] cursor-pointer"
-                      title="Download PDF"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -606,52 +628,62 @@ export const ESPBillingManager: React.FC = () => {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {methods.map((m) => (
-              <div
-                key={m.id}
-                className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] flex items-center justify-between"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29] flex items-center justify-center font-bold text-xs text-[#101212] dark:text-white">
-                    {m.brand}
+          {methods.length === 0 ? (
+            <div className="py-8 px-4 text-center rounded-xl bg-gray-50 dark:bg-[#202422] border border-dashed border-gray-200 dark:border-[#262A29] space-y-2">
+              <CreditCard className="w-8 h-8 text-[#565B59] mx-auto opacity-50" />
+              <p className="text-xs font-bold text-[#101212] dark:text-white">No payment methods stored</p>
+              <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                Payment method tokenization is paused pending platform operator infrastructure activation.
+              </p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {methods.map((m) => (
+                <div
+                  key={m.id}
+                  className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] flex items-center justify-between"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-lg bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-[#262A29] flex items-center justify-center font-bold text-xs text-[#101212] dark:text-white">
+                      {m.brand}
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-bold font-mono text-[#101212] dark:text-white">
+                        •••• •••• •••• {m.last4}
+                      </h4>
+                      <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                        Expires {m.expiryMonth}/{m.expiryYear}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="text-xs font-bold font-mono text-[#101212] dark:text-white">
-                      •••• •••• •••• {m.last4}
-                    </h4>
-                    <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
-                      Expires {m.expiryMonth}/{m.expiryYear}
-                    </p>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-2">
-                  {m.isDefault ? (
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F]">
-                      Default
-                    </span>
-                  ) : (
-                    <>
-                      <button
-                        onClick={() => handleSetDefaultMethod(m.id)}
-                        className="text-xs font-bold text-[#565B59] hover:text-[#101212] dark:hover:text-white cursor-pointer"
-                      >
-                        Set Default
-                      </button>
-                      <button
-                        onClick={() => handleRemovePaymentMethod(m.id, m.last4)}
-                        className="p-1 rounded-lg text-[#565B59] hover:text-rose-500 cursor-pointer"
-                        title="Remove method"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {m.isDefault ? (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F]">
+                        Default
+                      </span>
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => handleSetDefaultMethod(m.id)}
+                          className="text-xs font-bold text-[#565B59] hover:text-[#101212] dark:hover:text-white cursor-pointer"
+                        >
+                          Set Default
+                        </button>
+                        <button
+                          onClick={() => handleRemovePaymentMethod(m.id, m.last4)}
+                          className="p-1 rounded-lg text-[#565B59] hover:text-rose-500 cursor-pointer"
+                          title="Remove method"
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 

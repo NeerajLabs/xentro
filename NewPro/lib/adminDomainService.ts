@@ -339,17 +339,8 @@ export const adminDomainService = {
   },
 
   transferOwnership(entityId: string, newOwnerName: string, newOwnerEmail: string, reason: string): boolean {
-    const store = loadStore();
-    const own = store.ownershipRecords.find((o) => o.entityId === entityId);
-    if (!own) return false;
-    const prev = `${own.currentOwnerName} (${own.currentOwnerEmail})`;
-    own.currentOwnerName = newOwnerName;
-    own.currentOwnerEmail = newOwnerEmail;
-    own.assignedDate = new Date().toISOString().slice(0, 10);
-    own.disputeStatus = 'Resolved';
-    saveStore(store);
-    logAdminAudit('OWNERSHIP_TRANSFERRED', 'Access & Trust', `Transferred ownership of ${own.entityName} to ${newOwnerName} (${newOwnerEmail}). Reason: ${reason}`, entityId, prev, `${newOwnerName} (${newOwnerEmail})`);
-    return true;
+    console.warn('[AdminDomain] Entity ownership transfer is disabled pending authoritative backend governance integration.');
+    return false;
   },
 
   revokeMembership(membershipId: string, reason: string): boolean {

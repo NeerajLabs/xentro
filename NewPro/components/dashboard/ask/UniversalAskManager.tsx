@@ -33,7 +33,7 @@ import {
 import { UserRole, getUserProfile } from '@/lib/userProfile';
 import { EcosystemAsk, ASK_ROLE_CONFIGS } from '@/lib/askConfig';
 import { askService } from '@/lib/askService';
-import { initialAskResponses, AskResponseItem, initialStartupWorkspaceData } from '@/data/startupWorkspaceData';
+import { initialAskResponses, AskResponseItem } from '@/data/startupWorkspaceData';
 import { DynamicAskModal } from './DynamicAskModal';
 import { UniversalAskCard } from './UniversalAskCard';
 import { useToast } from '@/components/ui/Toast';
@@ -121,6 +121,34 @@ export const UniversalAskManager: React.FC<UniversalAskManagerProps> = ({
     () => asks.filter((a) => a.status === 'draft' || a.status === 'Draft'),
     [asks]
   );
+
+  const activeFundingAsk = useMemo(() => {
+    return publishedAsks.find(
+      (a) => a.category === 'investment' || a.category === 'fundraising' || a.type === 'Investment'
+    );
+  }, [publishedAsks]);
+
+  const fundingMetrics = useMemo(() => {
+    if (!activeFundingAsk) return null;
+    const cat = activeFundingAsk.categoryData || {};
+    const curr = cat.currency || '₹';
+    const roundSizeNum = Number(cat.totalRoundSize || cat.targetAmount || 0);
+    const committedNum = Number(cat.amountCommitted || cat.committedAmount || 0);
+    const remainingNum = Number(cat.amountRemaining || cat.remainingAmount || (roundSizeNum - committedNum > 0 ? roundSizeNum - committedNum : 0));
+    const percent = roundSizeNum > 0 ? Math.min(100, Math.round((committedNum / roundSizeNum) * 100)) : 0;
+
+    return {
+      title: activeFundingAsk.title,
+      instrument: cat.instrument || cat.fundingStage || 'Equity',
+      valuationCap: cat.valuationCap ? `${curr} ${Number(cat.valuationCap).toLocaleString('en-IN')}` : 'Undisclosed',
+      targetAmount: roundSizeNum > 0 ? `${curr} ${roundSizeNum.toLocaleString('en-IN')}` : 'Undisclosed',
+      committedAmount: committedNum > 0 ? `${curr} ${committedNum.toLocaleString('en-IN')}` : `${curr} 0`,
+      remainingAmount: remainingNum > 0 ? `${curr} ${remainingNum.toLocaleString('en-IN')}` : (roundSizeNum > 0 ? `${curr} ${roundSizeNum.toLocaleString('en-IN')}` : 'Undisclosed'),
+      closingDate: cat.targetClosingDate || cat.closingDate || activeFundingAsk.deadline || 'Rolling',
+      percentComplete: percent,
+      useOfFunds: Array.isArray(cat.useOfFunds) ? cat.useOfFunds : [],
+    };
+  }, [activeFundingAsk]);
 
   const filteredPublishedAsks = useMemo(() => {
     return publishedAsks.filter((a) => {
@@ -286,106 +314,131 @@ export const UniversalAskManager: React.FC<UniversalAskManagerProps> = ({
       {/* ========================================================================= */}
       {activeTab === 'overview' && activeRole === 'startup' && (
         <div className="space-y-6">
-          <div className="p-6 rounded-3xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-6">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-[#262A29]">
-              <div>
-                <span className="text-xs font-bold text-[#D9FF3F] bg-[#D9FF3F]/10 px-2.5 py-0.5 rounded-full mb-1 inline-block">
-                  Active Capital Formation
-                </span>
-                <h3 className="text-xl font-bold font-sora text-[#101212] dark:text-white">
-                  {initialStartupWorkspaceData.currentAsk.title}
+          {fundingMetrics && activeFundingAsk ? (
+            <div className="p-6 rounded-3xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-6">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-[#262A29]">
+                <div>
+                  <span className="text-xs font-bold text-[#D9FF3F] bg-[#D9FF3F]/10 px-2.5 py-0.5 rounded-full mb-1 inline-block">
+                    Active Capital Formation
+                  </span>
+                  <h3 className="text-xl font-bold font-sora text-[#101212] dark:text-white">
+                    {fundingMetrics.title}
+                  </h3>
+                  <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
+                    Instrument: {fundingMetrics.instrument} • Valuation Cap:{' '}
+                    {fundingMetrics.valuationCap}
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleEditAsk(activeFundingAsk)}
+                    className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-bold text-[#101212] dark:text-white flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Update Round Terms</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Metric Counters */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div className="p-4 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]">
+                  <span className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] block mb-1">
+                    Target Round Size
+                  </span>
+                  <span className="text-xl font-bold font-sora text-[#101212] dark:text-white">
+                    {fundingMetrics.targetAmount}
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
+                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 block mb-1">
+                    Committed Capital
+                  </span>
+                  <span className="text-xl font-bold font-sora text-emerald-600 dark:text-emerald-400">
+                    {fundingMetrics.committedAmount}
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/20">
+                  <span className="text-[11px] text-[#101212] dark:text-[#D9FF3F] block mb-1">
+                    Remaining Allocation
+                  </span>
+                  <span className="text-xl font-bold font-sora text-[#101212] dark:text-[#D9FF3F]">
+                    {fundingMetrics.remainingAmount}
+                  </span>
+                </div>
+
+                <div className="p-4 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]">
+                  <span className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] block mb-1">
+                    Target Closing Date
+                  </span>
+                  <span className="text-sm font-bold text-[#101212] dark:text-white block mt-1">
+                    {fundingMetrics.closingDate}
+                  </span>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-xs font-bold">
+                  <span className="text-[#565B59] dark:text-[#B6B8B7]">Round Allocation Progress</span>
+                  <span className="text-[#101212] dark:text-[#D9FF3F]">
+                    {fundingMetrics.percentComplete}% Committed
+                  </span>
+                </div>
+                <div className="w-full h-3 rounded-full bg-gray-100 dark:bg-[#202422] overflow-hidden p-0.5">
+                  <div
+                    className="h-full rounded-full bg-linear-to-r from-emerald-400 to-[#D9FF3F] transition-all duration-500"
+                    style={{ width: `${fundingMetrics.percentComplete}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Use of Funds Table */}
+              {fundingMetrics.useOfFunds.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-[#565B59] dark:text-[#B6B8B7]">
+                    Intended Capital Deployment Breakdown
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {fundingMetrics.useOfFunds.map((u: any, i: number) => (
+                      <div key={i} className="p-3.5 rounded-2xl bg-gray-50 dark:bg-[#202422] space-y-1">
+                        <span className="text-xs text-[#565B59] dark:text-[#B6B8B7] block truncate">
+                          {u.category || u.label}
+                        </span>
+                        <span className="text-lg font-bold font-sora text-[#101212] dark:text-white">
+                          {u.percentage || u.value}%
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="p-8 rounded-3xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle text-center space-y-4">
+              <div className="w-12 h-12 rounded-2xl bg-[#D9FF3F]/10 text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center mx-auto">
+                <DollarSign className="w-6 h-6" />
+              </div>
+              <div className="max-w-md mx-auto space-y-1">
+                <h3 className="text-base font-bold font-sora text-[#101212] dark:text-white">
+                  No Active Capital Formation Round
                 </h3>
                 <p className="text-xs text-[#565B59] dark:text-[#B6B8B7]">
-                  Instrument: {initialStartupWorkspaceData.currentAsk.instrument} • Valuation Cap:{' '}
-                  {initialStartupWorkspaceData.currentAsk.valuationCap}
+                  You have not published an active fundraising ask. Create an Investment Ask to begin structured round tracking, target allocation, and investor syndicate syndication.
                 </p>
               </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={handleOpenCreate}
-                  className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-bold text-[#101212] dark:text-white flex items-center gap-2 cursor-pointer transition-colors"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                  <span>Update Round Terms</span>
-                </button>
-              </div>
+              <button
+                onClick={handleOpenCreate}
+                className="px-5 py-2.5 rounded-xl bg-[#101212] dark:bg-[#D9FF3F] text-white dark:text-[#101212] text-xs font-bold hover:opacity-90 transition-opacity inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Create Fundraising Ask</span>
+              </button>
             </div>
-
-            {/* Metric Counters */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              <div className="p-4 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]">
-                <span className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] block mb-1">
-                  Target Round Size
-                </span>
-                <span className="text-xl font-bold font-sora text-[#101212] dark:text-white">
-                  {initialStartupWorkspaceData.currentAsk.targetAmount}
-                </span>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-emerald-500/10 border border-emerald-500/20">
-                <span className="text-[11px] text-emerald-600 dark:text-emerald-400 block mb-1">
-                  Committed Capital
-                </span>
-                <span className="text-xl font-bold font-sora text-emerald-600 dark:text-emerald-400">
-                  {initialStartupWorkspaceData.currentAsk.committedAmount}
-                </span>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-[#D9FF3F]/10 border border-[#D9FF3F]/20">
-                <span className="text-[11px] text-[#101212] dark:text-[#D9FF3F] block mb-1">
-                  Remaining Allocation
-                </span>
-                <span className="text-xl font-bold font-sora text-[#101212] dark:text-[#D9FF3F]">
-                  {initialStartupWorkspaceData.currentAsk.remainingAmount}
-                </span>
-              </div>
-
-              <div className="p-4 rounded-2xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]">
-                <span className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] block mb-1">
-                  Target Closing Date
-                </span>
-                <span className="text-sm font-bold text-[#101212] dark:text-white block mt-1">
-                  {initialStartupWorkspaceData.currentAsk.closingDate}
-                </span>
-              </div>
-            </div>
-
-            {/* Progress Bar */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-xs font-bold">
-                <span className="text-[#565B59] dark:text-[#B6B8B7]">Round Allocation Progress</span>
-                <span className="text-[#101212] dark:text-[#D9FF3F]">
-                  {initialStartupWorkspaceData.currentAsk.percentComplete}% Committed
-                </span>
-              </div>
-              <div className="w-full h-3 rounded-full bg-gray-100 dark:bg-[#202422] overflow-hidden p-0.5">
-                <div
-                  className="h-full rounded-full bg-linear-to-r from-emerald-400 to-[#D9FF3F] transition-all duration-500"
-                  style={{ width: `${initialStartupWorkspaceData.currentAsk.percentComplete}%` }}
-                />
-              </div>
-            </div>
-
-            {/* Use of Funds Table */}
-            <div className="space-y-3 pt-2">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-[#565B59] dark:text-[#B6B8B7]">
-                Intended Capital Deployment Breakdown
-              </h4>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {initialStartupWorkspaceData.currentAsk.useOfFunds.map((u, i) => (
-                  <div key={i} className="p-3.5 rounded-2xl bg-gray-50 dark:bg-[#202422] space-y-1">
-                    <span className="text-xs text-[#565B59] dark:text-[#B6B8B7] block truncate">
-                      {u.category}
-                    </span>
-                    <span className="text-lg font-bold font-sora text-[#101212] dark:text-white">
-                      {u.percentage}%
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          )}
         </div>
       )}
 

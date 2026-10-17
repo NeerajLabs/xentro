@@ -204,18 +204,10 @@ export const InvestorTeamAccess: React.FC = () => {
   };
 
   const handleTransferOwnership = () => {
-    if (!activeOrg || !selectedNewOwner) return;
-    const res = investorOrganizationService.transferOrganizationOwnership(
-      activeOrg.id,
-      selectedNewOwner
+    showToast(
+      'Organization ownership transfer is currently disabled pending authoritative backend governance workflow integration. Existing ownership records have been strictly preserved.',
+      'error'
     );
-    if (!res.success) {
-      showToast(res.message || 'Failed to transfer ownership', 'error');
-    } else {
-      showToast('Ownership successfully transferred!', 'success');
-      setIsTransferOpen(false);
-      refreshData();
-    }
   };
 
   // IF ACTIVE CONTEXT IS INDIVIDUAL INVESTOR
@@ -685,22 +677,33 @@ export const InvestorTeamAccess: React.FC = () => {
               </button>
             </div>
 
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+              <div className="flex items-center gap-2 font-bold">
+                <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>Transfer Workflow Temporarily Disabled</span>
+              </div>
+              <p className="leading-relaxed">
+                Organization ownership transfer is currently unavailable pending authoritative backend governance workflow integration. Existing firm ownership and membership records remain strictly preserved.
+              </p>
+            </div>
+
             <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
               Designate a new Owner/Managing Partner for{' '}
               <span className="font-semibold text-[#101212] dark:text-white">{activeOrg?.name}</span>.
-              This is required before the current final Owner can step down or leave.
+              This capability will become active upon deployment of the authorized server governance service.
             </p>
 
             <div>
               <label className="text-xs font-semibold text-[#101212] dark:text-white block mb-1">
-                Select New Owner
+                Select New Owner (Preview Only)
               </label>
               <select
+                disabled
                 value={selectedNewOwner}
                 onChange={(e) => setSelectedNewOwner(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
+                className="w-full px-3 py-2 rounded-xl bg-gray-100 dark:bg-[#202422] border border-gray-200 dark:border-[#262A29] text-xs text-gray-500 cursor-not-allowed opacity-75"
               >
-                <option value="">-- Choose active member --</option>
+                <option value="">-- Transfer currently unavailable --</option>
                 {members
                   .filter((m) => !m.isOwner && m.status === 'active')
                   .map((m) => (
@@ -717,15 +720,14 @@ export const InvestorTeamAccess: React.FC = () => {
                 onClick={() => setIsTransferOpen(false)}
                 className="px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-semibold text-[#101212] dark:text-white cursor-pointer"
               >
-                Cancel
+                Close
               </button>
               <button
                 type="button"
-                disabled={!selectedNewOwner}
-                onClick={handleTransferOwnership}
-                className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white text-xs font-bold transition-all cursor-pointer shadow-sm"
+                disabled
+                className="px-4 py-2 rounded-xl bg-gray-400 dark:bg-gray-700 text-white text-xs font-bold transition-all cursor-not-allowed opacity-60 shadow-none"
               >
-                Confirm Transfer
+                Transfer Unavailable
               </button>
             </div>
           </div>

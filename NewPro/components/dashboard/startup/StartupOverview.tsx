@@ -77,6 +77,10 @@ import {
   StartupEntitlement,
   StartupSubscription,
 } from '@/types/startup';
+import { startupMilestoneService, MilestoneItem } from '@/lib/startupMilestoneService';
+import { startupVerificationService, VerificationItem } from '@/lib/startupVerificationService';
+import { AddMilestoneModal } from './AddMilestoneModal';
+import { VerificationSubmissionModal } from './VerificationSubmissionModal';
 
 interface StartupOverviewProps {
   onNavigateTab: (tabId: string) => void;
@@ -94,6 +98,42 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
   const [entitlements, setEntitlements] = useState<StartupEntitlement | null>(null);
   const [subscription, setSubscription] = useState<StartupSubscription | null>(null);
   const [failedPaymentSim, setFailedPaymentSim] = useState<boolean>(false);
+
+  // Milestones State (Phase 6)
+  const [milestones, setMilestones] = useState<MilestoneItem[]>([]);
+  const [milestoneMetrics, setMilestoneMetrics] = useState({
+    total: 0,
+    completed: 0,
+    inProgress: 0,
+    completionRate: 0,
+    phase: 'Ideation & Foundation',
+  });
+  const [isAddMilestoneModalOpen, setIsAddMilestoneModalOpen] = useState(false);
+  const [selectedMilestoneCategory, setSelectedMilestoneCategory] = useState<'company' | 'product' | 'market' | 'funding'>('company');
+
+  // Verification Center State (Phase 5)
+  const [verificationItems, setVerificationItems] = useState<VerificationItem[]>([]);
+  const [isVerificationModalOpen, setIsVerificationModalOpen] = useState(false);
+  const [selectedVerificationItem, setSelectedVerificationItem] = useState<VerificationItem | null>(null);
+
+  // Authoritative Profile Completion State (Phase 3)
+  const [profileCompletion, setProfileCompletion] = useState<{
+    status: 'loading' | 'loaded' | 'unavailable';
+    percentage: number | null;
+    checklist: Array<{
+      id: string;
+      label: string;
+      weight: number;
+      completed: boolean;
+      description: string;
+      navigationModule: string;
+      missingFields?: string[];
+    }>;
+  }>({
+    status: 'loading',
+    percentage: null,
+    checklist: [],
+  });
 
   // Custom Banner & Avatar state
   const [bannerImage, setBannerImage] = useState<string | null>(null);
@@ -417,6 +457,77 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
     loadAuthoritativeAffiliations();
   };
 
+  const loadMilestones = async () => {
+    const eid = entityContextService.getActiveEntityId() || 'st_1';
+    try {
+      const res = await startupMilestoneService.fetchMilestones(eid);
+      if (res && res.milestones) {
+        setMilestones(res.milestones);
+        setMilestoneMetrics({
+          total: res.metrics.totalCount,
+          completed: res.metrics.completedCount,
+          inProgress: res.metrics.inProgressCount,
+          completionRate: res.metrics.overallProgressPct,
+          phase: res.metrics.phase,
+        });
+      }
+    } catch (err) {
+      console.warn('[StartupOverview] Error loading milestones:', err);
+    }
+  };
+
+  const handleToggleMilestone = async (m: MilestoneItem) => {
+    const eid = entityContextService.getActiveEntityId() || 'st_1';
+    const nextStatus = m.status === 'completed' ? 'in_progress' : 'completed';
+    try {
+      const res = await startupMilestoneService.updateMilestoneStatus(eid, m.id, nextStatus);
+      if (res.success) {
+        showToast(`Milestone marked as ${nextStatus === 'completed' ? 'Completed' : 'In Progress'}.`, 'success');
+        loadMilestones();
+      } else {
+        showToast(res.message || 'Failed to update milestone status', 'error');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Error updating milestone', 'error');
+    }
+  };
+
+  const loadVerificationStatus = async () => {
+    const eid = entityContextService.getActiveEntityId() || 'st_1';
+    try {
+      const res = await startupVerificationService.fetchVerificationStatus(eid);
+      if (res && res.items) {
+        setVerificationItems(res.items);
+      }
+    } catch (err) {
+      console.warn('[StartupOverview] Error loading verification status:', err);
+    }
+  };
+
+  const loadAuthoritativeProfileCompletion = async () => {
+    const eid = entityContextService.getActiveEntityId() || 'st_1';
+    try {
+      const res = await fetch(`/api/startups/${eid}`);
+      if (!res.ok) {
+        setProfileCompletion({ status: 'unavailable', percentage: null, checklist: [] });
+        return;
+      }
+      const json = await res.json();
+      if (json.success && json.data?.completionDetails) {
+        setProfileCompletion({
+          status: 'loaded',
+          percentage: json.data.completionDetails.percentage,
+          checklist: json.data.completionDetails.checklist || [],
+        });
+      } else {
+        setProfileCompletion({ status: 'unavailable', percentage: null, checklist: [] });
+      }
+    } catch (err) {
+      console.warn('[StartupOverview] Error loading profile completion:', err);
+      setProfileCompletion({ status: 'unavailable', percentage: null, checklist: [] });
+    }
+  };
+
   // Load and listen to identity and domain updates
   useEffect(() => {
     const syncWorkspaceData = () => {
@@ -495,6 +606,9 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
     setBannerImage(getStartupBanner());
     setAvatarImage(getStartupAvatar());
     loadDomainTelemetry();
+    loadMilestones();
+    loadVerificationStatus();
+    loadAuthoritativeProfileCompletion();
 
     const handleBannerChange = (e: Event) => {
       const ce = e as CustomEvent;
@@ -506,8 +620,22 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
     };
 
     const handleDomainChange = () => {
+      setProfileCompletion({ status: 'loading', percentage: null, checklist: [] });
       syncWorkspaceData();
       loadDomainTelemetry();
+      loadAuthoritativeProfileCompletion();
+    };
+
+    const handleProfileUpdate = () => {
+      loadAuthoritativeProfileCompletion();
+    };
+
+    const handleVerificationUpdate = () => {
+      loadVerificationStatus();
+    };
+
+    const handleMilestoneUpdate = () => {
+      loadMilestones();
     };
 
     const syncLiveConnections = () => {
@@ -565,6 +693,9 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
     window.addEventListener('xentro-startup-members-changed', handleDomainChange);
     window.addEventListener('xentro-startup-billing-changed', handleDomainChange);
     window.addEventListener('xentro-startup-endorsements-changed', handleDomainChange);
+    window.addEventListener('xentro-profile-updated', handleProfileUpdate);
+    window.addEventListener('xentro-verification-updated', handleVerificationUpdate);
+    window.addEventListener('xentro-milestone-updated', handleMilestoneUpdate);
     window.addEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsUpdate);
     window.addEventListener('xentro-connection-event', handleConnectionsUpdate);
 
@@ -574,6 +705,9 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
       window.removeEventListener('xentro-startup-members-changed', handleDomainChange);
       window.removeEventListener('xentro-startup-billing-changed', handleDomainChange);
       window.removeEventListener('xentro-startup-endorsements-changed', handleDomainChange);
+      window.removeEventListener('xentro-profile-updated', handleProfileUpdate);
+      window.removeEventListener('xentro-verification-updated', handleVerificationUpdate);
+      window.removeEventListener('xentro-milestone-updated', handleMilestoneUpdate);
       window.removeEventListener(CONNECTIONS_UPDATED_EVENT, handleConnectionsUpdate);
       window.removeEventListener('xentro-connection-event', handleConnectionsUpdate);
       if (cameraStreamRef.current) {
@@ -1261,10 +1395,22 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
             </div>
           </div>
           <div className="text-xl font-bold font-sora text-[#101212] dark:text-white">
-            {data.metrics.profileCompletionPct}%
+            {profileCompletion.status === 'unavailable'
+              ? 'Unavailable'
+              : profileCompletion.status === 'loading'
+              ? '...'
+              : `${profileCompletion.percentage}%`}
           </div>
           <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-semibold truncate">
-            Institutional Grade
+            {profileCompletion.status === 'unavailable'
+              ? 'Service Offline'
+              : profileCompletion.status === 'loading'
+              ? 'Calculating...'
+              : (profileCompletion.percentage ?? 0) >= 80
+              ? 'Institutional Grade'
+              : (profileCompletion.percentage ?? 0) >= 50
+              ? 'Foundational Tier'
+              : 'Profile Incomplete'}
           </p>
         </div>
 
@@ -1378,53 +1524,107 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
               </p>
             </div>
             <span className="text-sm font-bold font-mono text-[#101212] dark:text-[#D9FF3F]">
-              {data.metrics.profileCompletionPct}%
+              {profileCompletion.status === 'unavailable'
+                ? 'Unavailable'
+                : profileCompletion.status === 'loading'
+                ? '...'
+                : `${profileCompletion.percentage}%`}
             </span>
           </div>
 
           <div className="w-full bg-gray-100 dark:bg-[#202422] h-2 rounded-full overflow-hidden">
             <div
-              className="bg-[#D9FF3F] h-full rounded-full transition-all duration-500"
-              style={{ width: `${data.metrics.profileCompletionPct}%` }}
+              className={`h-full rounded-full transition-all duration-500 ${
+                profileCompletion.status === 'unavailable' ? 'bg-amber-500/50' : 'bg-[#D9FF3F]'
+              }`}
+              style={{ width: `${profileCompletion.percentage ?? 0}%` }}
             />
           </div>
 
-          <div className="space-y-2.5 pt-1">
-            {data.completionChecklist.map((item) => (
-              <div
-                key={item.id}
-                className="flex items-center justify-between text-xs p-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]"
-              >
-                <div className="flex items-center gap-2">
-                  <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${item.completed ? 'bg-emerald-500 text-white' : 'bg-gray-300 dark:bg-gray-600 text-transparent'
-                    }`}>
-                    <Check className="w-3 h-3" />
+          {profileCompletion.status === 'unavailable' ? (
+            <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-xs text-amber-700 dark:text-amber-400">
+              Profile completion score is temporarily unavailable from server. Real progress will recalculate upon reconnecting.
+            </div>
+          ) : (
+            <div className="space-y-2 pt-1 max-h-[380px] overflow-y-auto pr-1">
+            {profileCompletion.checklist && profileCompletion.checklist.length > 0 ? (
+              profileCompletion.checklist.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between text-xs p-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]"
+                >
+                  <div className="flex items-start gap-2 max-w-[70%]">
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] mt-0.5 shrink-0 ${item.completed ? 'bg-emerald-500 text-white' : 'bg-gray-300 dark:bg-gray-600 text-transparent'
+                      }`}>
+                      <Check className="w-3 h-3" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`font-semibold ${item.completed ? 'text-[#101212] dark:text-white' : 'text-[#565B59] dark:text-[#B6B8B7]'}`}>
+                          {item.label}
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-mono">({item.weight}%)</span>
+                      </div>
+                      {!item.completed && item.missingFields && item.missingFields.length > 0 && (
+                        <p className="text-[10px] text-amber-600 dark:text-amber-400 mt-0.5 truncate">
+                          Missing: {item.missingFields.slice(0, 2).join(', ')}{item.missingFields.length > 2 ? '...' : ''}
+                        </p>
+                      )}
+                    </div>
                   </div>
-                  <span className={`font-semibold ${item.completed ? 'text-[#101212] dark:text-white' : 'text-[#565B59] dark:text-[#B6B8B7]'}`}>
-                    {item.section}
-                  </span>
-                </div>
 
-                {item.completed ? (
-                  <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
-                    Done
-                  </span>
-                ) : (
-                  <button
-                    onClick={() => {
-                      if (item.section === 'Finances') onNavigateTab('finances');
-                      else if (item.section === 'DD Locker') onNavigateTab('dd_locker');
-                      else onNavigateTab('profile');
-                    }}
-                    className="px-2.5 py-0.5 rounded-lg bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] font-bold text-[11px] cursor-pointer"
-                  >
-                    Complete
-                  </button>
-                )}
-              </div>
-            ))}
+                  {item.completed ? (
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold shrink-0">
+                      Done
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => onNavigateTab(item.navigationModule || 'profile')}
+                      className="px-2.5 py-1 rounded-lg bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] font-bold text-[11px] cursor-pointer shrink-0 transition-colors"
+                    >
+                      Complete
+                    </button>
+                  )}
+                </div>
+              ))
+            ) : (
+              data.completionChecklist.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between text-xs p-2 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29]"
+                >
+                  <div className="flex items-center gap-2">
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${item.completed ? 'bg-emerald-500 text-white' : 'bg-gray-300 dark:bg-gray-600 text-transparent'
+                      }`}>
+                      <Check className="w-3 h-3" />
+                    </div>
+                    <span className={`font-semibold ${item.completed ? 'text-[#101212] dark:text-white' : 'text-[#565B59] dark:text-[#B6B8B7]'}`}>
+                      {item.section}
+                    </span>
+                  </div>
+
+                  {item.completed ? (
+                    <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-bold">
+                      Done
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        if (item.section === 'Finances') onNavigateTab('finances');
+                        else if (item.section === 'DD Locker') onNavigateTab('dd_locker');
+                        else onNavigateTab('profile');
+                      }}
+                      className="px-2.5 py-0.5 rounded-lg bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] font-bold text-[11px] cursor-pointer"
+                    >
+                      Complete
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
           </div>
-        </div>
+        )}
+      </div>
 
         {/* Current Ask & Funding Target (2 Columns) */}
         <div className="lg:col-span-2 p-4 rounded-xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-3">
@@ -1546,7 +1746,7 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
 
       {/* 4. Startup Progress Tracker (4 Columns: Company, Product, Market, Funding) */}
       <div className="p-4 rounded-xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-3">
-        <div className="flex items-center justify-between pb-3 border-b border-gray-100 dark:border-[#262A29]">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between pb-3 border-b border-gray-100 dark:border-[#262A29] gap-2">
           <div>
             <h3 className="text-base font-bold text-[#101212] dark:text-white font-heading">
               Startup Milestone Progress Tracker
@@ -1555,94 +1755,302 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
               Key operational roadmap across Company, Product, Market traction, and Capital
             </p>
           </div>
-          <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">
-            Phase: Growth Acceleration
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
+              Phase: {milestoneMetrics.phase} ({milestoneMetrics.completionRate}%)
+            </span>
+            <button
+              onClick={() => {
+                setSelectedMilestoneCategory('company');
+                setIsAddMilestoneModalOpen(true);
+              }}
+              className="px-3 py-1.5 rounded-lg bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] font-bold text-xs flex items-center gap-1 cursor-pointer transition-colors shadow-xs"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Milestone</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Company */}
-          <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-2">
-            <span className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
-              <Building2 className="w-3.5 h-3.5 text-[#D9FF3F]" />
-              <span>Company & Governance</span>
-            </span>
-            <div className="space-y-1.5">
-              {data.progressTracker.company.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-xs">
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${item.completed ? 'bg-emerald-500 text-white' : 'border border-gray-400'
-                    }`}>
-                    {item.completed && <Check className="w-2.5 h-2.5" />}
+          <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-2.5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
+                  <Building2 className="w-3.5 h-3.5 text-[#D9FF3F]" />
+                  <span>Company & Governance</span>
+                </span>
+                <span className="text-[10px] text-gray-400 font-mono">
+                  {milestones.filter((m) => m.category === 'company' && m.status === 'completed').length}/
+                  {milestones.filter((m) => m.category === 'company').length || 4}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {(milestones.filter((m) => m.category === 'company').length > 0
+                  ? milestones.filter((m) => m.category === 'company')
+                  : data.progressTracker.company.map((c, i) => ({
+                      id: `cmp_${i}`,
+                      startupEntityId: '',
+                      title: c.name,
+                      category: 'company' as const,
+                      status: c.completed ? ('completed' as const) : ('not_started' as const),
+                      createdAt: '',
+                      updatedAt: '',
+                    }))
+                ).map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => handleToggleMilestone(item)}
+                    className="flex items-center gap-2 text-xs cursor-pointer p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-[#262A29] transition-colors group"
+                    title={item.status === 'completed' ? 'Click to mark in-progress' : 'Click to complete'}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] transition-all shrink-0 ${
+                        item.status === 'completed'
+                          ? 'bg-emerald-500 text-white'
+                          : item.status === 'in_progress'
+                            ? 'bg-[#D9FF3F] text-[#101212]'
+                            : 'border border-gray-400 dark:border-gray-500 group-hover:border-emerald-500'
+                      }`}
+                    >
+                      {item.status === 'completed' && <Check className="w-2.5 h-2.5" />}
+                      {item.status === 'in_progress' && <span className="font-bold">•</span>}
+                    </div>
+                    <span
+                      className={`truncate ${
+                        item.status === 'completed'
+                          ? 'text-[#101212] dark:text-white font-medium line-through opacity-70'
+                          : item.status === 'in_progress'
+                            ? 'font-bold text-[#9EBE12] dark:text-[#D9FF3F]'
+                            : 'text-[#565B59] dark:text-[#B6B8B7]'
+                      }`}
+                    >
+                      {item.title}
+                    </span>
                   </div>
-                  <span className={item.completed ? 'text-[#101212] dark:text-white font-medium' : 'text-[#565B59]'}>
-                    {item.name}
-                  </span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
+            <button
+              onClick={() => {
+                setSelectedMilestoneCategory('company');
+                setIsAddMilestoneModalOpen(true);
+              }}
+              className="w-full text-center py-1 text-[11px] text-gray-500 hover:text-[#101212] dark:hover:text-white border border-dashed border-gray-300 dark:border-gray-700 rounded-lg hover:border-gray-400 mt-2 transition-colors cursor-pointer"
+            >
+              + Add
+            </button>
           </div>
 
           {/* Product */}
-          <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-2">
-            <span className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
-              <Rocket className="w-3.5 h-3.5 text-[#D9FF3F]" />
-              <span>Product Engineering</span>
-            </span>
-            <div className="space-y-1.5">
-              {data.progressTracker.product.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-xs">
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${item.completed ? 'bg-emerald-500 text-white' : item.current ? 'bg-[#D9FF3F] text-[#101212]' : 'border border-gray-400'
-                    }`}>
-                    {item.completed ? <Check className="w-2.5 h-2.5" /> : item.current ? '•' : ''}
+          <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-2.5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
+                  <Rocket className="w-3.5 h-3.5 text-[#D9FF3F]" />
+                  <span>Product Engineering</span>
+                </span>
+                <span className="text-[10px] text-gray-400 font-mono">
+                  {milestones.filter((m) => m.category === 'product' && m.status === 'completed').length}/
+                  {milestones.filter((m) => m.category === 'product').length || 4}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {(milestones.filter((m) => m.category === 'product').length > 0
+                  ? milestones.filter((m) => m.category === 'product')
+                  : data.progressTracker.product.map((c, i) => ({
+                      id: `prd_${i}`,
+                      startupEntityId: '',
+                      title: c.name,
+                      category: 'product' as const,
+                      status: c.completed ? ('completed' as const) : ('not_started' as const),
+                      createdAt: '',
+                      updatedAt: '',
+                    }))
+                ).map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => handleToggleMilestone(item)}
+                    className="flex items-center gap-2 text-xs cursor-pointer p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-[#262A29] transition-colors group"
+                    title={item.status === 'completed' ? 'Click to mark in-progress' : 'Click to complete'}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] transition-all shrink-0 ${
+                        item.status === 'completed'
+                          ? 'bg-emerald-500 text-white'
+                          : item.status === 'in_progress'
+                            ? 'bg-[#D9FF3F] text-[#101212]'
+                            : 'border border-gray-400 dark:border-gray-500 group-hover:border-emerald-500'
+                      }`}
+                    >
+                      {item.status === 'completed' && <Check className="w-2.5 h-2.5" />}
+                      {item.status === 'in_progress' && <span className="font-bold">•</span>}
+                    </div>
+                    <span
+                      className={`truncate ${
+                        item.status === 'completed'
+                          ? 'text-[#101212] dark:text-white font-medium line-through opacity-70'
+                          : item.status === 'in_progress'
+                            ? 'font-bold text-[#9EBE12] dark:text-[#D9FF3F]'
+                            : 'text-[#565B59] dark:text-[#B6B8B7]'
+                      }`}
+                    >
+                      {item.title}
+                    </span>
                   </div>
-                  <span className={item.current ? 'font-bold text-[#9EBE12] dark:text-[#D9FF3F]' : item.completed ? 'text-[#101212] dark:text-white font-medium' : 'text-[#565B59]'}>
-                    {item.name}
-                  </span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
+            <button
+              onClick={() => {
+                setSelectedMilestoneCategory('product');
+                setIsAddMilestoneModalOpen(true);
+              }}
+              className="w-full text-center py-1 text-[11px] text-gray-500 hover:text-[#101212] dark:hover:text-white border border-dashed border-gray-300 dark:border-gray-700 rounded-lg hover:border-gray-400 mt-2 transition-colors cursor-pointer"
+            >
+              + Add
+            </button>
           </div>
 
           {/* Market */}
-          <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-2">
-            <span className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
-              <TrendingUp className="w-3.5 h-3.5 text-[#D9FF3F]" />
-              <span>Market & Traction</span>
-            </span>
-            <div className="space-y-1.5">
-              {data.progressTracker.market.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-xs">
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${item.completed ? 'bg-emerald-500 text-white' : item.current ? 'bg-[#D9FF3F] text-[#101212]' : 'border border-gray-400'
-                    }`}>
-                    {item.completed ? <Check className="w-2.5 h-2.5" /> : item.current ? '•' : ''}
+          <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-2.5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
+                  <TrendingUp className="w-3.5 h-3.5 text-[#D9FF3F]" />
+                  <span>Market & Traction</span>
+                </span>
+                <span className="text-[10px] text-gray-400 font-mono">
+                  {milestones.filter((m) => m.category === 'market' && m.status === 'completed').length}/
+                  {milestones.filter((m) => m.category === 'market').length || 4}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {(milestones.filter((m) => m.category === 'market').length > 0
+                  ? milestones.filter((m) => m.category === 'market')
+                  : data.progressTracker.market.map((c, i) => ({
+                      id: `mkt_${i}`,
+                      startupEntityId: '',
+                      title: c.name,
+                      category: 'market' as const,
+                      status: c.completed ? ('completed' as const) : ('not_started' as const),
+                      createdAt: '',
+                      updatedAt: '',
+                    }))
+                ).map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => handleToggleMilestone(item)}
+                    className="flex items-center gap-2 text-xs cursor-pointer p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-[#262A29] transition-colors group"
+                    title={item.status === 'completed' ? 'Click to mark in-progress' : 'Click to complete'}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] transition-all shrink-0 ${
+                        item.status === 'completed'
+                          ? 'bg-emerald-500 text-white'
+                          : item.status === 'in_progress'
+                            ? 'bg-[#D9FF3F] text-[#101212]'
+                            : 'border border-gray-400 dark:border-gray-500 group-hover:border-emerald-500'
+                      }`}
+                    >
+                      {item.status === 'completed' && <Check className="w-2.5 h-2.5" />}
+                      {item.status === 'in_progress' && <span className="font-bold">•</span>}
+                    </div>
+                    <span
+                      className={`truncate ${
+                        item.status === 'completed'
+                          ? 'text-[#101212] dark:text-white font-medium line-through opacity-70'
+                          : item.status === 'in_progress'
+                            ? 'font-bold text-[#9EBE12] dark:text-[#D9FF3F]'
+                            : 'text-[#565B59] dark:text-[#B6B8B7]'
+                      }`}
+                    >
+                      {item.title}
+                    </span>
                   </div>
-                  <span className={item.current ? 'font-bold text-[#9EBE12] dark:text-[#D9FF3F]' : item.completed ? 'text-[#101212] dark:text-white font-medium' : 'text-[#565B59]'}>
-                    {item.name}
-                  </span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
+            <button
+              onClick={() => {
+                setSelectedMilestoneCategory('market');
+                setIsAddMilestoneModalOpen(true);
+              }}
+              className="w-full text-center py-1 text-[11px] text-gray-500 hover:text-[#101212] dark:hover:text-white border border-dashed border-gray-300 dark:border-gray-700 rounded-lg hover:border-gray-400 mt-2 transition-colors cursor-pointer"
+            >
+              + Add
+            </button>
           </div>
 
           {/* Funding */}
-          <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-2">
-            <span className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
-              <DollarSign className="w-3.5 h-3.5 text-[#D9FF3F]" />
-              <span>Capital & Funding</span>
-            </span>
-            <div className="space-y-1.5">
-              {data.progressTracker.funding.map((item, idx) => (
-                <div key={idx} className="flex items-center gap-2 text-xs">
-                  <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center text-[8px] ${item.completed ? 'bg-emerald-500 text-white' : item.current ? 'bg-[#D9FF3F] text-[#101212]' : 'border border-gray-400'
-                    }`}>
-                    {item.completed ? <Check className="w-2.5 h-2.5" /> : item.current ? '•' : ''}
+          <div className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-2.5 flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-[#101212] dark:text-white flex items-center gap-1.5">
+                  <DollarSign className="w-3.5 h-3.5 text-[#D9FF3F]" />
+                  <span>Capital & Funding</span>
+                </span>
+                <span className="text-[10px] text-gray-400 font-mono">
+                  {milestones.filter((m) => m.category === 'funding' && m.status === 'completed').length}/
+                  {milestones.filter((m) => m.category === 'funding').length || 4}
+                </span>
+              </div>
+              <div className="space-y-1.5">
+                {(milestones.filter((m) => m.category === 'funding').length > 0
+                  ? milestones.filter((m) => m.category === 'funding')
+                  : data.progressTracker.funding.map((c, i) => ({
+                      id: `fnd_${i}`,
+                      startupEntityId: '',
+                      title: c.name,
+                      category: 'funding' as const,
+                      status: c.completed ? ('completed' as const) : ('not_started' as const),
+                      createdAt: '',
+                      updatedAt: '',
+                    }))
+                ).map((item) => (
+                  <div
+                    key={item.id}
+                    onClick={() => handleToggleMilestone(item)}
+                    className="flex items-center gap-2 text-xs cursor-pointer p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-[#262A29] transition-colors group"
+                    title={item.status === 'completed' ? 'Click to mark in-progress' : 'Click to complete'}
+                  >
+                    <div
+                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[8px] transition-all shrink-0 ${
+                        item.status === 'completed'
+                          ? 'bg-emerald-500 text-white'
+                          : item.status === 'in_progress'
+                            ? 'bg-[#D9FF3F] text-[#101212]'
+                            : 'border border-gray-400 dark:border-gray-500 group-hover:border-emerald-500'
+                      }`}
+                    >
+                      {item.status === 'completed' && <Check className="w-2.5 h-2.5" />}
+                      {item.status === 'in_progress' && <span className="font-bold">•</span>}
+                    </div>
+                    <span
+                      className={`truncate ${
+                        item.status === 'completed'
+                          ? 'text-[#101212] dark:text-white font-medium line-through opacity-70'
+                          : item.status === 'in_progress'
+                            ? 'font-bold text-[#9EBE12] dark:text-[#D9FF3F]'
+                            : 'text-[#565B59] dark:text-[#B6B8B7]'
+                      }`}
+                    >
+                      {item.title}
+                    </span>
                   </div>
-                  <span className={item.current ? 'font-bold text-[#9EBE12] dark:text-[#D9FF3F]' : item.completed ? 'text-[#101212] dark:text-white font-medium' : 'text-[#565B59]'}>
-                    {item.name}
-                  </span>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
+            <button
+              onClick={() => {
+                setSelectedMilestoneCategory('funding');
+                setIsAddMilestoneModalOpen(true);
+              }}
+              className="w-full text-center py-1 text-[11px] text-gray-500 hover:text-[#101212] dark:hover:text-white border border-dashed border-gray-300 dark:border-gray-700 rounded-lg hover:border-gray-400 mt-2 transition-colors cursor-pointer"
+            >
+              + Add
+            </button>
           </div>
         </div>
       </div>
@@ -1659,40 +2067,47 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
           </div>
 
           <div className="space-y-3">
-            {data.recentActivities.map((act) => (
-              <div
-                key={act.id}
-                className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-start justify-between gap-3"
-              >
-                <div className="flex items-start gap-3">
-                  <img src={act.actorAvatar} alt={act.actorName} className="w-9 h-9 rounded-full object-cover mt-0.5" />
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold text-[#101212] dark:text-white">{act.actorName}</span>
-                      <span className="text-[11px] text-[#565B59] dark:text-[#8E9390]">&bull; {act.actorRole}</span>
+            {connections.length > 0 ? (
+              connections.slice(0, 5).map((conn) => (
+                <div
+                  key={conn.id}
+                  className="p-3.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-3">
+                    <img src={conn.avatar} alt={conn.name} className="w-9 h-9 rounded-full object-cover shrink-0" />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-bold text-[#101212] dark:text-white">{conn.name}</span>
+                        <span className="text-[11px] text-[#565B59] dark:text-[#8E9390]">&bull; {conn.role}</span>
+                      </div>
+                      <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] mt-0.5">{conn.organization}</p>
+                      <span className="text-[10px] text-[#565B59] dark:text-[#8E9390] block mt-0.5">{conn.connectionDate}</span>
                     </div>
-                    <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] mt-0.5">{act.content}</p>
-                    <span className="text-[10px] text-[#565B59] dark:text-[#8E9390] block mt-1">{act.timestamp}</span>
                   </div>
-                </div>
 
-                {act.actionable && (
-                  <button
-                    onClick={() => {
-                      if (act.type === 'dd_request') onNavigateTab('dd_locker');
-                      else if (act.type === 'opportunity_matched') onNavigateTab('my_applications');
-                      else {
-                        const el = document.getElementById('startup-connections-section');
-                        if (el) el.scrollIntoView({ behavior: 'smooth' });
-                      }
-                    }}
-                    className="px-3 py-1 rounded-lg bg-white dark:bg-[#181B1A] border border-gray-200 dark:border-gray-700 hover:border-[#D9FF3F] text-xs font-bold text-[#101212] dark:text-white whitespace-nowrap transition-colors cursor-pointer self-center"
-                  >
-                    {act.actionLabel}
-                  </button>
-                )}
+                  <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20 shrink-0">
+                    Connected
+                  </span>
+                </div>
+              ))
+            ) : (
+              <div className="p-8 text-center rounded-xl bg-gray-50/50 dark:bg-[#202422]/50 border border-dashed border-gray-200 dark:border-[#262A29] flex flex-col items-center justify-center space-y-2">
+                <Clock className="w-8 h-8 text-gray-400 dark:text-gray-500 mb-1" />
+                <p className="text-xs font-semibold text-[#101212] dark:text-white">No Ecosystem Activity Yet</p>
+                <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] max-w-sm">
+                  Real-time updates will automatically appear here as institutional investors review your pitch deck, mentors accept connection requests, or due diligence requests are lodged.
+                </p>
+                <button
+                  onClick={() => {
+                    const el = document.getElementById('startup-connections-section');
+                    if (el) el.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="mt-2 px-3 py-1.5 rounded-lg bg-[#D9FF3F] text-[#101212] text-xs font-bold hover:bg-[#C7F020] transition-colors cursor-pointer"
+                >
+                  Explore Ecosystem Connections
+                </button>
               </div>
-            ))}
+            )}
           </div>
         </div>
 
@@ -1708,25 +2123,72 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
           </div>
 
           <div className="space-y-2">
-            {data.verificationStatus.map((v, idx) => (
-              <div
-                key={idx}
-                className="p-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-center justify-between text-xs"
-              >
-                <span className="font-medium text-[#101212] dark:text-white truncate">{v.item}</span>
-                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${v.badgeColor}`}>
-                  {v.status}
-                </span>
-              </div>
-            ))}
+            {verificationItems && verificationItems.length > 0 ? (
+              verificationItems.map((v) => {
+                const isApproved = v.status === 'VERIFIED';
+                const isPending = v.status === 'PENDING';
+                const isRejected = v.status === 'REJECTED';
+
+                const badgeClass = isApproved
+                  ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                  : isPending
+                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                    : isRejected
+                      ? 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                      : 'bg-gray-100 dark:bg-gray-800 text-gray-500 border border-gray-200 dark:border-gray-700';
+
+                const label = isApproved ? 'Verified' : isPending ? 'In Review' : isRejected ? 'Rejected' : 'Evidence Needed';
+
+                return (
+                  <div
+                    key={v.type}
+                    onClick={() => {
+                      if (!isApproved) {
+                        setSelectedVerificationItem(v);
+                        setIsVerificationModalOpen(true);
+                      }
+                    }}
+                    className={`p-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-center justify-between text-xs transition-colors ${
+                      !isApproved ? 'cursor-pointer hover:border-gray-300 dark:hover:border-gray-600' : ''
+                    }`}
+                  >
+                    <div className="truncate mr-2">
+                      <span className="font-medium text-[#101212] dark:text-white block truncate">{v.title}</span>
+                      {v.documentNumber && (
+                        <span className="text-[10px] text-gray-400 font-mono block truncate">{v.documentNumber}</span>
+                      )}
+                    </div>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold shrink-0 ${badgeClass}`}>
+                      {label}
+                    </span>
+                  </div>
+                );
+              })
+            ) : (
+              data.verificationStatus.map((v, idx) => (
+                <div
+                  key={idx}
+                  className="p-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-center justify-between text-xs"
+                >
+                  <span className="font-medium text-[#101212] dark:text-white truncate">{v.item}</span>
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${v.badgeColor}`}>
+                    {v.status}
+                  </span>
+                </div>
+              ))
+            )}
           </div>
 
           <button
-            onClick={() => showToast('Opening MCA verification checklist...', 'info')}
+            onClick={() => {
+              setSelectedVerificationItem(null);
+              setIsVerificationModalOpen(true);
+            }}
             className="w-full mt-2 py-2 px-3 rounded-xl bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-bold text-[#101212] dark:text-white transition-colors flex items-center justify-center gap-1 cursor-pointer"
           >
-            <span>Submit Pending MSME Proof</span>
-            <ArrowRight className="w-3 h-3" />
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 mr-1" />
+            <span>Submit Verification Evidence</span>
+            <ArrowRight className="w-3 h-3 ml-auto" />
           </button>
         </div>
       </div>
@@ -2518,6 +2980,33 @@ export const StartupOverview: React.FC<StartupOverviewProps> = ({ onNavigateTab 
           </div>
         </div>
       )}
+
+      {/* Operational Roadmap Milestone Modal */}
+      <AddMilestoneModal
+        isOpen={isAddMilestoneModalOpen}
+        onClose={() => setIsAddMilestoneModalOpen(false)}
+        entityId={entityContextService.getActiveEntityId() || 'st_1'}
+        defaultCategory={selectedMilestoneCategory}
+        onSuccess={() => {
+          loadMilestones();
+          window.dispatchEvent(new CustomEvent('xentro-milestone-updated'));
+        }}
+      />
+
+      {/* Regulatory Evidence Verification Submission Modal */}
+      <VerificationSubmissionModal
+        isOpen={isVerificationModalOpen}
+        onClose={() => {
+          setIsVerificationModalOpen(false);
+          setSelectedVerificationItem(null);
+        }}
+        entityId={entityContextService.getActiveEntityId() || 'st_1'}
+        defaultItem={selectedVerificationItem}
+        onSuccess={() => {
+          loadVerificationStatus();
+          window.dispatchEvent(new CustomEvent('xentro-verification-updated'));
+        }}
+      />
     </div>
   );
 };

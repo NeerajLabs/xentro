@@ -250,11 +250,11 @@ export const InvestorBillingManager: React.FC = () => {
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="text-gray-400 block text-[10px]">GSTIN:</span>
-                <strong className="text-[#101212] dark:text-white font-mono">{billingAccount.gstin}</strong>
+                <strong className="text-[#101212] dark:text-white font-mono">{billingAccount.gstin || 'Not Provided'}</strong>
               </div>
               <div>
                 <span className="text-gray-400 block text-[10px]">PAN:</span>
-                <strong className="text-[#101212] dark:text-white font-mono">{billingAccount.pan}</strong>
+                <strong className="text-[#101212] dark:text-white font-mono">{billingAccount.pan || 'Not Provided'}</strong>
               </div>
             </div>
             <div>
@@ -282,29 +282,35 @@ export const InvestorBillingManager: React.FC = () => {
               onClick={() => setIsPaymentModalOpen(true)}
               className="text-xs font-bold text-[#101212] dark:text-[#D9FF3F] hover:underline cursor-pointer"
             >
-              Update Card
+              {billingAccount.defaultPaymentMethod ? 'Update Card' : 'Add Card'}
             </button>
           </div>
 
-          <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 rounded-xl bg-[#101212] text-white">
-                <CreditCard className="w-5 h-5" />
+          {billingAccount.defaultPaymentMethod ? (
+            <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-[#101212] text-white">
+                  <CreditCard className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-[#101212] dark:text-white">
+                    {billingAccount.defaultPaymentMethod.brand || 'Corporate Card'}
+                  </h4>
+                  <p className="text-gray-400 text-xs">
+                    Ending in •••• {billingAccount.defaultPaymentMethod.last4} &bull; Expires{' '}
+                    {billingAccount.defaultPaymentMethod.expiry || 'N/A'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h4 className="font-bold text-sm text-[#101212] dark:text-white">
-                  {billingAccount.defaultPaymentMethod.brand}
-                </h4>
-                <p className="text-gray-400 text-xs">
-                  Ending in •••• {billingAccount.defaultPaymentMethod.last4} &bull; Expires{' '}
-                  {billingAccount.defaultPaymentMethod.expiry}
-                </p>
-              </div>
+              <span className="text-[10px] px-2 py-0.5 rounded font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
+                Default
+              </span>
             </div>
-            <span className="text-[10px] px-2 py-0.5 rounded font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
-              Default
-            </span>
-          </div>
+          ) : (
+            <div className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-dashed border-gray-200 dark:border-[#262A29] text-center text-xs text-gray-400">
+              No active payment method on file. Add a corporate card to automate membership billing.
+            </div>
+          )}
 
           <p className="text-[11px] text-gray-400">
             Payments processed via RBI-compliant e-mandate with multi-factor biometric authentication.

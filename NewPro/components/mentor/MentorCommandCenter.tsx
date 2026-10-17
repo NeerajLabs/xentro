@@ -20,6 +20,8 @@ import { MentorStats } from './MentorStats';
 import { UpcomingSection } from './UpcomingSection';
 import { QuickActions } from './QuickActions';
 import { mentorUser } from '@/data/mentorMockData';
+import { getUserProfile } from '@/lib/userProfile';
+import { connectionService } from '@/lib/connectionService';
 
 interface MentorCommandCenterProps {
   requests: MentorshipRequest[];
@@ -43,6 +45,9 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
   onOpenMessages,
 }) => {
   const pendingRequests = requests.filter((r) => r.status === 'pending');
+  const user = getUserProfile();
+  const mentorName = user?.name || 'Advisor';
+  const connectedCount = connectionService.getConnectedCount();
 
   return (
     <div className="space-y-6 animate-fade-slide pb-12">
@@ -54,7 +59,7 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
             <span>Mentor Command Center</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-[#101212] dark:text-white tracking-tight font-display">
-            Good morning, Dr. Arvind
+            Welcome back, {mentorName}
           </h1>
           <p className="text-xs sm:text-sm text-[#565B59] dark:text-[#B6B8B7]">
             Here's what needs your attention today. You have{' '}
@@ -71,7 +76,7 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
         <div className="flex items-center gap-2.5 self-start sm:self-center">
           <button
             onClick={onViewPublicProfile}
-            className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-[#F7F8F6] hover:bg-gray-100 dark:bg-[#202422] dark:hover:bg-gray-800 text-xs font-bold text-[#101212] dark:text-white transition-all flex items-center gap-1.5 shadow-2xs active:scale-95"
+            className="px-4 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-[#F7F8F6] hover:bg-gray-100 dark:bg-[#202422] dark:hover:bg-gray-800 text-xs font-bold text-[#101212] dark:text-white transition-all flex items-center gap-1.5 shadow-2xs active:scale-95 cursor-pointer"
             title="View public profile as seen by founders"
           >
             <Eye className="w-3.5 h-3.5 text-[#565B59] dark:text-[#B6B8B7]" />
@@ -85,9 +90,9 @@ export const MentorCommandCenter: React.FC<MentorCommandCenterProps> = ({
         pendingCount={pendingRequests.length}
         activeCount={activeMentorships.length}
         upcomingMeetingsCount={meetings.length}
-        unreadMessagesCount={3}
-        newConnectionsCount={12}
-        savedOpportunitiesCount={6}
+        unreadMessagesCount={0}
+        newConnectionsCount={connectedCount}
+        savedOpportunitiesCount={opportunities.length}
         onNavigateTab={onNavigateTab}
       />
 

@@ -359,8 +359,6 @@ const INITIAL_ORGANIZATIONS: InvestorOrganization[] = [
     billingAccount: {
       organizationName: 'Apex Ventures Capital Management LLP',
       billingEmail: 'finance@apexventures.vc',
-      gstin: '29AABCA9876Q1ZM',
-      pan: 'AABCA9876Q',
       taxExempt: false,
       billingAddress: {
         line1: 'Level 8, Prestige Tech Park, Marathahalli-Sarjapur Ring Rd',
@@ -368,12 +366,6 @@ const INITIAL_ORGANIZATIONS: InvestorOrganization[] = [
         state: 'Karnataka',
         country: 'India',
         postalCode: '560103',
-      },
-      defaultPaymentMethod: {
-        type: 'card',
-        last4: '4829',
-        brand: 'Visa Business Corporate',
-        expiry: '08/28',
       },
     },
 
@@ -456,10 +448,10 @@ const INITIAL_ORGANIZATIONS: InvestorOrganization[] = [
 
     portfolio: [],
     experienceStats: {
-      totalInvestments: 12,
-      activePortfolio: 11,
-      followOnInvestments: 4,
-      exits: 1,
+      totalInvestments: 0,
+      activePortfolio: 0,
+      followOnInvestments: 0,
+      exits: 0,
     },
     testimonials: [],
     connectionPreferences: {
@@ -498,10 +490,6 @@ const INITIAL_ORGANIZATIONS: InvestorOrganization[] = [
         state: 'Maharashtra',
         country: 'India',
         postalCode: '400021',
-      },
-      defaultPaymentMethod: {
-        type: 'card',
-        last4: '1192',
       },
     },
     invoices: [],
@@ -1358,30 +1346,14 @@ class InvestorOrganizationService {
   }
 
   transferOrganizationOwnership(
-    orgId: string,
-    newOwnerMemberId: string
+    _orgId: string,
+    _newOwnerMemberId: string
   ): { success: boolean; message?: string } {
-    const members = this.getAllMemberships();
-    const targetIndex = members.findIndex(
-      (m) => m.id === newOwnerMemberId && m.organizationId === orgId
-    );
-    if (targetIndex === -1) {
-      return { success: false, message: 'Target member not found' };
-    }
-
-    // Designate target as new owner
-    members[targetIndex].isOwner = true;
-    members[targetIndex].role = 'Owner/Managing Partner';
-    members[targetIndex].permissions = ROLE_PERMISSION_PRESETS['Owner/Managing Partner'];
-
-    // Update organization entity ownerId
-    const org = this.getOrganizationById(orgId);
-    if (org) {
-      this.updateInvestorOrganization(orgId, { ownerId: members[targetIndex].userId });
-    }
-
-    this.saveMemberships(members);
-    return { success: true };
+    // Disabled until authoritative server-side governance workflow is implemented
+    return {
+      success: false,
+      message: 'Organization ownership transfer is currently disabled pending backend governance workflow integration. Existing ownership records have been strictly preserved.',
+    };
   }
 
   // -----------------------------------------------------------------------

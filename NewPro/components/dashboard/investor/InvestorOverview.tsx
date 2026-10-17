@@ -148,7 +148,7 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
             <div className="flex items-center gap-2 flex-wrap">
               <h2 className="text-sm font-bold text-white font-heading">
                 {isOrg
-                  ? activeOrg?.name || 'Apex Ventures Capital Management LLP'
+                  ? activeOrg?.name || 'Investment Organization Workspace'
                   : `${profile.name} (Independent Angel Investor)`}
               </h2>
               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#D9FF3F] text-[#101212]">
@@ -164,14 +164,14 @@ export const InvestorOverview: React.FC<InvestorOverviewProps> = ({
                 <>
                   Active Member: <span className="text-white font-medium">{profile.name}</span> &bull; Role:{' '}
                   <span className="text-[#D9FF3F] font-semibold">Managing Partner</span> &bull; Fund Size:{' '}
-                  <span className="text-white">{activeOrg?.fundSize || '₹500 Cr'}</span> &bull; Cheque:{' '}
-                  <span className="text-[#D9FF3F] font-semibold">{activeOrg?.investmentFocus?.ticketSize?.formatted || '₹2Cr – ₹10Cr'}</span>
+                  <span className="text-white">{activeOrg?.fundSize || 'Not Disclosed'}</span> &bull; Cheque:{' '}
+                  <span className="text-[#D9FF3F] font-semibold">{activeOrg?.investmentFocus?.ticketSize?.formatted || 'Flexible'}</span>
                 </>
               ) : (
                 <>
                   Personal Cheque Size:{' '}
-                  <span className="text-[#D9FF3F] font-semibold">₹25L – ₹1Cr</span> &bull; Focus:{' '}
-                  <span className="text-white">SaaS, FinTech, DeepTech</span> &bull; Direct Angel Deals
+                  <span className="text-[#D9FF3F] font-semibold">Flexible</span> &bull; Focus:{' '}
+                  <span className="text-white">Active Deal Flow</span> &bull; Direct Angel Deals
                 </>
               )}
             </p>

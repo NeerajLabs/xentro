@@ -393,7 +393,7 @@ export interface InvestorBillingAccount {
     country: string;
     postalCode: string;
   };
-  defaultPaymentMethod: {
+  defaultPaymentMethod?: {
     type: 'card' | 'upi' | 'netbanking';
     last4?: string;
     brand?: string;

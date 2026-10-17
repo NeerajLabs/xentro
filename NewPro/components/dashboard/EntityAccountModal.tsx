@@ -551,13 +551,6 @@ export const EntityAccountModal: React.FC<EntityAccountModalProps> = ({
               country: 'India',
               postalCode: '560001',
             },
-            defaultPaymentMethod: {
-              type: 'card',
-              brand: 'visa',
-              last4: '4242',
-              expiryMonth: '12',
-              expiryYear: '2028',
-            },
           },
         });
 

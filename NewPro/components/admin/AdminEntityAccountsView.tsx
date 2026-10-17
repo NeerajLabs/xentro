@@ -159,28 +159,9 @@ export const AdminEntityAccountsView: React.FC = () => {
 
   const handleTransferOwnership = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!drawerEntity || !newOwnerName.trim() || !newOwnerEmail.trim() || !transferReason.trim()) return;
-
-    const ok = adminDomainService.transferOwnership(drawerEntity.id, newOwnerName, newOwnerEmail, transferReason);
-    if (ok) {
-      showToast(`Ownership transferred to ${newOwnerName} (${newOwnerEmail}).`);
-      setTransferOwnerModalOpen(false);
-      setNewOwnerName('');
-      setNewOwnerEmail('');
-      setTransferReason('');
-      setDrawerEntity((prev) =>
-        prev
-          ? {
-              ...prev,
-              primaryOwner: {
-                id: `usr-transferred-${Date.now()}`,
-                name: newOwnerName,
-                email: newOwnerEmail,
-              },
-            }
-          : null
-      );
-    }
+    showToast(
+      'Entity ownership transfer is currently disabled pending authoritative backend governance workflow integration. Existing records are strictly preserved.'
+    );
   };
 
   const getTypeBadge = (type: EntityType) => {
@@ -502,41 +483,40 @@ export const AdminEntityAccountsView: React.FC = () => {
                 Transfer Entity Ownership
               </h3>
             </div>
+            <div className="p-3.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-xs text-amber-800 dark:text-amber-300 space-y-1">
+              <div className="flex items-center gap-2 font-bold">
+                <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+                <span>Transfer Workflow Temporarily Disabled</span>
+              </div>
+              <p className="leading-relaxed">
+                Entity ownership transfer is currently unavailable pending authoritative backend governance workflow integration. Existing ownership records have been strictly preserved.
+              </p>
+            </div>
+
             <p className="text-xs text-[#565B59] dark:text-[#A0A4A2]">
               Transfer primary ownership of <strong className="text-[#101212] dark:text-white">{drawerEntity.name}</strong> to a verified personal account.
             </p>
-            <div className="space-y-3">
+            <div className="space-y-3 opacity-60 pointer-events-none">
               <div>
-                <label className="text-xs font-medium text-gray-400">New Owner Name</label>
+                <label className="text-xs font-medium text-gray-400">New Owner Name (Preview)</label>
                 <input
                   type="text"
-                  required
+                  disabled
                   value={newOwnerName}
                   onChange={(e) => setNewOwnerName(e.target.value)}
                   placeholder="e.g. Sravan Kumar"
-                  className="w-full p-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
+                  className="w-full p-2.5 rounded-xl bg-gray-100 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-gray-500 cursor-not-allowed"
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-400">New Owner Official Email</label>
+                <label className="text-xs font-medium text-gray-400">New Owner Official Email (Preview)</label>
                 <input
                   type="email"
-                  required
+                  disabled
                   value={newOwnerEmail}
                   onChange={(e) => setNewOwnerEmail(e.target.value)}
                   placeholder="e.g. sravan@xentro.io"
-                  className="w-full p-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
-                />
-              </div>
-              <div>
-                <label className="text-xs font-medium text-gray-400">Audit Justification / Board Resolution</label>
-                <textarea
-                  required
-                  value={transferReason}
-                  onChange={(e) => setTransferReason(e.target.value)}
-                  placeholder="State the corporate restructuring, founder change, or board resolution reference..."
-                  rows={3}
-                  className="w-full p-2.5 rounded-xl bg-gray-50 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-[#101212] dark:text-white focus:outline-hidden focus:border-[#D9FF3F]"
+                  className="w-full p-2.5 rounded-xl bg-gray-100 dark:bg-[#202422] border border-[#E5E7EB] dark:border-[#262A29] text-xs text-gray-500 cursor-not-allowed"
                 />
               </div>
             </div>
@@ -544,15 +524,16 @@ export const AdminEntityAccountsView: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setTransferOwnerModalOpen(false)}
-                className="px-4 py-2 rounded-xl text-xs font-medium text-gray-400 hover:text-white"
+                className="px-4 py-2 rounded-xl text-xs font-medium text-gray-400 hover:text-white cursor-pointer"
               >
-                Cancel
+                Close
               </button>
               <button
-                type="submit"
-                className="px-4 py-2 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-[#101212] text-xs font-bold transition-all shadow-xs"
+                type="button"
+                disabled
+                className="px-4 py-2 rounded-xl bg-gray-400 dark:bg-gray-700 text-white text-xs font-bold transition-all cursor-not-allowed opacity-60 shadow-none"
               >
-                Execute Transfer
+                Transfer Unavailable
               </button>
             </div>
           </form>

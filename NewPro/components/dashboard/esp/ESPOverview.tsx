@@ -122,7 +122,7 @@ export const ESPOverview: React.FC<ESPOverviewProps> = ({
               {data.stats.applicationsReceived}
             </span>
             <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold font-mono">
-              +38 new
+              {applicationQueue.length > 0 ? `+${applicationQueue.length} in queue` : 'All cleared'}
             </span>
           </div>
           <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">

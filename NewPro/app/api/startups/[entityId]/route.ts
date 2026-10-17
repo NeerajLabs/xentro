@@ -6,6 +6,7 @@ import {
   requireAuthenticatedUser,
   requireActiveEntityMembership,
 } from '@/lib/serverAuth';
+import { calculateStartupCompletion } from '@/lib/profileCompletionService';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -259,6 +260,12 @@ export async function GET(
       delete startupProfile.internalNotes;
     }
 
+    // 6. Calculate deterministic profile completion from persisted fields
+    const completionDetails = calculateStartupCompletion(startupProfile);
+    startupProfile.metrics = startupProfile.metrics || {};
+    startupProfile.metrics.profileCompletionPct = completionDetails.percentage;
+    startupProfile.completionDetails = completionDetails;
+
     return NextResponse.json({
       success: true,
       data: startupProfile,
@@ -484,7 +491,23 @@ export async function PUT(
     } catch (_) {}
 
     const updated = await startupsCol.findOne({ entityId });
-    if (updated) delete (updated as any)._id;
+    if (updated) {
+      delete (updated as any)._id;
+      const completionDetails = calculateStartupCompletion(updated);
+      updated.metrics = updated.metrics || {};
+      updated.metrics.profileCompletionPct = completionDetails.percentage;
+      updated.completionDetails = completionDetails;
+
+      // Persist authoritative score asynchronously to collections
+      await startupsCol.updateOne(
+        { entityId },
+        { $set: { 'metrics.profileCompletionPct': completionDetails.percentage } }
+      );
+      await entitiesCol.updateOne(
+        { id: entityId },
+        { $set: { profileCompletion: completionDetails.percentage, updatedAt: nowIso } }
+      );
+    }
 
     return NextResponse.json({
       success: true,

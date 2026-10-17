@@ -228,44 +228,44 @@ export const InvestorConnections: React.FC<InvestorConnectionsProps> = ({
           {filteredConnections.map((conn) => (
           <div
             key={conn.id}
-            className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle flex flex-col justify-between space-y-3 hover:border-[#D9FF3F]/50 transition-all"
+            className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle flex flex-col justify-between space-y-3 hover:border-[#D9FF3F]/50 transition-all h-full"
           >
             <div>
-              <div className="flex items-center gap-3">
-                <div className="w-11 h-11 rounded-full overflow-hidden bg-gray-100 dark:bg-black/40 border border-gray-200 dark:border-gray-700 flex-shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-full overflow-hidden bg-gray-100 dark:bg-black/40 border border-gray-200 dark:border-gray-700 shrink-0">
                   <img src={conn.avatar} alt={conn.name} className="w-full h-full object-cover" />
                 </div>
-                <div>
+                <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
-                    <h4 className="text-xs font-bold text-[#101212] dark:text-white">
+                    <h4 className="text-xs font-bold text-[#101212] dark:text-white truncate">
                       {conn.name}
                     </h4>
                     {conn.verified && (
-                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500/10" />
+                      <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 fill-emerald-500/10 shrink-0" />
                     )}
                   </div>
-                  <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                  <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] truncate">
                     {conn.title}
                   </p>
-                  <p className="text-[11px] font-semibold text-[#101212] dark:text-[#D9FF3F]">
+                  <p className="text-[11px] font-semibold text-[#101212] dark:text-[#D9FF3F] truncate">
                     {conn.organization}
                   </p>
                 </div>
               </div>
 
               <div className="pt-2 text-[10px] text-gray-400 flex items-center justify-between">
-                <span>{conn.location}</span>
-                <span>Connected: {conn.connectedDate}</span>
+                <span className="truncate max-w-[120px]">{conn.location}</span>
+                <span className="shrink-0">Connected: {conn.connectedDate}</span>
               </div>
 
               {conn.notes && (
-                <div className="mt-2 p-2 rounded-xl bg-gray-50 dark:bg-[#202422] text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                <div className="mt-2 p-2 rounded-xl bg-gray-50 dark:bg-[#202422] text-[11px] text-[#565B59] dark:text-[#B6B8B7] line-clamp-2">
                   {conn.notes}
                 </div>
               )}
             </div>
 
-            <div className="pt-2 border-t border-gray-100 dark:border-[#262A29] flex items-center justify-between gap-2">
+            <div className="mt-auto pt-2 border-t border-gray-100 dark:border-[#262A29] flex items-center justify-between gap-2">
               <button
                 onClick={() => setActiveMessageConn(conn)}
                 className="flex-1 py-1.5 rounded-xl bg-[#D9FF3F]/15 hover:bg-[#D9FF3F]/30 text-xs font-bold text-[#101212] dark:text-[#D9FF3F] flex items-center justify-center gap-1.5 transition-colors cursor-pointer"

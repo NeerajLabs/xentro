@@ -291,7 +291,7 @@ class AdminRegistrationRequestsView(APIView):
     """
     Returns pending user and ESP signup registration requests for administrative review.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsXentroAdmin]
 
     def get(self, request):
         users_col = get_collection("users")
@@ -379,9 +379,14 @@ class AdminRegistrationActionView(APIView):
       4. Dispatches official Xentro activation confirmation email from no-reply@xentro.in.
       5. Writes audit log.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsXentroAdmin]
 
     def post(self, request, user_id):
+        # Enforce administrative role boundaries
+        admin_role = getattr(request.user, "admin_role", None) or getattr(request.user, "role", None)
+        if admin_role in ("Read-Only Auditor", "Support Agent", "Viewer"):
+            return api_error("Forbidden: Insufficient administrative privileges to review or alter registration status.", status_code=403)
+
         action = request.data.get("action", "APPROVE").upper()  # APPROVE or REJECT
         notes = request.data.get("notes", "")
 
@@ -401,7 +406,7 @@ class AdminRegistrationActionView(APIView):
         if not user and not esp_entity:
             return api_error("Registration request not found.", status_code=404)
 
-        admin_id = getattr(request.user, "admin_employee_id", "SUPER_ADMIN")
+        admin_id = getattr(request.user, "admin_employee_id", None) or getattr(request.user, "username", "SUPER_ADMIN")
         now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
         user_email = user.get("email") if user else (esp_entity.get("officialEmail") if esp_entity else None)
@@ -959,7 +964,7 @@ class AdminUsersListView(APIView):
     Zero dummy data. Calculates dynamic participation modes, actual entity memberships,
     and server-side filtered status tabs and counts.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsXentroAdmin]
 
     def get(self, request):
         users_col = get_collection("users")
@@ -1370,7 +1375,7 @@ class AdminEntitiesListView(APIView):
     Returns real entity records (Startups, Investors, ESPs) from MongoDB for Admin Entity Accounts view.
     Excludes orphaned/deleted records.
     """
-    permission_classes = [AllowAny]
+    permission_classes = [IsXentroAdmin]
 
     def get(self, request):
         entities_col = get_collection("entities")

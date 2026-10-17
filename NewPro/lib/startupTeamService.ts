@@ -591,27 +591,12 @@ export function updateStartupPermissions(id: string, permissions: StartupPermiss
 }
 
 export function transferStartupOwnership(currentOwnerId: string, newOwnerId: string): boolean {
-  const current = getStartupMembers();
-  const currentOwner = current.find((m) => m.id === currentOwnerId);
-  const newOwner = current.find((m) => m.id === newOwnerId);
-
-  if (!currentOwner || !newOwner) return false;
-
-  // New owner becomes Owner with full permissions
-  updateStartupMember(newOwnerId, {
-    dashboardRole: 'owner',
-    dashboardAccessEnabled: true,
-    entityMembershipStatus: 'active',
-    permissions: OWNER_PERMISSIONS,
-  });
-
-  // Current owner steps down to Admin or retains full permissions as co-founder
-  updateStartupMember(currentOwnerId, {
-    dashboardRole: 'admin',
-    permissions: ADMIN_PERMISSIONS,
-  });
-
-  return true;
+  // Fail-closed governance gate:
+  // Until an authoritative, approved server workflow exists, ownership transfer
+  // is strictly disabled. No localStorage or client mutations are permitted.
+  // Existing owners and memberships are strictly preserved.
+  console.warn('[StartupTeam] Venture ownership transfer is currently disabled pending authoritative backend governance integration.');
+  throw new Error('Venture ownership transfer is currently unavailable pending authoritative backend governance workflow integration. Existing venture ownership is strictly preserved.');
 }
 
 /**

@@ -1,11 +1,76 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/mongodb';
+import { verifyJwtToken } from '@/lib/serverAuth';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+/**
+ * Validates internal Admin session using cryptographic JWT verification or active admin_sessions record.
+ * Merely possessing an unvalidated bearer prefix or random cookie is strictly rejected.
+ */
+async function verifyAdminAuth(req: NextRequest, getDb?: () => Promise<any>): Promise<{ authenticated: boolean; errorStatus?: number; message?: string; adminInfo?: any }> {
+  const authHeader = req.headers.get('authorization') || req.headers.get('x-admin-token');
+  const cookieToken = req.cookies.get('xentro_admin_auth')?.value;
+  let rawToken = cookieToken || '';
+
+  if (authHeader) {
+    if (authHeader.toLowerCase().startsWith('bearer ')) {
+      rawToken = authHeader.substring(7).trim();
+    } else {
+      rawToken = authHeader.trim();
+    }
+  }
+
+  if (!rawToken) {
+    return { authenticated: false, errorStatus: 401, message: 'Authentication required: Missing administrative session credentials.' };
+  }
+
+  // 1. Attempt cryptographic JWT verification
+  const jwtPayload = verifyJwtToken(rawToken);
+  if (jwtPayload) {
+    const isStaffOrAdmin =
+      jwtPayload.is_staff === true ||
+      jwtPayload.isAdmin === true ||
+      ['Super Admin', 'Master Admin', 'Identity Verification Admin', 'Entity Verification Admin', 'Operations Admin', 'Compliance Admin', 'Read-Only Auditor', 'Support Agent'].includes(jwtPayload.role) ||
+      ['9922953', '8121417', '9911223', 'admin'].includes(String(jwtPayload.employeeId || jwtPayload.sub).toLowerCase());
+
+    if (!isStaffOrAdmin) {
+      return { authenticated: false, errorStatus: 403, message: 'Forbidden: Caller does not possess administrative staff credentials.' };
+    }
+
+    return { authenticated: true, adminInfo: jwtPayload };
+  }
+
+  // 2. Fallback: Check MongoDB authoritative admin_sessions collection
+  if (getDb) {
+    try {
+      const db = await getDb();
+      const sessionDoc = await db.collection('admin_sessions').findOne({
+        $or: [{ token: rawToken }, { jwtToken: rawToken }],
+        expiresAt: { $gt: new Date().toISOString() },
+      });
+      if (sessionDoc) {
+        return { authenticated: true, adminInfo: sessionDoc };
+      }
+    } catch (err) {
+      console.warn('[Admin Auth] Session lookup warning:', err);
+    }
+  }
+
+  return { authenticated: false, errorStatus: 401, message: 'Invalid or expired administrative session token.' };
+}
+
 export async function GET(req: NextRequest) {
   try {
+    const auth = await verifyAdminAuth(req, getDatabase);
+    if (!auth.authenticated) {
+      return NextResponse.json(
+        { success: false, message: auth.message || 'Forbidden: Valid internal administrative session token required.' },
+        { status: auth.errorStatus || 403 }
+      );
+    }
+
     const db = await getDatabase();
     const usersCol = db.collection('users');
     const entitiesCol = db.collection('entities');
@@ -103,8 +168,70 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const auth = await verifyAdminAuth(req, getDatabase);
+    if (!auth.authenticated) {
+      return NextResponse.json(
+        { success: false, message: auth.message || 'Forbidden: Valid internal administrative session token required.' },
+        { status: auth.errorStatus || 403 }
+      );
+    }
+
+    const role = auth.adminInfo?.role || '';
+    const permissions = auth.adminInfo?.permissions || [];
+    const isSuperOrMaster =
+      ['Super Admin', 'Master Admin', 'System Administrator'].includes(role) ||
+      ['9922953', '8121417', '9911223', 'admin'].includes(String(auth.adminInfo?.employeeId || auth.adminInfo?.sub).toLowerCase());
+
+    // Ground Staff, Support Agent, Read-Only Auditor, and ordinary Viewers are strictly prohibited from approving/rejecting
+    if (['Read-Only Auditor', 'Support Agent', 'Viewer'].includes(role)) {
+      return NextResponse.json(
+        { success: false, message: 'Forbidden: Insufficient administrative privileges to review or alter verification status.' },
+        { status: 403 }
+      );
+    }
+
     const body = await req.json();
-    const { id, action, notes, reviewerName } = body;
+    const { id, action, notes } = body;
+
+    if (!id || !['APPROVE', 'REJECT'].includes(action)) {
+      return NextResponse.json(
+        { success: false, message: 'Valid verification ID and action (APPROVE or REJECT) are required.' },
+        { status: 400 }
+      );
+    }
+
+    // Role boundaries: Identity verification vs Entity verification
+    if (id.startsWith('verif_id_')) {
+      const canReviewIdentity =
+        isSuperOrMaster ||
+        ['Identity Verification Admin', 'Operations Admin', 'Compliance Admin'].includes(role) ||
+        permissions.includes('identity_verification.review') ||
+        permissions.includes('super:all');
+
+      if (!canReviewIdentity) {
+        return NextResponse.json(
+          { success: false, message: 'Forbidden: Your administrative role is not authorized for Government Identity verification review.' },
+          { status: 403 }
+        );
+      }
+    } else if (id.startsWith('verif_ent_')) {
+      const canReviewEntity =
+        isSuperOrMaster ||
+        ['Entity Verification Admin', 'Operations Admin', 'Compliance Admin'].includes(role) ||
+        permissions.includes('verification.review') ||
+        permissions.includes('super:all');
+
+      if (!canReviewEntity) {
+        return NextResponse.json(
+          { success: false, message: 'Forbidden: Your administrative role is not authorized for Entity Legal verification review.' },
+          { status: 403 }
+        );
+      }
+    } else {
+      return NextResponse.json({ success: false, message: 'Invalid verification ID' }, { status: 400 });
+    }
+
+    const authoritativeReviewer = auth.adminInfo?.name || auth.adminInfo?.employeeId || 'Platform Administrator';
     const db = await getDatabase();
     const usersCol = db.collection('users');
     const entitiesCol = db.collection('entities');
@@ -120,7 +247,7 @@ export async function POST(req: NextRequest) {
         {
           $set: {
             identityStatus: targetStatus,
-            identityReviewedBy: reviewerName || 'ADMIN_CONSOLE',
+            identityReviewedBy: authoritativeReviewer,
             verificationReviewedAt: now,
             identityNotes: notes || '',
             updatedAt: now,
@@ -132,7 +259,8 @@ export async function POST(req: NextRequest) {
         action: `IDENTITY_VERIFICATION_${action}`,
         userId,
         status: targetStatus,
-        performedBy: reviewerName || 'ADMIN_CONSOLE',
+        performedBy: authoritativeReviewer,
+        adminRole: role,
         notes: notes || '',
         timestamp: now,
       });
@@ -155,7 +283,7 @@ export async function POST(req: NextRequest) {
           $set: {
             verificationStatus: targetStatus,
             ownerApprovalStatus: action === 'APPROVE' ? 'APPROVED' : 'REJECTED',
-            verifiedBy: reviewerName || 'ADMIN_CONSOLE',
+            verifiedBy: authoritativeReviewer,
             verifiedAt: now,
             rejectionReason: notes || '',
             updatedAt: now,
@@ -195,7 +323,7 @@ export async function POST(req: NextRequest) {
         // 2. Mark role requests approved
         await roleReqCol.updateMany(
           { entityId, status: 'PENDING' },
-          { $set: { status: 'APPROVED', reviewedBy: reviewerName || 'ADMIN_CONSOLE', updatedAt: now } }
+          { $set: { status: 'APPROVED', reviewedBy: authoritativeReviewer, updatedAt: now } }
         );
 
         // 3. Mark investment_organizations as verified
@@ -214,7 +342,8 @@ export async function POST(req: NextRequest) {
         action: `ENTITY_VERIFICATION_${action}`,
         entityId,
         status: targetStatus,
-        performedBy: reviewerName || 'ADMIN_CONSOLE',
+        performedBy: authoritativeReviewer,
+        adminRole: role,
         notes: notes || '',
         timestamp: now,
       });

@@ -17,6 +17,7 @@ import { useToast } from '@/components/ui/Toast';
 import {
   getActiveMentorships,
   getMentorshipRequests,
+  getMentorshipHistory,
   acceptMentorshipRequest,
   declineMentorshipRequest,
 } from '@/lib/mentorshipService';
@@ -138,23 +139,34 @@ export const MentorOverviewContent: React.FC<MentorOverviewContentProps> = ({
           </p>
         </div>
 
-        <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2">
-          <div className="flex items-center justify-between text-[#565B59] dark:text-[#B6B8B7]">
-            <span className="text-xs font-semibold">Founder Rating</span>
-            <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
-              <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+        {(() => {
+          const history = getMentorshipHistory();
+          const rated = history.filter((h) => h.testimonial && h.testimonial.rating);
+          const avgRating =
+            rated.length > 0
+              ? (rated.reduce((acc, curr) => acc + (curr.testimonial?.rating || 5), 0) / rated.length).toFixed(1)
+              : null;
+
+          return (
+            <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2">
+              <div className="flex items-center justify-between text-[#565B59] dark:text-[#B6B8B7]">
+                <span className="text-xs font-semibold">Founder Rating</span>
+                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+                  <Star className="w-4 h-4 fill-amber-400 text-amber-400" />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl font-bold font-sora text-[#101212] dark:text-white">
+                  {avgRating || 'Unrated'}
+                </span>
+                {avgRating && <span className="text-xs text-[#565B59] dark:text-[#B6B8B7]">/ 5.0</span>}
+              </div>
+              <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold">
+                {rated.length > 0 ? `${rated.length} verified review(s)` : 'New platform advisor'}
+              </p>
             </div>
-          </div>
-          <div className="flex items-baseline gap-2">
-            <span className="text-2xl font-bold font-sora text-[#101212] dark:text-white">
-              5.0
-            </span>
-            <span className="text-xs text-[#565B59] dark:text-[#B6B8B7]">/ 5.0</span>
-          </div>
-          <p className="text-[11px] text-amber-600 dark:text-amber-400 font-semibold">
-            Top Rated Advisor
-          </p>
-        </div>
+          );
+        })()}
 
         <div className="p-4 rounded-2xl bg-white dark:bg-[#181B1A] border border-[#E5E7EB] dark:border-[#262A29] shadow-subtle space-y-2">
           <div className="flex items-center justify-between text-[#565B59] dark:text-[#B6B8B7]">

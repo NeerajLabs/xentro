@@ -316,10 +316,6 @@ export const CreateInvestorOrganizationModal: React.FC<CreateInvestorOrganizatio
             country,
             postalCode: '560001',
           },
-          defaultPaymentMethod: {
-            type: 'card',
-            last4: '4242',
-          },
         },
         invoices: [],
       });

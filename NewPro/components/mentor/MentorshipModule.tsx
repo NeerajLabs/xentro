@@ -437,31 +437,31 @@ export const MentorshipModule: React.FC<MentorshipModuleProps> = ({
                 {activeMentorships.map((m) => (
                   <div
                     key={m.id}
-                    className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-3 hover:border-[#D9FF3F]/40 transition-all flex flex-col justify-between"
+                    className="p-4 rounded-xl bg-gray-50 dark:bg-[#202422] border border-gray-100 dark:border-[#262A29] space-y-3 hover:border-[#D9FF3F]/40 transition-all flex flex-col justify-between h-full"
                   >
                     <div className="space-y-2">
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
                           <img
                             src={m.founder.avatar}
                             alt={m.founder.name}
-                            className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-700"
+                            className="w-10 h-10 rounded-full object-cover border border-gray-200 dark:border-gray-700 shrink-0"
                           />
-                          <div>
-                            <h4 className="text-xs font-bold text-[#101212] dark:text-white">
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-bold text-[#101212] dark:text-white truncate">
                               {m.startupName}
                             </h4>
-                            <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7]">
+                            <p className="text-[11px] text-[#565B59] dark:text-[#B6B8B7] truncate">
                               Founder: {m.founder.name} &bull; {m.startupSector}
                             </p>
                           </div>
                         </div>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F]">
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#D9FF3F]/20 text-[#101212] dark:text-[#D9FF3F] shrink-0">
                           {m.duration}
                         </span>
                       </div>
 
-                      <p className="text-xs text-gray-700 dark:text-gray-300 font-medium">
+                      <p className="text-xs text-gray-700 dark:text-gray-300 font-medium line-clamp-2">
                         🎯 Focus: {m.mentorshipFocus.join(' · ')}
                       </p>
 
@@ -473,7 +473,7 @@ export const MentorshipModule: React.FC<MentorshipModuleProps> = ({
 
                     <button
                       onClick={() => setSelectedActiveMentorship(m)}
-                      className="w-full py-2 px-3 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-xs font-bold text-[#101212] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                      className="w-full mt-auto py-2 px-3 rounded-xl bg-[#D9FF3F] hover:bg-[#C7F020] text-xs font-bold text-[#101212] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                     >
                       <span>Open Mentorship Workspace</span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -517,7 +517,7 @@ export const MentorshipModule: React.FC<MentorshipModuleProps> = ({
               {offerings.map((off) => (
                 <div
                   key={off.id}
-                  className={`p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-4 ${
+                  className={`p-5 rounded-2xl border transition-all flex flex-col justify-between space-y-4 h-full ${
                     off.enabled
                       ? 'bg-white dark:bg-[#181B1A] border-[#E5E7EB] dark:border-[#262A29] shadow-subtle'
                       : 'bg-gray-50/50 dark:bg-[#181B1A]/40 border-gray-200 dark:border-[#262A29] opacity-70'
@@ -551,7 +551,7 @@ export const MentorshipModule: React.FC<MentorshipModuleProps> = ({
                       </span>
                     </div>
 
-                    <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed">
+                    <p className="text-xs text-[#565B59] dark:text-[#B6B8B7] leading-relaxed line-clamp-2">
                       {off.description}
                     </p>
 
@@ -576,7 +576,7 @@ export const MentorshipModule: React.FC<MentorshipModuleProps> = ({
                       <span className="text-[10px] uppercase font-bold text-[#565B59]">Key Focus Areas:</span>
                       <div className="flex flex-wrap gap-1">
                         {off.areasCovered.map((a, i) => (
-                          <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-[#202422] text-[#101212] dark:text-gray-300 font-semibold">
+                          <span key={i} className="text-[10px] px-2 py-0.5 rounded bg-gray-100 dark:bg-[#202422] text-[#101212] dark:text-gray-300 font-semibold truncate max-w-[120px]">
                             {a}
                           </span>
                         ))}
@@ -586,7 +586,7 @@ export const MentorshipModule: React.FC<MentorshipModuleProps> = ({
 
                   <button
                     onClick={() => handleOpenEditOffering(off)}
-                    className="w-full py-2 px-3 rounded-xl bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-bold text-[#101212] dark:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    className="w-full mt-auto py-2 px-3 rounded-xl bg-gray-100 dark:bg-[#202422] hover:bg-gray-200 dark:hover:bg-[#262A29] text-xs font-bold text-[#101212] dark:text-white flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   >
                     <Edit3 className="w-3.5 h-3.5" />
                     <span>Configure Offering</span>
